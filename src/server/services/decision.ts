@@ -6,7 +6,8 @@ import type { NanokaModel, RowType } from '@nanokajs/core'
 import type { eventFields } from '../../models/event'
 import type { candidateFields } from '../../models/candidate'
 import type { decisionFields } from '../../models/decision'
-import { decisions, events, audit_logs } from '../../../drizzle/schema'
+import type { participantFields } from '../../models/participant'
+import { decisions, events, audit_logs, participants } from '../../../drizzle/schema'
 
 type DrizzleDb = BaseSQLiteDatabase<'async', any>
 
@@ -28,6 +29,8 @@ export async function applyDecision(
   kind: 'created' | 'updated'
   decision: RowType<typeof decisionFields>
   event: RowType<typeof eventFields>
+  candidate: RowType<typeof candidateFields>
+  participants: RowType<typeof participantFields>[]
   previousCandidateId?: string
 }> {
   const { app, Event, Candidate, Decision, workerHost } = ctx
@@ -125,7 +128,6 @@ export async function applyDecision(
     ])
   }
 
-  // TODO(F-05): Discord 通知をここで発火
   // TODO(F-07): .ics 再生成キックをここで
 
   const updatedDecision = await Decision.findOne(decisionId)
@@ -133,7 +135,12 @@ export async function applyDecision(
   const updatedEvent = await Event.findOne(eventId)
   if (!updatedEvent) throw new HTTPException(500, { message: 'Internal Server Error' })
 
-  return { kind, decision: updatedDecision, event: updatedEvent, previousCandidateId }
+  const participantRows = (await app.db
+    .select()
+    .from(participants)
+    .where(eq(participants.eventId, eventId))) as RowType<typeof participantFields>[]
+
+  return { kind, decision: updatedDecision, event: updatedEvent, candidate: candidateRow, participants: participantRows, previousCandidateId }
 }
 
 export async function cancelDecision(
@@ -142,8 +149,10 @@ export async function cancelDecision(
 ): Promise<{
   decision: RowType<typeof decisionFields>
   event: RowType<typeof eventFields>
+  candidate: RowType<typeof candidateFields>
+  participants: RowType<typeof participantFields>[]
 }> {
-  const { app, Event, Decision } = ctx
+  const { app, Event, Candidate, Decision } = ctx
   const { eventId, actorDiscordId } = params
 
   const eventRow = await Event.findOne(eventId)
@@ -188,7 +197,6 @@ export async function cancelDecision(
       }),
   ])
 
-  // TODO(F-05): Discord 通知をここで発火
   // TODO(F-07): .ics 再生成キックをここで
 
   const updatedDecision = await Decision.findOne(activeDecision.id)
@@ -196,5 +204,13 @@ export async function cancelDecision(
   const updatedEvent = await Event.findOne(eventId)
   if (!updatedEvent) throw new HTTPException(500, { message: 'Internal Server Error' })
 
-  return { decision: updatedDecision, event: updatedEvent }
+  const cancelledCandidateRow = await Candidate.findOne(activeDecision.candidateId)
+  if (!cancelledCandidateRow) throw new HTTPException(500, { message: 'Internal Server Error' })
+
+  const participantRows = (await app.db
+    .select()
+    .from(participants)
+    .where(eq(participants.eventId, eventId))) as RowType<typeof participantFields>[]
+
+  return { decision: updatedDecision, event: updatedEvent, candidate: cancelledCandidateRow, participants: participantRows }
 }
