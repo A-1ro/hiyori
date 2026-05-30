@@ -7,6 +7,7 @@ import {
   updateEvent,
   deleteEvent,
   deleteCandidate,
+  fetchTally,
   ApiError,
   type CandidateResponse,
 } from '../api/client'
@@ -34,6 +35,12 @@ export function EventDetailPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['event', id],
     queryFn: () => fetchEvent(id!),
+    enabled: !!id,
+  })
+
+  const { data: tallyData } = useQuery({
+    queryKey: ['tally', id],
+    queryFn: () => fetchTally(id!),
     enabled: !!id,
   })
 
@@ -70,6 +77,7 @@ export function EventDetailPage() {
     mutationFn: (candidateId: string) => deleteCandidate(id!, candidateId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['event', id] })
+      queryClient.invalidateQueries({ queryKey: ['tally', id] })
     },
   })
 
@@ -103,6 +111,7 @@ export function EventDetailPage() {
   }
 
   const { event, candidates } = data
+  const decidedCandidateId = tallyData?.decision?.candidateId ?? null
 
   return (
     <div>
@@ -205,31 +214,35 @@ export function EventDetailPage() {
             <p style={{ color: 'var(--color-fg3)', fontSize: 14 }}>候補枠がありません。</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {candidates.map((cand: CandidateResponse) => (
-                <div
-                  key={cand.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--color-border)',
-                    background: 'var(--color-surface)',
-                  }}
-                >
-                  <span style={{ fontSize: 14, color: 'var(--color-fg1)' }}>
-                    {formatDateTime(cand.startAt)} 〜 {formatDateTime(cand.endAt)}
-                  </span>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    icon={<Icon name="trash" size={13} />}
-                    onClick={() => deleteCandidateMutation.mutate(cand.id)}
-                    disabled={deleteCandidateMutation.isPending}
-                  />
-                </div>
-              ))}
+              {candidates.map((cand: CandidateResponse) => {
+                const isDecided = cand.id === decidedCandidateId
+                return (
+                  <div
+                    key={cand.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: `1px solid ${isDecided ? 'var(--color-yes-ink)' : 'var(--color-border)'}`,
+                      background: isDecided ? 'var(--color-yes-soft)' : 'var(--color-surface)',
+                    }}
+                  >
+                    <span style={{ fontSize: 14, color: 'var(--color-fg1)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {isDecided && <Badge tone="confirmed">★ 確定</Badge>}
+                      {formatDateTime(cand.startAt)} 〜 {formatDateTime(cand.endAt)}
+                    </span>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      icon={<Icon name="trash" size={13} />}
+                      onClick={() => deleteCandidateMutation.mutate(cand.id)}
+                      disabled={deleteCandidateMutation.isPending}
+                    />
+                  </div>
+                )
+              })}
             </div>
           )}
         </section>

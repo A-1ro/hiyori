@@ -3,7 +3,7 @@ import { t } from '@nanokajs/core'
 export const eventTableName = 'events'
 export const eventFields = {
   id: t.uuid().primary().readOnly(),
-  organizerDiscordId: t.string().min(1),
+  organizerDiscordId: t.string().min(1).serverOnly(),
   title: t.string().min(1).max(200),
   description: t.string().optional(),
   defaultDurationMinutes: t.integer().min(1).max(60 * 24),

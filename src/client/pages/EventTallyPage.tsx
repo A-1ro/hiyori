@@ -1,9 +1,12 @@
 import { useState, useMemo, type CSSProperties } from 'react'
 import { useParams, useNavigate } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchTally,
   fetchMyVotes,
+  createDecision,
+  cancelDecision,
+  fetchPermissions,
   type TallyCandidate,
   type TallyVoteCell,
 } from '../api/client'
@@ -26,11 +29,32 @@ const CHOICE_COLOR: Record<string, string> = {
   no: 'var(--color-no-ink)',
 }
 
+function getActorDiscordId(): string | null {
+  return localStorage.getItem('hiyori_actor_discord_id')
+}
+
+function setActorDiscordId(id: string) {
+  localStorage.setItem('hiyori_actor_discord_id', id)
+}
+// 注意: localStorage に保存しているのは「actor 選択」であって「認証」ではない。
+// F-06 で OAuth が入ったら、accessToken / refreshToken は localStorage に置かず、
+// HttpOnly Cookie のみで管理すること。
+
+function promptActorDiscordId(): string | null {
+  const v = window.prompt('オーガナイザーとして操作するため Discord ユーザー ID を入力してください（17-20桁）')
+  if (v && /^\d{17,20}$/.test(v)) {
+    setActorDiscordId(v)
+    return v
+  }
+  return null
+}
+
 type SortBy = 'startAt' | 'scoreDesc'
 
 export function EventTallyPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [sortBy, setSortBy] = useState<SortBy>('startAt')
 
   const { data: tallyData, isLoading: tallyLoading } = useQuery({
@@ -47,7 +71,31 @@ export function EventTallyPage() {
 
   const myParticipantId = myData?.participant?.id ?? null
 
-  // TODO(F-04/F-06): organizer 判定はサーバが boolean で返す設計にしてから確定ボタンを復活させる
+  // TODO(F-06): organizer 判定はセッションに置き換える
+  const actorDiscordId = getActorDiscordId()
+  const { data: permissionsData } = useQuery({
+    queryKey: ['permissions', id, actorDiscordId],
+    queryFn: () => fetchPermissions(id!, actorDiscordId!),
+    enabled: !!id && !!actorDiscordId,
+  })
+  const isOrganizer = permissionsData?.isOrganizer ?? false
+
+  const createDecisionMutation = useMutation({
+    mutationFn: ({ candidateId, actorId }: { candidateId: string; actorId: string }) =>
+      createDecision(id!, { candidateId, actorDiscordId: actorId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tally', id] })
+      queryClient.invalidateQueries({ queryKey: ['event', id] })
+    },
+  })
+
+  const cancelDecisionMutation = useMutation({
+    mutationFn: (actorId: string) => cancelDecision(id!, { actorDiscordId: actorId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tally', id] })
+      queryClient.invalidateQueries({ queryKey: ['event', id] })
+    },
+  })
 
   const sortedCandidates = useMemo<TallyCandidate[]>(() => {
     if (!tallyData) return []
@@ -172,6 +220,25 @@ export function EventTallyPage() {
     fontSize: 18,
   }
 
+  function handleConfirm(candidateId: string) {
+    let actorId = getActorDiscordId()
+    if (!actorId) {
+      actorId = promptActorDiscordId()
+      if (!actorId) return
+    }
+    createDecisionMutation.mutate({ candidateId, actorId })
+  }
+
+  function handleCancel() {
+    if (!confirm('確定を解除しますか？参加者のカレンダーから予定が削除される予定です。')) return
+    let actorId = getActorDiscordId()
+    if (!actorId) {
+      actorId = promptActorDiscordId()
+      if (!actorId) return
+    }
+    cancelDecisionMutation.mutate(actorId)
+  }
+
   return (
     <div>
       <AppHeader
@@ -202,6 +269,16 @@ export function EventTallyPage() {
           </h1>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {isClosed && <Badge tone="confirmed">確定済み</Badge>}
+            {isClosed && isOrganizer && (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleCancel}
+                disabled={cancelDecisionMutation.isPending}
+              >
+                確定を解除
+              </Button>
+            )}
           </div>
         </div>
 
@@ -280,6 +357,27 @@ export function EventTallyPage() {
                 >
                   {isDecided && '★ '}
                   {formatDateTime(cand.startAt)}
+                  {isOrganizer && !isClosed && (
+                    <div style={{ marginTop: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirm(cand.id)}
+                        disabled={createDecisionMutation.isPending}
+                        style={{
+                          padding: '2px 6px',
+                          fontSize: 10,
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid var(--color-yes-ink)',
+                          background: 'var(--color-yes-soft)',
+                          color: 'var(--color-yes-ink)',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        この候補で確定
+                      </button>
+                    </div>
+                  )}
                 </div>
               )
             })}

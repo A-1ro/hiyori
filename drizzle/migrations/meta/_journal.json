@@ -22,6 +22,20 @@
       "when": 1780200000000,
       "tag": "0002_unique_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1780147703708,
+      "tag": "0003_numerous_timeslip",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1780200001000,
+      "tag": "0004_decision_event_unique",
+      "breakpoints": true
     }
   ]
 }

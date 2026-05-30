@@ -1,0 +1,1 @@
+ALTER TABLE `decisions` ADD `cancelledAt` integer;
