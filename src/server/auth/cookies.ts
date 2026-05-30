@@ -7,10 +7,19 @@ export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 export const OAUTH_STATE_TTL_SECONDS = 600
 export const OAUTH_STATE_PATH = '/api/auth/discord'
 
-// localhost (HTTP) ではブラウザが Secure 属性付き Cookie を破棄するため、
-// 受信した URL のプロトコルから判定する。production は常に HTTPS なので true。
+// HTTPS なら常に Secure を付ける。HTTP の場合、localhost 開発に限り Secure を
+// 外す（ブラウザが localhost HTTP では Secure 付き Cookie を破棄するため）。
+// staging などの誤設定 HTTP デプロイで token Cookie が cleartext に晒されないよう、
+// localhost 以外の HTTP は Secure を維持して認証フローを fail loud にする。
 export function isSecureRequest(c: Context): boolean {
-  return c.req.url.startsWith('https://')
+  const url = new URL(c.req.url)
+  if (url.protocol === 'https:') return true
+  const isLoopback =
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
+    url.hostname === '::1' ||
+    url.hostname.endsWith('.localhost')
+  return !isLoopback
 }
 
 export function setSessionCookie(c: Context, token: string) {
