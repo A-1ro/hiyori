@@ -28,7 +28,7 @@ import { voteFields, voteTableName } from '../models/vote'
 import { audit_logs, calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions } from '../../drizzle/schema'
 import { userTableName, userFields } from '../models/user'
 import { sessionTableName, sessionFields } from '../models/session'
-import { setSessionCookie, clearSessionCookie, getSessionToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, SESSION_TTL_SECONDS } from './auth/cookies'
+import { setSessionCookie, clearSessionCookie, getSessionToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, isSecureRequest, SESSION_TTL_SECONDS } from './auth/cookies'
 import { loadSession, requireSession } from './auth/session'
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/discord'
 
@@ -581,7 +581,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         if (!created) throw new HTTPException(500, { message: 'Internal Server Error' })
         setCookie(c, cookieName, token, {
           httpOnly: true,
-          secure: true,
+          secure: isSecureRequest(c),
           sameSite: 'Lax',
           path: `/api/events/${eventId}`,
           maxAge: 34560000,

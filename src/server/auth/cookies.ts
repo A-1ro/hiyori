@@ -7,9 +7,15 @@ export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 export const OAUTH_STATE_TTL_SECONDS = 600
 export const OAUTH_STATE_PATH = '/api/auth/discord'
 
+// localhost (HTTP) ではブラウザが Secure 属性付き Cookie を破棄するため、
+// 受信した URL のプロトコルから判定する。production は常に HTTPS なので true。
+export function isSecureRequest(c: Context): boolean {
+  return c.req.url.startsWith('https://')
+}
+
 export function setSessionCookie(c: Context, token: string) {
   setCookie(c, SESSION_COOKIE_NAME, token, {
-    httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: SESSION_TTL_SECONDS,
+    httpOnly: true, secure: isSecureRequest(c), sameSite: 'Lax', path: '/', maxAge: SESSION_TTL_SECONDS,
   })
 }
 
@@ -23,7 +29,7 @@ export function getSessionToken(c: Context): string | undefined {
 
 export function setStateCookie(c: Context, state: string) {
   setCookie(c, OAUTH_STATE_COOKIE_NAME, state, {
-    httpOnly: true, secure: true, sameSite: 'Lax', path: OAUTH_STATE_PATH, maxAge: OAUTH_STATE_TTL_SECONDS,
+    httpOnly: true, secure: isSecureRequest(c), sameSite: 'Lax', path: OAUTH_STATE_PATH, maxAge: OAUTH_STATE_TTL_SECONDS,
   })
 }
 
