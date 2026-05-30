@@ -8,7 +8,7 @@ async function applyMigrations() {
   await applyD1Migrations((env as { DB: D1Database }).DB, migrations)
 }
 
-const BASE = 'http://example.com'
+const BASE = 'https://example.com'
 
 async function post(path: string, body: unknown, headers?: Record<string, string>) {
   const res = await SELF.fetch(`${BASE}${path}`, {

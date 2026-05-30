@@ -8,7 +8,7 @@ async function applyMigrations() {
   await applyD1Migrations((env as { DB: D1Database }).DB, migrations)
 }
 
-const BASE = 'http://example.com'
+const BASE = 'https://example.com'
 
 async function jsonFetch(path: string, init?: RequestInit) {
   const { headers: extraHeaders, ...rest } = init ?? {}
