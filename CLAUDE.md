@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`day-matcher` is a Discord-integrated date-coordination web tool deployed as a **single** Cloudflare Worker (frontend, API, static assets all from one Worker). Differentiator: the confirmed date is **auto-distributed to Apple Calendar (and any iCalendar client)** via `.ics` download + Webcal subscription feed, and announced to Discord — coordination through follow-through in one flow.
+`Hiyori` is a Discord-integrated date-coordination web tool deployed as a **single** Cloudflare Worker (frontend, API, static assets all from one Worker). Differentiator: the confirmed date is **auto-distributed to Apple Calendar (and any iCalendar client)** via `.ics` download + Webcal subscription feed, and announced to Discord — coordination through follow-through in one flow.
 
 **Source of truth for product decisions is `docs/requirements.md`.** Read it before proposing features, changing data model, or touching external-integration code. It contains: scope (MVP = F-01〜F-08), data model rationale, Discord/Calendar integration choices, and resolved/unresolved questions in §12. Don't relitigate items already marked decided there.
 
@@ -13,14 +13,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Command | What it does |
 |---|---|
 | `pnpm dev` | Vite dev server (uses `@cloudflare/vite-plugin` — runs the Worker locally under miniflare, serves client assets, HMR for both) |
-| `pnpm build` | Vite production build → emits client assets to `dist/client/` and Worker bundle to `dist/day_matcher/` |
+| `pnpm build` | Vite production build → emits client assets to `dist/client/` and Worker bundle to `dist/hiyori/` |
 | `pnpm deploy` | `vite build && wrangler deploy` |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm db:generate` | `nanoka generate` (models → `drizzle/schema.ts`) then `drizzle-kit generate` (schema → SQL migration in `drizzle/migrations/`) — **run this after any change to `src/models/*.ts`** |
 | `pnpm db:migrate:local` | Apply migrations to local D1 |
 | `pnpm db:migrate:remote` | Apply migrations to remote D1 (production) |
 
-For local D1, run `wrangler d1 create day-matcher` once and paste the returned `database_id` into `wrangler.jsonc`. Secrets (Discord bot token, OAuth client secret, etc.) go through `wrangler secret put`, not `vars`.
+For local D1, run `wrangler d1 create hiyori` once and paste the returned `database_id` into `wrangler.jsonc`. Secrets (Discord bot token, OAuth client secret, etc.) go through `wrangler secret put`, not `vars`.
 
 ## Architecture
 
