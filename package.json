@@ -10,22 +10,27 @@
     "db:generate": "nanoka generate && drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply hiyori --local",
     "db:migrate:remote": "wrangler d1 migrations apply hiyori --remote",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@hono/zod-validator": "^0.8.0",
     "@nanokajs/core": "1.9.0",
     "@tanstack/react-query": "^5.62.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.6.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-router": "^7.16.0",
     "vite-ssr-components": "^0.6.0",
     "zod": "^3.23.0 || ^4.0.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.39.0",
+    "@cloudflare/vitest-pool-workers": "^0.16.10",
     "@cloudflare/workers-types": "^4.20260501.0",
     "@tailwindcss/vite": "^4.3.0",
+    "@types/node": "^25.9.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
@@ -33,9 +38,14 @@
     "tailwindcss": "^4.3.0",
     "typescript": "^5.6.0",
     "vite": "^8.0.0",
+    "vitest": "^4.1.7",
     "wrangler": "^4.0.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "workerd", "sharp"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd",
+      "sharp"
+    ]
   }
 }

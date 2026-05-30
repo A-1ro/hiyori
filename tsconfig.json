@@ -15,5 +15,6 @@
     "jsxImportSource": "react",
     "types": ["@cloudflare/workers-types", "vite/client"]
   },
-  "include": ["src/**/*", "*.config.ts", "nanoka.config.ts"]
+  "include": ["src/**/*", "*.config.ts", "nanoka.config.ts"],
+  "exclude": ["src/server/__tests__/**/*"]
 }
