@@ -12,6 +12,8 @@ import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
 
 import { applyDecision, cancelDecision } from './services/decision'
+import { notifyDecisionApplied, notifyDecisionCancelled } from './discord/notifier'
+import { verifyDiscordSignature } from './discord/verify'
 import { auditLogFields, auditLogTableName } from '../models/auditLog'
 import {
   calendarSubscriptionFields,
@@ -22,11 +24,14 @@ import { decisionFields, decisionTableName } from '../models/decision'
 import { eventFields, eventTableName } from '../models/event'
 import { participantFields, participantTableName } from '../models/participant'
 import { voteFields, voteTableName } from '../models/vote'
-import { candidates, decisions, events, participants, votes } from '../../drizzle/schema'
+import { audit_logs, candidates, decisions, events, participants, votes } from '../../drizzle/schema'
 
 export interface Env {
   DB: D1Database
   ENVIRONMENT: string
+  DISCORD_BOT_TOKEN?: string
+  DISCORD_PUBLIC_KEY?: string
+  DISCORD_APP_ID?: string
 }
 
 const createEventBody = z.object({
@@ -586,6 +591,18 @@ window.__vite_plugin_react_preamble_installed__ = true
           { app, Event, Candidate, Decision, workerHost },
           { eventId, candidateId: body.candidateId, actorDiscordId: body.actorDiscordId },
         )
+        c.executionCtx.waitUntil(
+          notifyDecisionApplied(
+            { app, Decision, workerHost },
+            c.env,
+            {
+              decision: result.decision,
+              event: result.event,
+              candidate: result.candidate,
+              participants: result.participants,
+            },
+          ),
+        )
         return c.json(
           { decision: Decision.toResponse(result.decision), event: Event.toResponse(result.event) },
           result.kind === 'created' ? 201 : 200,
@@ -600,9 +617,22 @@ window.__vite_plugin_react_preamble_installed__ = true
       async (c) => {
         const eventId = c.req.param('id')
         const body = c.req.valid('json')
+        const workerHost = new URL(c.req.url).host
         const result = await cancelDecision(
-          { app, Event, Candidate, Decision, workerHost: new URL(c.req.url).host },
+          { app, Event, Candidate, Decision, workerHost },
           { eventId, actorDiscordId: body.actorDiscordId },
+        )
+        c.executionCtx.waitUntil(
+          notifyDecisionCancelled(
+            { app, Decision, workerHost },
+            c.env,
+            {
+              decision: result.decision,
+              event: result.event,
+              candidate: result.candidate,
+              participants: result.participants,
+            },
+          ),
         )
         return c.json({ decision: Decision.toResponse(result.decision), event: Event.toResponse(result.event) }, 200)
       },
@@ -626,6 +656,40 @@ window.__vite_plugin_react_preamble_installed__ = true
         return c.json({ isOrganizer })
       },
     )
+    .post('/api/discord/interactions', async (c) => {
+      const publicKey = c.env.DISCORD_PUBLIC_KEY
+      if (!publicKey) return c.json({ error: 'Discord not configured' }, 503)
+
+      const cl = Number(c.req.header('content-length') ?? 0)
+      if (cl > 64 * 1024) return c.json({ error: 'Payload too large' }, 413)
+
+      const signature = c.req.header('X-Signature-Ed25519')
+      const timestamp = c.req.header('X-Signature-Timestamp')
+      if (!signature || !timestamp) return c.json({ error: 'Missing signature' }, 401)
+
+      const ts = Number(timestamp)
+      if (!Number.isFinite(ts)) return c.json({ error: 'Invalid timestamp' }, 401)
+      const skewSec = Math.abs(Math.floor(Date.now() / 1000) - ts)
+      if (skewSec > 5 * 60) return c.json({ error: 'Stale signature' }, 401)
+
+      const rawBody = await c.req.text()
+      const isValid = await verifyDiscordSignature(rawBody, signature, timestamp, publicKey)
+      if (!isValid) return c.json({ error: 'Invalid signature' }, 401)
+
+      const body = JSON.parse(rawBody) as { type: number; member?: { user?: { id?: string } }; data?: { custom_id?: string } }
+      if (body.type === 1) return c.json({ type: 1 })
+      if (body.type === 3) {
+        await app.db.insert(audit_logs).values({
+          id: crypto.randomUUID(),
+          actorDiscordId: body.member?.user?.id ?? null,
+          action: 'discord.interaction.received',
+          payload: { type: 3, custom_id: body.data?.custom_id },
+          createdAt: new Date(),
+        })
+        return c.json({ type: 6 })
+      }
+      return c.json({ type: 6 })
+    })
 
   app.notFound((c) => {
     if (c.req.path.startsWith('/api/')) {
