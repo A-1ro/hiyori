@@ -6,7 +6,6 @@ import {
   fetchEvent,
   updateEvent,
   deleteEvent,
-  addCandidate,
   deleteCandidate,
   ApiError,
   type CandidateResponse,
@@ -168,6 +167,9 @@ export function EventDetailPage() {
             <Button variant="primary" size="sm" icon={<Icon name="check-circle" size={14} />}>
               投票ページへ
             </Button>
+          </Link>
+          <Link to={`/events/${id}/tally`}>
+            <Button variant="secondary" size="sm" icon={<Icon name="users" size={14} />}>集計を見る</Button>
           </Link>
           <Button
             variant="secondary"

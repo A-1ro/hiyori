@@ -171,3 +171,24 @@ export async function putVotes(
   })
   return handleResponse(res)
 }
+
+export interface TallyParticipant { id: string; kind: string; displayName: string; createdAt: string }
+export interface TallyVoteCell { choice: 'yes' | 'maybe' | 'no'; comment: string | null; updatedAt: string }
+export interface TallyCandidate {
+  id: string; startAt: string; endAt: string
+  totalScore: number
+  counts: { yes: number; maybe: number; no: number }
+  votesByParticipantId: Record<string, TallyVoteCell>
+}
+export interface TallyDecision { candidateId: string; decidedAt: string }
+export interface TallyResponse {
+  event: { id: string; title: string; status: string; deadline?: string; timezone: string; defaultDurationMinutes: number }
+  participants: TallyParticipant[]
+  candidates: TallyCandidate[]
+  decision: TallyDecision | null
+}
+
+export async function fetchTally(eventId: string): Promise<TallyResponse> {
+  const res = await api.api.events[':id'].tally.$get({ param: { id: eventId } })
+  return handleResponse(res)
+}
