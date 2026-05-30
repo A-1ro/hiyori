@@ -47,7 +47,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>day-matcher</title>
+        <title>Hiyori</title>
         <ViteClient />
         {isDev && <script type="module" src="/@react-refresh" />}
         {isDev && (
