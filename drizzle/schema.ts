@@ -28,7 +28,7 @@ export const participants = sqliteTable('participants', {
   kind: text('kind').notNull(),
   discordUserId: text('discordUserId'),
   displayName: text('displayName').notNull(),
-  guestToken: text('guestToken'),
+  guestTokenHash: text('guestTokenHash'),
   createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
 })
 

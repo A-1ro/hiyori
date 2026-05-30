@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router'
+import { useParams, useNavigate, Link } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { $ZodIssue } from 'zod/v4/core'
 import {
@@ -163,7 +163,12 @@ export function EventDetailPage() {
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
+          <Link to={`/events/${id}/vote`}>
+            <Button variant="primary" size="sm" icon={<Icon name="check-circle" size={14} />}>
+              投票ページへ
+            </Button>
+          </Link>
           <Button
             variant="secondary"
             size="sm"
