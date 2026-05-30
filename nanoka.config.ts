@@ -5,6 +5,8 @@ import { candidateFields, candidateTableName } from './src/models/candidate'
 import { decisionFields, decisionTableName } from './src/models/decision'
 import { eventFields, eventTableName } from './src/models/event'
 import { participantFields, participantTableName } from './src/models/participant'
+import { sessionFields, sessionTableName } from './src/models/session'
+import { userFields, userTableName } from './src/models/user'
 import { voteFields, voteTableName } from './src/models/vote'
 
 export default defineConfig({
@@ -16,6 +18,8 @@ export default defineConfig({
     { name: decisionTableName, fields: decisionFields },
     { name: calendarSubscriptionTableName, fields: calendarSubscriptionFields },
     { name: auditLogTableName, fields: auditLogFields },
+    { name: userTableName, fields: userFields },
+    { name: sessionTableName, fields: sessionFields },
   ],
   output: './drizzle/schema.ts',
 })

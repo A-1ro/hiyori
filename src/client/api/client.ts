@@ -48,7 +48,6 @@ export interface CandidateResponse {
 }
 
 export interface CreateEventInput {
-  organizerDiscordId: string
   title: string
   description?: string
   defaultDurationMinutes: number
@@ -130,7 +129,7 @@ export interface VoteResponse {
 }
 
 export interface RegisterParticipantInput {
-  kind: 'guest'
+  kind: 'guest' | 'discord'
   displayName: string
 }
 
@@ -205,7 +204,7 @@ export interface DecisionResponse {
 
 export async function createDecision(
   eventId: string,
-  input: { candidateId: string; actorDiscordId: string },
+  input: { candidateId: string },
 ): Promise<{ decision: DecisionResponse; event: EventResponse }> {
   const res = await api.api.events[':id'].decision.$post({ param: { id: eventId }, json: input })
   return handleResponse(res)
@@ -213,19 +212,16 @@ export async function createDecision(
 
 export async function cancelDecision(
   eventId: string,
-  input: { actorDiscordId: string },
 ): Promise<{ decision: DecisionResponse; event: EventResponse }> {
-  const res = await api.api.events[':id'].decision.$delete({ param: { id: eventId }, json: input })
+  const res = await api.api.events[':id'].decision.$delete({ param: { id: eventId } })
   return handleResponse(res)
 }
 
 export async function fetchPermissions(
   eventId: string,
-  actorDiscordId: string,
 ): Promise<{ isOrganizer: boolean }> {
   const res = await api.api.events[':id'].permissions.$get({
     param: { id: eventId },
-    query: { actorDiscordId },
   })
   return handleResponse(res)
 }
@@ -238,17 +234,17 @@ export interface SubscriptionResponse {
   lastAccessedAt?: string | null
 }
 
-export async function createSubscription(input: { actorDiscordId: string }) {
-  const res = await api.api.subscriptions.$post({ json: input })
+export async function createSubscription() {
+  const res = await api.api.subscriptions.$post({})
   return handleResponse<{ subscription: SubscriptionResponse; webcalUrl: string }>(res)
 }
 
-export async function deleteSubscription(id: string, input: { actorDiscordId: string }) {
-  const res = await api.api.subscriptions[':id'].$delete({ param: { id }, json: input })
+export async function deleteSubscription(id: string) {
+  const res = await api.api.subscriptions[':id'].$delete({ param: { id } })
   return handleResponse<void>(res)
 }
 
-export async function regenerateSubscription(id: string, input: { actorDiscordId: string }) {
-  const res = await api.api.subscriptions[':id'].regenerate.$post({ param: { id }, json: input })
+export async function regenerateSubscription(id: string) {
+  const res = await api.api.subscriptions[':id'].regenerate.$post({ param: { id } })
   return handleResponse<{ subscription: SubscriptionResponse; webcalUrl: string }>(res)
 }

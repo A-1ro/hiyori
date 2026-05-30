@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
+import { loginAs } from './test-helpers'
 
 async function applyMigrations() {
   const migrations = inject('d1Migrations')
@@ -8,29 +9,30 @@ async function applyMigrations() {
 }
 
 const BASE = 'http://example.com'
+const ORGANIZER_ID = '12345678901234567'
 
 async function jsonFetch(path: string, init?: RequestInit) {
+  const { headers: extraHeaders, ...rest } = init ?? {}
   const res = await SELF.fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-    ...init,
+    ...rest,
+    headers: { 'Content-Type': 'application/json', ...(extraHeaders as Record<string, string> ?? {}) },
   })
   return res
 }
 
-async function post(path: string, body: unknown) {
-  return jsonFetch(path, { method: 'POST', body: JSON.stringify(body) })
+async function post(path: string, body: unknown, headers?: Record<string, string>) {
+  return jsonFetch(path, { method: 'POST', body: JSON.stringify(body), ...(headers ? { headers } : {}) })
 }
 
-async function patch(path: string, body: unknown) {
-  return jsonFetch(path, { method: 'PATCH', body: JSON.stringify(body) })
+async function patch(path: string, body: unknown, headers?: Record<string, string>) {
+  return jsonFetch(path, { method: 'PATCH', body: JSON.stringify(body), ...(headers ? { headers } : {}) })
 }
 
-async function del(path: string) {
-  return jsonFetch(path, { method: 'DELETE' })
+async function del(path: string, headers?: Record<string, string>) {
+  return jsonFetch(path, { method: 'DELETE', ...(headers ? { headers } : {}) })
 }
 
 const validEventBase = {
-  organizerDiscordId: '12345678901234567',
   title: 'テストイベント',
   defaultDurationMinutes: 60,
   candidates: [
@@ -39,13 +41,16 @@ const validEventBase = {
   ],
 }
 
+let organizerCookie: string
+
 beforeEach(async () => {
   await applyMigrations()
+  organizerCookie = await loginAs(ORGANIZER_ID)
 })
 
 describe('POST /api/events', () => {
   it('候補枠 2 件で 201 + endAt 補完', async () => {
-    const res = await post('/api/events', validEventBase)
+    const res = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
     const body = (await res.json()) as { event: unknown; candidates: Array<{ startAt: string; endAt: string }> }
     expect(body.event).toBeTruthy()
@@ -58,7 +63,7 @@ describe('POST /api/events', () => {
   })
 
   it('候補枠 0 件で 400', async () => {
-    const res = await post('/api/events', { ...validEventBase, candidates: [] })
+    const res = await post('/api/events', { ...validEventBase, candidates: [] }, { Cookie: organizerCookie })
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: string }
     expect(body.error).toBe('Invalid request')
@@ -68,14 +73,14 @@ describe('POST /api/events', () => {
     const res = await post('/api/events', {
       ...validEventBase,
       candidates: [{ startAt: '2026-07-01T00:00:00.000Z', endAt: '2026-07-02T00:00:00.000Z' }],
-    })
+    }, { Cookie: organizerCookie })
     expect(res.status).toBe(400)
   })
 })
 
 describe('GET /api/events/:id', () => {
   it('存在するイベント → 200 + candidates', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: unknown[] }
 
     const res = await jsonFetch(`/api/events/${created.event.id}`)
@@ -93,7 +98,7 @@ describe('GET /api/events/:id', () => {
   })
 
   it('organizerDiscordId は serverOnly のためレスポンスに含まれない', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
 
     const res = await jsonFetch(`/api/events/${created.event.id}`)
@@ -105,17 +110,17 @@ describe('GET /api/events/:id', () => {
 
 describe('PATCH /api/events/:id', () => {
   it('title 更新 → 200 + 反映', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
 
-    const res = await patch(`/api/events/${created.event.id}`, { title: '更新タイトル' })
+    const res = await patch(`/api/events/${created.event.id}`, { title: '更新タイトル' }, { Cookie: organizerCookie })
     expect(res.status).toBe(200)
     const body = (await res.json()) as { event: { title: string } }
     expect(body.event.title).toBe('更新タイトル')
   })
 
   it('status を送ると status は反映されない', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string; status: string } }
     const originalStatus = created.event.status
 
@@ -123,21 +128,21 @@ describe('PATCH /api/events/:id', () => {
     const res = await patch(`/api/events/${created.event.id}`, {
       title: '新タイトル',
       status: 'confirmed',
-    })
+    }, { Cookie: organizerCookie })
     expect(res.status).toBe(200)
     const body = (await res.json()) as { event: { status: string } }
     expect(body.event.status).toBe(originalStatus)
   })
 
   it('organizerDiscordId を送っても無視される（patchEventBody にフィールドがない）', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
 
     // patchEventBody には organizerDiscordId がないので無視される
     const res = await patch(`/api/events/${created.event.id}`, {
       title: '新タイトル',
       organizerDiscordId: '99999999999999999',
-    })
+    }, { Cookie: organizerCookie })
     expect(res.status).toBe(200)
     // organizerDiscordId は serverOnly のためレスポンスに含まれない
     const body = (await res.json()) as { event: Record<string, unknown> }
@@ -148,7 +153,7 @@ describe('PATCH /api/events/:id', () => {
 
 describe('DELETE /api/events/:id', () => {
   it('DELETE /api/events/:id cascades to votes, participants, decisions, candidates', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const id = created.event.id
     const candidateId = created.candidates[0]!.id
@@ -168,7 +173,7 @@ describe('DELETE /api/events/:id', () => {
       'INSERT INTO decisions (id, eventId, candidateId, decidedAt, icsUid, icsSequence) VALUES (?, ?, ?, ?, ?, ?)'
     ).bind(crypto.randomUUID(), id, candidateId, Date.now(), 'test-uid', 0).run()
 
-    const deleteRes = await del(`/api/events/${id}`)
+    const deleteRes = await del(`/api/events/${id}`, { Cookie: organizerCookie })
     expect(deleteRes.status).toBe(204)
 
     const voteCount = await db.prepare('SELECT COUNT(*) as c FROM votes WHERE candidateId = ?').bind(candidateId).first<{ c: number }>()
@@ -190,13 +195,13 @@ describe('DELETE /api/events/:id', () => {
 
 describe('POST /api/events/:id/candidates', () => {
   it('POST candidates → endAt 補完', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string; defaultDurationMinutes: number } }
     const id = created.event.id
 
     const res = await post(`/api/events/${id}/candidates`, {
       startAt: '2026-07-03T14:00:00.000Z',
-    })
+    }, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
     const body = (await res.json()) as { candidate: { startAt: string; endAt: string } }
     const startMs = new Date(body.candidate.startAt).getTime()
@@ -205,26 +210,26 @@ describe('POST /api/events/:id/candidates', () => {
   })
 
   it('終日候補枠は 400', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const id = created.event.id
 
     const res = await post(`/api/events/${id}/candidates`, {
       startAt: '2026-07-01T00:00:00.000Z',
       endAt: '2026-07-02T00:00:00.000Z',
-    })
+    }, { Cookie: organizerCookie })
     expect(res.status).toBe(400)
   })
 })
 
 describe('DELETE /api/events/:id/candidates/:candidateId', () => {
   it('DELETE candidate → GET で消えている', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
 
-    const deleteRes = await del(`/api/events/${eventId}/candidates/${candidateId}`)
+    const deleteRes = await del(`/api/events/${eventId}/candidates/${candidateId}`, { Cookie: organizerCookie })
     expect(deleteRes.status).toBe(204)
 
     const getRes = await jsonFetch(`/api/events/${eventId}`)

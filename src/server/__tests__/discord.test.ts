@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
+import { loginAs } from './test-helpers'
 
 async function applyMigrations() {
   const migrations = inject('d1Migrations')
@@ -21,11 +22,10 @@ async function post(path: string, body: unknown, headers?: Record<string, string
   return res
 }
 
-async function del(path: string, body: unknown) {
+async function del(path: string, headers?: Record<string, string>) {
   return SELF.fetch(`${BASE}${path}`, {
     method: 'DELETE',
-    body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(headers ?? {}) },
   })
 }
 
@@ -33,7 +33,6 @@ const ORGANIZER_ID = '12345678901234567'
 const CHANNEL_ID = '99999999999999999'
 
 const validEventBase = {
-  organizerDiscordId: ORGANIZER_ID,
   title: 'Discord テストイベント',
   defaultDurationMinutes: 60,
   discordChannelId: CHANNEL_ID,
@@ -42,6 +41,8 @@ const validEventBase = {
     { startAt: '2026-07-02T10:00:00.000Z', endAt: '2026-07-02T11:00:00.000Z' },
   ],
 }
+
+let organizerCookie: string
 
 async function generateEd25519KeyPair(): Promise<{ privateKey: CryptoKey; publicKeyHex: string }> {
   const keyPair = await crypto.subtle.generateKey('Ed25519', true, ['sign', 'verify'])
@@ -70,6 +71,7 @@ async function signInteraction(
 beforeEach(async () => {
   await applyMigrations()
   ;(env as Record<string, unknown>).DISCORD_BOT_TOKEN = 'test_token'
+  organizerCookie = await loginAs(ORGANIZER_ID)
 })
 
 afterEach(() => {
@@ -215,7 +217,7 @@ describe('Discord 通知 waitUntil', () => {
     const createRes = await SELF.fetch(`${BASE}/api/events`, {
       method: 'POST',
       body: JSON.stringify(validEventBase),
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Cookie: organizerCookie },
     })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
@@ -232,10 +234,7 @@ describe('Discord 通知 waitUntil', () => {
       throw new Error(`Unexpected fetch: ${urlStr}`)
     }))
 
-    const res = await post(`/api/events/${eventId}/decision`, {
-      candidateId,
-      actorDiscordId: ORGANIZER_ID,
-    })
+    const res = await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
 
     await new Promise((r) => setTimeout(r, 50))
@@ -260,7 +259,7 @@ describe('Discord 通知 waitUntil', () => {
     const createRes = await SELF.fetch(`${BASE}/api/events`, {
       method: 'POST',
       body: JSON.stringify(validEventBase),
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Cookie: organizerCookie },
     })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
@@ -277,10 +276,7 @@ describe('Discord 通知 waitUntil', () => {
       throw new Error(`Unexpected fetch: ${urlStr}`)
     }))
 
-    const res = await post(`/api/events/${eventId}/decision`, {
-      candidateId,
-      actorDiscordId: ORGANIZER_ID,
-    })
+    const res = await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
 
     await new Promise((r) => setTimeout(r, 50))
@@ -297,7 +293,7 @@ describe('Discord 通知 waitUntil', () => {
     const createRes = await SELF.fetch(`${BASE}/api/events`, {
       method: 'POST',
       body: JSON.stringify(validEventBase),
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Cookie: organizerCookie },
     })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
@@ -327,18 +323,13 @@ describe('Discord 通知 waitUntil', () => {
     }))
 
     // 先に確定
-    await post(`/api/events/${eventId}/decision`, {
-      candidateId,
-      actorDiscordId: ORGANIZER_ID,
-    })
+    await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
 
     // waitUntil を消化して discordMessageId を永続化
     await new Promise((r) => setTimeout(r, 50))
 
     // 取り消し
-    const deleteRes = await del(`/api/events/${eventId}/decision`, {
-      actorDiscordId: ORGANIZER_ID,
-    })
+    const deleteRes = await del(`/api/events/${eventId}/decision`, { Cookie: organizerCookie })
     expect(deleteRes.status).toBe(200)
 
     await new Promise((r) => setTimeout(r, 50))

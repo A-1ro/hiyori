@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
+import { loginAs } from './test-helpers'
 
 async function applyMigrations() {
   const migrations = inject('d1Migrations')
@@ -38,8 +39,9 @@ function cookieHeaderFromSetCookie(setCookieHeader: string): string {
   return setCookieHeader.split(';')[0]!.trim()
 }
 
+const ORGANIZER_ID = '12345678901234567'
+
 const validEventBase = {
-  organizerDiscordId: '12345678901234567',
   title: 'テストイベント',
   defaultDurationMinutes: 60,
   candidates: [
@@ -48,8 +50,11 @@ const validEventBase = {
   ],
 }
 
+let organizerCookie: string
+
 beforeEach(async () => {
   await applyMigrations()
+  organizerCookie = await loginAs(ORGANIZER_ID)
 })
 
 describe('GET /api/events/:id/tally', () => {
@@ -59,7 +64,7 @@ describe('GET /api/events/:id/tally', () => {
   })
 
   it('T2: 候補 2 / 参加者 0 → 200, participants=[], totalScore=0, counts all 0, votesByParticipantId={}', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
 
@@ -83,7 +88,7 @@ describe('GET /api/events/:id/tally', () => {
   })
 
   it('T3: 候補 2 × 参加者 2 投票 → スコアと counts が正しい', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const [cand1, cand2] = created.candidates as [{ id: string }, { id: string }]
@@ -129,7 +134,7 @@ describe('GET /api/events/:id/tally', () => {
   })
 
   it('T4: レスポンス body に guestTokenHash / discordUserId が含まれない', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 
@@ -143,7 +148,7 @@ describe('GET /api/events/:id/tally', () => {
   })
 
   it('T5: 参加者 3 名を順番に登録 → participants が createdAt 昇順（登録順）', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 
@@ -160,7 +165,6 @@ describe('GET /api/events/:id/tally', () => {
 
   it('T7: candidates が startAt 昇順で返る（逆順投入でも）', async () => {
     const reversedEvent = {
-      organizerDiscordId: '12345678901234567',
       title: '昇順テスト',
       defaultDurationMinutes: 60,
       candidates: [
@@ -169,7 +173,7 @@ describe('GET /api/events/:id/tally', () => {
       ],
     }
 
-    const createRes = await post('/api/events', reversedEvent)
+    const createRes = await post('/api/events', reversedEvent, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 
@@ -181,7 +185,7 @@ describe('GET /api/events/:id/tally', () => {
   })
 
   it('T6: 締切後でも GET tally は 200', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 

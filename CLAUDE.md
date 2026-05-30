@@ -64,12 +64,30 @@ The React app (`src/client/`) mounts (`createRoot(...).render(...)`) into `<div 
 
 The current `app.get('*')` catch-all returns the SSR HTML shell for **any** unmatched GET, including `/api/<typo>`. That breaks RPC error handling (clients get HTML when expecting JSON). When adding the first real API routes, also add path-aware handling — either narrow the SSR catch-all to non-`/api` paths, or add an `app.notFound()` that returns JSON for `c.req.path.startsWith('/api/')`.
 
+### Authentication (F-06)
+
+Discord OAuth2 + session cookie auth is implemented in `src/server/auth/`.
+
+- **`cookies.ts`**: Cookie constants (`hiyori_session`, `hiyori_oauth_state`), `generateSessionToken`, `hashToken` (SHA-256), `setSessionCookie` / `clearSessionCookie`, `setStateCookie` / `consumeStateCookie`.
+- **`session.ts`**: `loadSession(c, app, sessions, users)` — looks up session by token hash, checks expiry, returns `SessionUser | null`. `requireSession` — throws `HTTPException(401)` if no valid session.
+- **`discord.ts`**: `buildAuthorizeUrl`, `exchangeCodeForToken`, `fetchDiscordMe`.
+
+OAuth routes: `GET /api/auth/discord` (redirect), `GET /api/auth/discord/callback`, `POST /api/auth/logout`, `GET /api/auth/me`.
+
+State anti-CSRF: state is stored as raw value in the `hiyori_oauth_state` cookie (path-scoped to `/api/auth/discord`). The URL `state` query param is a base64 JSON bundle `{s: rawState, r: safeReturnTo}`. Callback verifies `parsed.s === cookieState`.
+
+Session cookie: `hiyori_session`, HttpOnly, Secure, SameSite=Lax, Path=/, 30-day TTL. Only `tokenHash` (SHA-256) is stored in D1; the raw token never touches the DB.
+
+Test helper: `loginAs(discordUserId)` in `src/server/__tests__/test-helpers.ts` inserts a user+session directly into D1 and returns a `hiyori_session=<token>` string for use as a `Cookie` header.
+
 ## File layout
 
 ```
 src/
 ├── server/index.tsx       Hono entry (SSR shell + API + AppType export)
+├── server/auth/           Discord OAuth, session cookies, loadSession/requireSession
 ├── client/                React app (entry: main.tsx, root: App.tsx)
+├── client/auth/           useSession / useLogout / loginUrl フック
 ├── shared/api.ts          Hono RPC client factory (type-only server import)
 ├── models/                nanoka model definitions (one file per table)
 └── styles.css             Tailwind v4 entry (just @import "tailwindcss";)

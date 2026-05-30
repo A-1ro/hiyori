@@ -123,8 +123,6 @@ export function EventCreatePage() {
         bandTimes.map((t) => buildLocalISO(ds, t, durOf(ds, t))),
       )
       return createEvent({
-        // TODO(F-06): organizerDiscordId はセッションから取得する
-        organizerDiscordId: 'placeholder',
         title: title.trim() || '無題のイベント',
         description: memo || undefined,
         defaultDurationMinutes: dur,

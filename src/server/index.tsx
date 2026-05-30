@@ -25,7 +25,12 @@ import { decisionFields, decisionTableName } from '../models/decision'
 import { eventFields, eventTableName } from '../models/event'
 import { participantFields, participantTableName } from '../models/participant'
 import { voteFields, voteTableName } from '../models/vote'
-import { audit_logs, calendar_subscriptions, candidates, decisions, events, participants, votes } from '../../drizzle/schema'
+import { audit_logs, calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions } from '../../drizzle/schema'
+import { userTableName, userFields } from '../models/user'
+import { sessionTableName, sessionFields } from '../models/session'
+import { setSessionCookie, clearSessionCookie, getSessionToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, SESSION_TTL_SECONDS } from './auth/cookies'
+import { loadSession, requireSession } from './auth/session'
+import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/discord'
 
 export interface Env {
   DB: D1Database
@@ -33,10 +38,20 @@ export interface Env {
   DISCORD_BOT_TOKEN?: string
   DISCORD_PUBLIC_KEY?: string
   DISCORD_APP_ID?: string
+  DISCORD_CLIENT_ID?: string
+  DISCORD_CLIENT_SECRET?: string
+  DISCORD_OAUTH_REDIRECT_URI?: string
 }
 
+const displayNameSchema = z.string().min(1).max(80).refine(
+  (s) => s.trim().length > 0,
+  { message: 'displayName cannot be whitespace only' },
+).refine(
+  (s) => !/[\x00-\x1f\x7f​-‏‪-‮⁦-⁩]/.test(s),
+  { message: 'displayName contains forbidden control characters' },
+)
+
 const createEventBody = z.object({
-  organizerDiscordId: z.string().regex(/^\d{17,20}$/),
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   defaultDurationMinutes: z.number().int().min(1).max(60 * 24),
@@ -70,10 +85,8 @@ const addCandidateBody = z.object({
 
 const GUEST_COOKIE_PREFIX = 'hiyori_guest_'
 
-function generateGuestToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
-}
+const generateGuestToken = generateSessionToken
+const hashGuestToken = hashToken
 
 function generateSubscriptionToken(): string {
   const bytes = new Uint8Array(32)
@@ -85,36 +98,19 @@ function buildWebcalUrl(host: string, token: string): string {
   return `webcal://${host}/feeds/${token}.ics`
 }
 
-async function hashGuestToken(token: string): Promise<string> {
-  const encoded = new TextEncoder().encode(token)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded)
-  return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
 const registerParticipantBody = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('guest'),
-    displayName: z.string().min(1).max(80),
+    displayName: displayNameSchema,
   }),
   z.object({
     kind: z.literal('discord'),
-    displayName: z.string().min(1).max(80),
-    // TODO(F-06): discordUserId はセッションから取得する
-    discordUserId: z.string().regex(/^\d{17,20}$/),
+    displayName: displayNameSchema,
   }),
 ])
 
-const subscriptionMutationBody = z.object({
-  actorDiscordId: z.string().regex(/^\d{17,20}$/),
-})
-
 const createDecisionBody = z.object({
   candidateId: z.string().uuid(),
-  actorDiscordId: z.string().regex(/^\d{17,20}$/), // TODO(F-06): セッション化
-})
-
-const deleteDecisionBody = z.object({
-  actorDiscordId: z.string().regex(/^\d{17,20}$/), // TODO(F-06): セッション化
 })
 
 const putVotesBody = z.object({
@@ -146,6 +142,8 @@ const buildApp = (env: Env) => {
   const Decision = app.model(decisionTableName, decisionFields)
   const CalendarSubscription = app.model(calendarSubscriptionTableName, calendarSubscriptionFields)
   app.model(auditLogTableName, auditLogFields)
+  const User = app.model(userTableName, userFields)
+  app.model(sessionTableName, sessionFields)
 
   // M2: /api/* に同一オリジンのみ許可する CORS チェック
   app.use('/api/*', cors({
@@ -162,7 +160,7 @@ const buildApp = (env: Env) => {
       return c.json({ error: err.message }, err.status)
     }
     console.error(err)
-    const isDev = c.env.ENVIRONMENT !== 'production'
+    const isDev = c.env.ENVIRONMENT === 'development'
     return c.json({ error: isDev ? (err.message || 'Internal Server Error') : 'Internal Server Error' }, 500)
   })
 
@@ -210,8 +208,128 @@ window.__vite_plugin_react_preamble_installed__ = true
     return rows.length > 0 ? rows[0]! : null
   }
 
+  async function resolveParticipantByAnyAuth(
+    c: Context<{ Bindings: Env }>,
+    eventId: string,
+  ): Promise<RowType<typeof participantFields> | null> {
+    const guest = await resolveParticipantByCookie(c, eventId)
+    if (guest) return guest
+    const s = await loadSession(c, app, sessions, users)
+    if (!s) return null
+    const rows = await Participant.findMany({
+      where: { eventId, discordUserId: s.discordUserId },
+      limit: 1,
+    })
+    return rows.length > 0 ? rows[0]! : null
+  }
+
   const routes = app
     .get('/api/health', (c) => c.json({ ok: true, ts: new Date().toISOString() }))
+    .get('/api/auth/discord', async (c) => {
+      if (!c.env.DISCORD_CLIENT_ID) return c.json({ error: 'Discord OAuth not configured' }, 503)
+      const returnTo = c.req.query('returnTo') ?? '/'
+      const safeReturnTo = /^\/[^/]/.test(returnTo) || returnTo === '/' ? returnTo : '/'
+      const rawState = crypto.randomUUID()
+      const stateBundle = btoa(JSON.stringify({ s: rawState, r: safeReturnTo })).replace(/=+$/, '')
+      setStateCookie(c, rawState)
+      const url = new URL(c.req.url)
+      const redirectUri = c.env.DISCORD_OAUTH_REDIRECT_URI ?? `${url.origin}/api/auth/discord/callback`
+      return c.redirect(buildAuthorizeUrl(c.env, stateBundle, redirectUri), 302)
+    })
+    .get('/api/auth/discord/callback', async (c) => {
+      const code = c.req.query('code')
+      const stateBundle = c.req.query('state')
+      if (!code || !stateBundle) return c.json({ error: 'Missing code or state' }, 400)
+      const cookieState = consumeStateCookie(c)
+      if (!cookieState) return c.json({ error: 'Missing state cookie' }, 400)
+      if (!c.env.DISCORD_CLIENT_ID || !c.env.DISCORD_CLIENT_SECRET) {
+        return c.json({ error: 'Discord OAuth not configured' }, 503)
+      }
+      let parsed: { s: string; r: string }
+      try {
+        const padding = '==='.slice(0, (4 - stateBundle.length % 4) % 4)
+        parsed = JSON.parse(atob(stateBundle + padding)) as { s: string; r: string }
+      } catch {
+        return c.json({ error: 'Invalid state' }, 400)
+      }
+      if (parsed.s !== cookieState) return c.json({ error: 'State mismatch' }, 400)
+      const safeR = /^\/[^/]/.test(parsed.r) || parsed.r === '/' ? parsed.r : '/'
+
+      const url = new URL(c.req.url)
+      const redirectUri = c.env.DISCORD_OAUTH_REDIRECT_URI ?? `${url.origin}/api/auth/discord/callback`
+      const tok = await exchangeCodeForToken(c.env, code, redirectUri)
+      const me = await fetchDiscordMe(tok.access_token)
+
+      const existing = await User.findMany({ where: { discordUserId: me.id }, limit: 1 })
+      let userId: string
+      const sessionToken = generateSessionToken()
+      const tokenHash = await hashToken(sessionToken)
+      const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000)
+      const sessionValues = {
+        id: crypto.randomUUID(),
+        userId: '' as string,
+        tokenHash,
+        createdAt: new Date(),
+        lastUsedAt: new Date(),
+        expiresAt,
+      }
+      if (existing.length > 0) {
+        userId = existing[0]!.id
+        sessionValues.userId = userId
+        const now = new Date()
+        await app.batch([
+          app.db.update(users).set({
+            username: me.username,
+            globalName: me.global_name ?? null,
+            avatar: me.avatar ?? null,
+            updatedAt: now,
+          }).where(eq(users.id, userId)),
+          app.db.insert(sessions).values(sessionValues),
+        ])
+      } else {
+        userId = crypto.randomUUID()
+        sessionValues.userId = userId
+        const now = new Date()
+        await app.batch([
+          app.db.insert(users).values({
+            id: userId,
+            discordUserId: me.id,
+            username: me.username,
+            globalName: me.global_name ?? null,
+            avatar: me.avatar ?? null,
+            createdAt: now,
+            updatedAt: now,
+          }),
+          app.db.insert(sessions).values(sessionValues),
+        ])
+      }
+
+      setSessionCookie(c, sessionToken)
+      return c.redirect(safeR, 302)
+    })
+    .post('/api/auth/logout', async (c) => {
+      const token = getSessionToken(c)
+      if (token) {
+        const tokenHash = await hashToken(token)
+        await app.db.delete(sessions).where(eq(sessions.tokenHash, tokenHash))
+      }
+      clearSessionCookie(c)
+      return c.json({ ok: true })
+    })
+    .get('/api/auth/me', async (c) => {
+      const s = await loadSession(c, app, sessions, users)
+      if (!s) return c.json({ user: null })
+      return c.json({
+        user: {
+          userId: s.userId,
+          discordUserId: s.discordUserId,
+          username: s.username,
+          globalName: s.globalName,
+          avatar: s.avatar,
+          displayName: s.displayName,
+        },
+      })
+    })
     .post(
       '/api/events',
       zValidator('json', createEventBody, (result, c) => {
@@ -220,7 +338,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         }
       }),
       async (c) => {
-        // TODO(F-06): organizerDiscordId はセッションから取得する
+        const session = await requireSession(c, app, sessions, users)
         const body = c.req.valid('json')
 
         const candidateInputs = body.candidates.map((cand) => {
@@ -245,7 +363,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         await app.batch([
           app.db.insert(events).values({
             id: eventId,
-            organizerDiscordId: body.organizerDiscordId,
+            organizerDiscordId: session.discordUserId,
             title: body.title,
             description: body.description ?? null,
             defaultDurationMinutes: body.defaultDurationMinutes,
@@ -295,10 +413,11 @@ window.__vite_plugin_react_preamble_installed__ = true
         }
       }),
       async (c) => {
-        // TODO(F-06): organizer 以外は 403
+        const session = await requireSession(c, app, sessions, users)
         const id = c.req.param('id')
         const eventRow = await Event.findOne(id)
         if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+        if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
 
         const body = c.req.valid('json')
         const updateData: Partial<typeof eventRow> = {}
@@ -316,10 +435,11 @@ window.__vite_plugin_react_preamble_installed__ = true
       },
     )
     .delete('/api/events/:id', async (c) => {
-      // TODO(F-06): organizer 以外は 403
+      const session = await requireSession(c, app, sessions, users)
       const id = c.req.param('id')
       const eventRow = await Event.findOne(id)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+      if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
 
       const candidateRows = await Candidate.findMany({ where: { eventId: id }, limit: 10000 })
       const candidateIds = candidateRows.map((r) => r.id)
@@ -343,9 +463,13 @@ window.__vite_plugin_react_preamble_installed__ = true
         }
       }),
       async (c) => {
+        const session = await requireSession(c, app, sessions, users)
         const id = c.req.param('id')
         const eventRow = await Event.findOne(id)
         if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+        if (eventRow.organizerDiscordId !== session.discordUserId) {
+          return c.json({ error: 'Forbidden' }, 403)
+        }
 
         const body = c.req.valid('json')
         const startAt = new Date(body.startAt)
@@ -362,8 +486,15 @@ window.__vite_plugin_react_preamble_installed__ = true
       },
     )
     .delete('/api/events/:id/candidates/:candidateId', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
       const eventId = c.req.param('id')
       const candidateId = c.req.param('candidateId')
+
+      const eventRow = await Event.findOne(eventId)
+      if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+      if (eventRow.organizerDiscordId !== session.discordUserId) {
+        return c.json({ error: 'Forbidden' }, 403)
+      }
 
       const candidateRow = await Candidate.findOne(candidateId)
       if (!candidateRow || candidateRow.eventId !== eventId) {
@@ -394,8 +525,29 @@ window.__vite_plugin_react_preamble_installed__ = true
         const body = c.req.valid('json')
 
         if (body.kind === 'discord') {
-          // TODO(F-06): Discord セッション経由で participant を作成する
-          return c.json({ error: 'Discord participants require F-06 OAuth, not yet implemented' }, 501)
+          const session = await requireSession(c, app, sessions, users)
+          const existing = await Participant.findMany({
+            where: { eventId, discordUserId: session.discordUserId },
+            limit: 1,
+          })
+          const displayName = body.displayName
+          if (existing.length > 0) {
+            const updated = await Participant.update(existing[0]!.id, { displayName })
+            return c.json({ participant: Participant.toResponse(updated ?? existing[0]!) }, 200)
+          }
+          const newId = crypto.randomUUID()
+          await app.db.insert(participants).values({
+            id: newId,
+            eventId,
+            kind: 'discord',
+            discordUserId: session.discordUserId,
+            displayName,
+            guestTokenHash: null,
+            createdAt: new Date(),
+          })
+          const created = await Participant.findOne(newId)
+          if (!created) throw new HTTPException(500, { message: 'Internal Server Error' })
+          return c.json({ participant: Participant.toResponse(created) }, 201)
         }
 
         // kind === 'guest'
@@ -431,7 +583,7 @@ window.__vite_plugin_react_preamble_installed__ = true
           httpOnly: true,
           secure: true,
           sameSite: 'Lax',
-          path: '/',
+          path: `/api/events/${eventId}`,
           maxAge: 34560000,
         })
         return c.json({ participant: Participant.toResponse(created) }, 201)
@@ -453,9 +605,8 @@ window.__vite_plugin_react_preamble_installed__ = true
           return c.json({ error: 'Deadline passed' }, 403)
         }
 
-        // TODO(F-06): Discord 参加者の認証は Cookie ベースに置き換える
         const body = c.req.valid('json')
-        const participantRow = await resolveParticipantByCookie(c, eventId)
+        const participantRow = await resolveParticipantByAnyAuth(c, eventId)
 
         if (!participantRow) {
           return c.json({ error: 'Unauthorized' }, 401)
@@ -500,8 +651,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       const eventRow = await Event.findOne(eventId)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
 
-      // TODO(F-06): Discord 参加者の解決はセッションが入るまでサポートしない
-      const participantRow = await resolveParticipantByCookie(c, eventId)
+      const participantRow = await resolveParticipantByAnyAuth(c, eventId)
 
       if (!participantRow) {
         return c.json({ participant: null, votes: [] }, 200)
@@ -599,12 +749,13 @@ window.__vite_plugin_react_preamble_installed__ = true
         if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
       }),
       async (c) => {
+        const session = await requireSession(c, app, sessions, users)
         const eventId = c.req.param('id')
         const body = c.req.valid('json')
         const workerHost = new URL(c.req.url).host
         const result = await applyDecision(
           { app, Event, Candidate, Decision, workerHost },
-          { eventId, candidateId: body.candidateId, actorDiscordId: body.actorDiscordId },
+          { eventId, candidateId: body.candidateId, actorDiscordId: session.discordUserId },
         )
         c.executionCtx.waitUntil(
           notifyDecisionApplied(
@@ -624,108 +775,74 @@ window.__vite_plugin_react_preamble_installed__ = true
         )
       },
     )
-    .delete(
-      '/api/events/:id/decision',
-      zValidator('json', deleteDecisionBody, (result, c) => {
-        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
-      }),
-      async (c) => {
-        const eventId = c.req.param('id')
-        const body = c.req.valid('json')
-        const workerHost = new URL(c.req.url).host
-        const result = await cancelDecision(
-          { app, Event, Candidate, Decision, workerHost },
-          { eventId, actorDiscordId: body.actorDiscordId },
-        )
-        c.executionCtx.waitUntil(
-          notifyDecisionCancelled(
-            { app, Decision, workerHost },
-            c.env,
-            {
-              decision: result.decision,
-              event: result.event,
-              candidate: result.candidate,
-              participants: result.participants,
-            },
-          ),
-        )
-        return c.json({ decision: Decision.toResponse(result.decision), event: Event.toResponse(result.event) }, 200)
-      },
-    )
-    .get(
-      '/api/events/:id/permissions',
-      zValidator(
-        'query',
-        z.object({ actorDiscordId: z.string().regex(/^\d{17,20}$/) }),
-        (result, c) => {
-          if (!result.success)
-            return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
-        },
-      ),
-      async (c) => {
-        const id = c.req.param('id')
-        const { actorDiscordId } = c.req.valid('query')
-        const eventRow = await Event.findOne(id)
-        if (!eventRow) return c.json({ error: 'Not Found' }, 404)
-        const isOrganizer = eventRow.organizerDiscordId === actorDiscordId
-        return c.json({ isOrganizer })
-      },
-    )
-    .post(
-      '/api/subscriptions',
-      zValidator('json', subscriptionMutationBody, (result, c) => {
-        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
-      }),
-      async (c) => {
-        const body = c.req.valid('json')
-        const token = generateSubscriptionToken()
-        const id = crypto.randomUUID()
-        const createdAt = new Date()
-        await app.db.insert(calendar_subscriptions).values({
-          id, ownerDiscordId: body.actorDiscordId, token, scope: 'user-all', createdAt,
-        })
-        const row = await CalendarSubscription.findOne(id)
-        if (!row) throw new HTTPException(500, { message: 'Subscription creation failed' })
-        const webcalUrl = buildWebcalUrl(new URL(c.req.url).host, token)
-        return c.json({ subscription: CalendarSubscription.toResponse(row), webcalUrl }, 201)
-      },
-    )
-    .delete(
-      '/api/subscriptions/:id',
-      zValidator('json', subscriptionMutationBody, (result, c) => {
-        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
-      }),
-      async (c) => {
-        const id = c.req.param('id')
-        const body = c.req.valid('json')
-        const row = await CalendarSubscription.findOne(id)
-        if (!row || row.ownerDiscordId !== body.actorDiscordId) {
-          return c.json({ error: 'Not Found' }, 404)
-        }
-        await CalendarSubscription.delete(id)
-        return new Response(null, { status: 204 })
-      },
-    )
-    .post(
-      '/api/subscriptions/:id/regenerate',
-      zValidator('json', subscriptionMutationBody, (result, c) => {
-        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
-      }),
-      async (c) => {
-        const id = c.req.param('id')
-        const body = c.req.valid('json')
-        const row = await CalendarSubscription.findOne(id)
-        if (!row || row.ownerDiscordId !== body.actorDiscordId) {
-          return c.json({ error: 'Not Found' }, 404)
-        }
-        const newToken = generateSubscriptionToken()
-        await CalendarSubscription.update(id, { token: newToken })
-        const updated = await CalendarSubscription.findOne(id)
-        if (!updated) throw new HTTPException(500, { message: 'Regenerate failed' })
-        const webcalUrl = buildWebcalUrl(new URL(c.req.url).host, newToken)
-        return c.json({ subscription: CalendarSubscription.toResponse(updated), webcalUrl })
-      },
-    )
+    .delete('/api/events/:id/decision', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
+      const eventId = c.req.param('id')
+      const workerHost = new URL(c.req.url).host
+      const result = await cancelDecision(
+        { app, Event, Candidate, Decision, workerHost },
+        { eventId, actorDiscordId: session.discordUserId },
+      )
+      c.executionCtx.waitUntil(
+        notifyDecisionCancelled(
+          { app, Decision, workerHost },
+          c.env,
+          {
+            decision: result.decision,
+            event: result.event,
+            candidate: result.candidate,
+            participants: result.participants,
+          },
+        ),
+      )
+      return c.json({ decision: Decision.toResponse(result.decision), event: Event.toResponse(result.event) }, 200)
+    })
+    .get('/api/events/:id/permissions', async (c) => {
+      const id = c.req.param('id')
+      const eventRow = await Event.findOne(id)
+      if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+      const s = await loadSession(c, app, sessions, users)
+      if (!s) return c.json({ isOrganizer: false })
+      const isOrganizer = eventRow.organizerDiscordId === s.discordUserId
+      return c.json({ isOrganizer })
+    })
+    .post('/api/subscriptions', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
+      const token = generateSubscriptionToken()
+      const id = crypto.randomUUID()
+      const createdAt = new Date()
+      await app.db.insert(calendar_subscriptions).values({
+        id, ownerDiscordId: session.discordUserId, token, scope: 'user-all', createdAt,
+      })
+      const row = await CalendarSubscription.findOne(id)
+      if (!row) throw new HTTPException(500, { message: 'Subscription creation failed' })
+      const webcalUrl = buildWebcalUrl(new URL(c.req.url).host, token)
+      return c.json({ subscription: CalendarSubscription.toResponse(row), webcalUrl }, 201)
+    })
+    .delete('/api/subscriptions/:id', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
+      const id = c.req.param('id')
+      const row = await CalendarSubscription.findOne(id)
+      if (!row || row.ownerDiscordId !== session.discordUserId) {
+        return c.json({ error: 'Not Found' }, 404)
+      }
+      await CalendarSubscription.delete(id)
+      return new Response(null, { status: 204 })
+    })
+    .post('/api/subscriptions/:id/regenerate', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
+      const id = c.req.param('id')
+      const row = await CalendarSubscription.findOne(id)
+      if (!row || row.ownerDiscordId !== session.discordUserId) {
+        return c.json({ error: 'Not Found' }, 404)
+      }
+      const newToken = generateSubscriptionToken()
+      await CalendarSubscription.update(id, { token: newToken })
+      const updated = await CalendarSubscription.findOne(id)
+      if (!updated) throw new HTTPException(500, { message: 'Regenerate failed' })
+      const webcalUrl = buildWebcalUrl(new URL(c.req.url).host, newToken)
+      return c.json({ subscription: CalendarSubscription.toResponse(updated), webcalUrl })
+    })
     .get('/api/events/:id/decision.ics', async (c) => {
       const id = c.req.param('id')
       const eventRow = await Event.findOne(id)
