@@ -32,16 +32,15 @@ export function App() {
         <h1
           style={{
             margin: 0,
-            fontSize: 46,
+            fontSize: 'clamp(28px, 7vw, 46px)',
             fontWeight: 700,
             letterSpacing: '-0.03em',
             lineHeight: 1.14,
             color: 'var(--color-fg1)',
+            overflowWrap: 'anywhere',
           }}
         >
-          みんなの「行ける日」が、
-          <br />
-          すぐ見つかる。
+          みんなの「行ける日」が、すぐ見つかる。
         </h1>
         <p
           style={{
@@ -55,7 +54,7 @@ export function App() {
           候補日を出して、<b style={{ color: 'var(--color-fg1)' }}>○ △ ×</b>{' '}
           で答えるだけ。決まった日は Discord に通知され、Apple Calendar にも自動で追加されます。
         </p>
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 34 }}>
+        <div className="dm-hero-ctas">
           <Button
             variant="primary"
             size="lg"
