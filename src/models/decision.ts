@@ -9,4 +9,5 @@ export const decisionFields = {
   icsUid: t.string().min(1).readOnly(),
   icsSequence: t.integer().default(0),
   discordMessageId: t.string().optional(),
+  cancelledAt: t.timestamp().optional(),
 }

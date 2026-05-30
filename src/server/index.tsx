@@ -2,7 +2,7 @@
 import { d1Adapter, nanoka } from '@nanokajs/core'
 import type { RowType } from '@nanokajs/core'
 import type { BatchItem } from 'drizzle-orm/batch'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, and, isNull } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
 import { getCookie, setCookie } from 'hono/cookie'
 import { cors } from 'hono/cors'
@@ -11,6 +11,7 @@ import { Link, Script, ViteClient } from 'vite-ssr-components/hono'
 import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
 
+import { applyDecision, cancelDecision } from './services/decision'
 import { auditLogFields, auditLogTableName } from '../models/auditLog'
 import {
   calendarSubscriptionFields,
@@ -86,6 +87,15 @@ const registerParticipantBody = z.discriminatedUnion('kind', [
     discordUserId: z.string().regex(/^\d{17,20}$/),
   }),
 ])
+
+const createDecisionBody = z.object({
+  candidateId: z.string().uuid(),
+  actorDiscordId: z.string().regex(/^\d{17,20}$/), // TODO(F-06): セッション化
+})
+
+const deleteDecisionBody = z.object({
+  actorDiscordId: z.string().regex(/^\d{17,20}$/), // TODO(F-06): セッション化
+})
 
 const putVotesBody = z.object({
   votes: z
@@ -500,8 +510,12 @@ window.__vite_plugin_react_preamble_installed__ = true
         : []
 
       let decisionRow: { candidateId: string; decidedAt: Date } | null = null
-      if (eventRow.status === 'closed') {
-        const decisionRows = await Decision.findMany({ where: { eventId: id }, limit: 1 })
+      {
+        const decisionRows = await app.db
+          .select()
+          .from(decisions)
+          .where(and(eq(decisions.eventId, id), isNull(decisions.cancelledAt)))
+          .limit(1) as { candidateId: string; decidedAt: Date }[]
         if (decisionRows.length > 0) {
           decisionRow = { candidateId: decisionRows[0]!.candidateId, decidedAt: decisionRows[0]!.decidedAt }
         }
@@ -559,6 +573,59 @@ window.__vite_plugin_react_preamble_installed__ = true
           : null,
       })
     })
+    .post(
+      '/api/events/:id/decision',
+      zValidator('json', createDecisionBody, (result, c) => {
+        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+      }),
+      async (c) => {
+        const eventId = c.req.param('id')
+        const body = c.req.valid('json')
+        const workerHost = new URL(c.req.url).host
+        const result = await applyDecision(
+          { app, Event, Candidate, Decision, workerHost },
+          { eventId, candidateId: body.candidateId, actorDiscordId: body.actorDiscordId },
+        )
+        return c.json(
+          { decision: Decision.toResponse(result.decision), event: Event.toResponse(result.event) },
+          result.kind === 'created' ? 201 : 200,
+        )
+      },
+    )
+    .delete(
+      '/api/events/:id/decision',
+      zValidator('json', deleteDecisionBody, (result, c) => {
+        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+      }),
+      async (c) => {
+        const eventId = c.req.param('id')
+        const body = c.req.valid('json')
+        const result = await cancelDecision(
+          { app, Event, Candidate, Decision, workerHost: new URL(c.req.url).host },
+          { eventId, actorDiscordId: body.actorDiscordId },
+        )
+        return c.json({ decision: Decision.toResponse(result.decision), event: Event.toResponse(result.event) }, 200)
+      },
+    )
+    .get(
+      '/api/events/:id/permissions',
+      zValidator(
+        'query',
+        z.object({ actorDiscordId: z.string().regex(/^\d{17,20}$/) }),
+        (result, c) => {
+          if (!result.success)
+            return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        },
+      ),
+      async (c) => {
+        const id = c.req.param('id')
+        const { actorDiscordId } = c.req.valid('query')
+        const eventRow = await Event.findOne(id)
+        if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+        const isOrganizer = eventRow.organizerDiscordId === actorDiscordId
+        return c.json({ isOrganizer })
+      },
+    )
 
   app.notFound((c) => {
     if (c.req.path.startsWith('/api/')) {

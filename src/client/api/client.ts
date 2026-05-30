@@ -30,7 +30,6 @@ async function handleResponse<T>(res: ClientResponse<unknown>): Promise<T> {
 
 export interface EventResponse {
   id: string
-  organizerDiscordId: string
   title: string
   description?: string
   defaultDurationMinutes: number
@@ -190,5 +189,43 @@ export interface TallyResponse {
 
 export async function fetchTally(eventId: string): Promise<TallyResponse> {
   const res = await api.api.events[':id'].tally.$get({ param: { id: eventId } })
+  return handleResponse(res)
+}
+
+export interface DecisionResponse {
+  id: string
+  eventId: string
+  candidateId: string
+  decidedAt: string
+  icsUid: string
+  icsSequence: number
+  discordMessageId?: string
+  cancelledAt?: string | null
+}
+
+export async function createDecision(
+  eventId: string,
+  input: { candidateId: string; actorDiscordId: string },
+): Promise<{ decision: DecisionResponse; event: EventResponse }> {
+  const res = await api.api.events[':id'].decision.$post({ param: { id: eventId }, json: input })
+  return handleResponse(res)
+}
+
+export async function cancelDecision(
+  eventId: string,
+  input: { actorDiscordId: string },
+): Promise<{ decision: DecisionResponse; event: EventResponse }> {
+  const res = await api.api.events[':id'].decision.$delete({ param: { id: eventId }, json: input })
+  return handleResponse(res)
+}
+
+export async function fetchPermissions(
+  eventId: string,
+  actorDiscordId: string,
+): Promise<{ isOrganizer: boolean }> {
+  const res = await api.api.events[':id'].permissions.$get({
+    param: { id: eventId },
+    query: { actorDiscordId },
+  })
   return handleResponse(res)
 }

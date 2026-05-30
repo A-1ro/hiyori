@@ -49,6 +49,7 @@ export const decisions = sqliteTable('decisions', {
   icsUid: text('icsUid').notNull(),
   icsSequence: integer('icsSequence').notNull().default(0),
   discordMessageId: text('discordMessageId'),
+  cancelledAt: integer('cancelledAt', { mode: 'timestamp_ms' }),
 })
 
 export const calendar_subscriptions = sqliteTable('calendar_subscriptions', {

@@ -91,6 +91,16 @@ describe('GET /api/events/:id', () => {
     const body = (await res.json()) as { error: string }
     expect(body.error).toBe('Not Found')
   })
+
+  it('organizerDiscordId は serverOnly のためレスポンスに含まれない', async () => {
+    const createRes = await post('/api/events', validEventBase)
+    const created = (await createRes.json()) as { event: { id: string } }
+
+    const res = await jsonFetch(`/api/events/${created.event.id}`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { event: Record<string, unknown> }
+    expect(body.event.organizerDiscordId).toBeUndefined()
+  })
 })
 
 describe('PATCH /api/events/:id', () => {
@@ -119,10 +129,9 @@ describe('PATCH /api/events/:id', () => {
     expect(body.event.status).toBe(originalStatus)
   })
 
-  it('organizerDiscordId を送っても元の値が維持される', async () => {
+  it('organizerDiscordId を送っても無視される（patchEventBody にフィールドがない）', async () => {
     const createRes = await post('/api/events', validEventBase)
-    const created = (await createRes.json()) as { event: { id: string; organizerDiscordId: string } }
-    const originalOrgId = created.event.organizerDiscordId
+    const created = (await createRes.json()) as { event: { id: string } }
 
     // patchEventBody には organizerDiscordId がないので無視される
     const res = await patch(`/api/events/${created.event.id}`, {
@@ -130,8 +139,10 @@ describe('PATCH /api/events/:id', () => {
       organizerDiscordId: '99999999999999999',
     })
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { event: { organizerDiscordId: string } }
-    expect(body.event.organizerDiscordId).toBe(originalOrgId)
+    // organizerDiscordId は serverOnly のためレスポンスに含まれない
+    const body = (await res.json()) as { event: Record<string, unknown> }
+    expect(body.event.title).toBe('新タイトル')
+    expect(body.event.organizerDiscordId).toBeUndefined()
   })
 })
 
