@@ -204,6 +204,8 @@ flowchart LR
 
 nanoka の Model DSL で定義する想定。
 
+- **User**: id, discordUserId (unique), username, globalName (optional), avatar (optional), createdAt, updatedAt — Discord OAuth ログイン済みユーザーのプロフィールキャッシュ
+- **Session**: id, userId (FK→User), tokenHash (serverOnly, SHA-256), createdAt, lastUsedAt, expiresAt — 30日 TTL のセッション。tokenHash のみ保存、生トークンは保存しない
 - **Event**: id, organizerDiscordId, title, description, **defaultDurationMinutes (int, 必須)**, status (`open` / `closed` / `cancelled`), deadline, timezone, discordChannelId, createdAt
 - **Candidate**: id, eventId, startAt (UTC, 時刻必須), endAt (UTC, 時刻必須。書き込み時に `startAt + Event.defaultDurationMinutes` で補完、オーガナイザーが明示的に上書きした場合はその値を保存)
 - **Participant**: id, eventId, kind (`discord` / `guest`), discordUserId (nullable, kind=discord 時のみ), displayName (必須、ゲストでも名前なしの匿名は不可), guestToken (serverOnly, nullable, kind=guest 時のみ)

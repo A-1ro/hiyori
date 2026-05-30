@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
+import { loginAs } from './test-helpers'
 
 async function applyMigrations() {
   const migrations = inject('d1Migrations')
@@ -9,20 +10,19 @@ async function applyMigrations() {
 
 const BASE = 'http://example.com'
 
-async function post(path: string, body: unknown) {
+async function post(path: string, body: unknown, headers?: Record<string, string>) {
   const res = await SELF.fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(headers ?? {}) },
     body: JSON.stringify(body),
   })
   return res
 }
 
-async function del(path: string, body: unknown) {
+async function del(path: string, headers?: Record<string, string>) {
   const res = await SELF.fetch(`${BASE}${path}`, {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', ...(headers ?? {}) },
   })
   return res
 }
@@ -30,7 +30,6 @@ async function del(path: string, body: unknown) {
 const ORGANIZER_ID = '12345678901234567'
 
 const validEventBase = {
-  organizerDiscordId: ORGANIZER_ID,
   title: 'テストイベント',
   defaultDurationMinutes: 60,
   candidates: [
@@ -39,31 +38,33 @@ const validEventBase = {
   ],
 }
 
+let organizerCookie: string
+
 async function createEventAndDecide() {
-  const createRes = await post('/api/events', validEventBase)
+  const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
   const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
   const eventId = created.event.id
   const candidateId = created.candidates[0]!.id
 
-  // DB に直接 participant を挿入（kind='discord' は 501）
+  // DB に直接 participant を挿入（Discord 参加者）
   const db = (env as { DB: D1Database }).DB
   await db.prepare(
     `INSERT INTO participants (id, eventId, kind, discordUserId, displayName, createdAt) VALUES (?, ?, ?, ?, ?, ?)`
   ).bind(crypto.randomUUID(), eventId, 'discord', ORGANIZER_ID, 'Owner', Date.now()).run()
 
-  await post(`/api/events/${eventId}/decision`, {
-    candidateId,
-    actorDiscordId: ORGANIZER_ID,
-  })
+  await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
 
   return { eventId, candidateId }
 }
 
 describe('Webcal feed', () => {
-  beforeEach(applyMigrations)
+  beforeEach(async () => {
+    await applyMigrations()
+    organizerCookie = await loginAs(ORGANIZER_ID)
+  })
 
   it('W1: POST /api/subscriptions → 201 + webcalUrl + token 漏洩なし', async () => {
-    const res = await post('/api/subscriptions', { actorDiscordId: ORGANIZER_ID })
+    const res = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
     const body = (await res.json()) as Record<string, unknown>
     expect(body.webcalUrl).toMatch(/^webcal:\/\/.*\/feeds\/[0-9a-f]{64}\.ics$/)
@@ -71,7 +72,7 @@ describe('Webcal feed', () => {
   })
 
   it('W2: GET /feeds/:token.ics 確定無し → 200 + 空 VCALENDAR', async () => {
-    const subRes = await post('/api/subscriptions', { actorDiscordId: ORGANIZER_ID })
+    const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
     const subBody = (await subRes.json()) as { webcalUrl: string }
     const webcalUrl = subBody.webcalUrl
     // webcal:// → http:// に変換してフェッチ
@@ -88,7 +89,7 @@ describe('Webcal feed', () => {
   it('W3: GET 確定あり → 200 + VEVENT + ETag/Cache-Control', async () => {
     await createEventAndDecide()
 
-    const subRes = await post('/api/subscriptions', { actorDiscordId: ORGANIZER_ID })
+    const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
     const subBody = (await subRes.json()) as { webcalUrl: string }
     const httpUrl = subBody.webcalUrl.replace('webcal://', 'http://')
 
@@ -106,7 +107,7 @@ describe('Webcal feed', () => {
   it('W4: If-None-Match → 304', async () => {
     await createEventAndDecide()
 
-    const subRes = await post('/api/subscriptions', { actorDiscordId: ORGANIZER_ID })
+    const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
     const subBody = (await subRes.json()) as { webcalUrl: string }
     const httpUrl = subBody.webcalUrl.replace('webcal://', 'http://')
 
@@ -133,17 +134,18 @@ describe('Webcal feed', () => {
   })
 
   it('W6: DELETE owner 不一致 → 404、一致 → 204 → token 失効', async () => {
-    const subRes = await post('/api/subscriptions', { actorDiscordId: ORGANIZER_ID })
+    const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
     const subBody = (await subRes.json()) as { subscription: { id: string }; webcalUrl: string }
     const subId = subBody.subscription.id
     const httpUrl = subBody.webcalUrl.replace('webcal://', 'http://')
 
     // 他人で DELETE → 404
-    const delRes1 = await del(`/api/subscriptions/${subId}`, { actorDiscordId: '98765432109876543' })
+    const otherCookie = await loginAs('98765432109876543')
+    const delRes1 = await del(`/api/subscriptions/${subId}`, { Cookie: otherCookie })
     expect(delRes1.status).toBe(404)
 
     // owner で DELETE → 204
-    const delRes2 = await del(`/api/subscriptions/${subId}`, { actorDiscordId: ORGANIZER_ID })
+    const delRes2 = await del(`/api/subscriptions/${subId}`, { Cookie: organizerCookie })
     expect(delRes2.status).toBe(204)
 
     // 削除後 GET → 404
@@ -152,12 +154,12 @@ describe('Webcal feed', () => {
   })
 
   it('W7: regenerate → 旧 token 失効 + 新 token で 200', async () => {
-    const subRes = await post('/api/subscriptions', { actorDiscordId: ORGANIZER_ID })
+    const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
     const subBody = (await subRes.json()) as { subscription: { id: string }; webcalUrl: string }
     const subId = subBody.subscription.id
     const oldHttpUrl = subBody.webcalUrl.replace('webcal://', 'http://')
 
-    const regenRes = await post(`/api/subscriptions/${subId}/regenerate`, { actorDiscordId: ORGANIZER_ID })
+    const regenRes = await post(`/api/subscriptions/${subId}/regenerate`, {}, { Cookie: organizerCookie })
     expect(regenRes.status).toBe(200)
     const regenBody = (await regenRes.json()) as { webcalUrl: string }
     const newHttpUrl = regenBody.webcalUrl.replace('webcal://', 'http://')

@@ -29,25 +29,6 @@ const CHOICE_COLOR: Record<string, string> = {
   no: 'var(--color-no-ink)',
 }
 
-function getActorDiscordId(): string | null {
-  return localStorage.getItem('hiyori_actor_discord_id')
-}
-
-function setActorDiscordId(id: string) {
-  localStorage.setItem('hiyori_actor_discord_id', id)
-}
-// 注意: localStorage に保存しているのは「actor 選択」であって「認証」ではない。
-// F-06 で OAuth が入ったら、accessToken / refreshToken は localStorage に置かず、
-// HttpOnly Cookie のみで管理すること。
-
-function promptActorDiscordId(): string | null {
-  const v = window.prompt('オーガナイザーとして操作するため Discord ユーザー ID を入力してください（17-20桁）')
-  if (v && /^\d{17,20}$/.test(v)) {
-    setActorDiscordId(v)
-    return v
-  }
-  return null
-}
 
 type SortBy = 'startAt' | 'scoreDesc'
 
@@ -71,18 +52,16 @@ export function EventTallyPage() {
 
   const myParticipantId = myData?.participant?.id ?? null
 
-  // TODO(F-06): organizer 判定はセッションに置き換える
-  const actorDiscordId = getActorDiscordId()
   const { data: permissionsData } = useQuery({
-    queryKey: ['permissions', id, actorDiscordId],
-    queryFn: () => fetchPermissions(id!, actorDiscordId!),
-    enabled: !!id && !!actorDiscordId,
+    queryKey: ['permissions', id],
+    queryFn: () => fetchPermissions(id!),
+    enabled: !!id,
   })
   const isOrganizer = permissionsData?.isOrganizer ?? false
 
   const createDecisionMutation = useMutation({
-    mutationFn: ({ candidateId, actorId }: { candidateId: string; actorId: string }) =>
-      createDecision(id!, { candidateId, actorDiscordId: actorId }),
+    mutationFn: ({ candidateId }: { candidateId: string }) =>
+      createDecision(id!, { candidateId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tally', id] })
       queryClient.invalidateQueries({ queryKey: ['event', id] })
@@ -90,7 +69,7 @@ export function EventTallyPage() {
   })
 
   const cancelDecisionMutation = useMutation({
-    mutationFn: (actorId: string) => cancelDecision(id!, { actorDiscordId: actorId }),
+    mutationFn: () => cancelDecision(id!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tally', id] })
       queryClient.invalidateQueries({ queryKey: ['event', id] })
@@ -221,22 +200,12 @@ export function EventTallyPage() {
   }
 
   function handleConfirm(candidateId: string) {
-    let actorId = getActorDiscordId()
-    if (!actorId) {
-      actorId = promptActorDiscordId()
-      if (!actorId) return
-    }
-    createDecisionMutation.mutate({ candidateId, actorId })
+    createDecisionMutation.mutate({ candidateId })
   }
 
   function handleCancel() {
     if (!confirm('確定を解除しますか？参加者のカレンダーから予定が削除される予定です。')) return
-    let actorId = getActorDiscordId()
-    if (!actorId) {
-      actorId = promptActorDiscordId()
-      if (!actorId) return
-    }
-    cancelDecisionMutation.mutate(actorId)
+    cancelDecisionMutation.mutate()
   }
 
   return (

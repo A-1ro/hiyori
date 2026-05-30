@@ -13,6 +13,7 @@ import {
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
 import { Button, Icon } from '../components/primitives'
+import { useSession, loginUrl } from '../auth/useSession'
 
 type Choice = 'yes' | 'maybe' | 'no'
 
@@ -39,6 +40,8 @@ export function EventVotePage() {
   const [guestNameInput, setGuestNameInput] = useState('')
   const [registerError, setRegisterError] = useState<string | undefined>()
   const [localVotes, setLocalVotes] = useState<Record<string, { choice: Choice; comment: string }>>({})
+  const { data: sessionData } = useSession()
+  const sessionUser = sessionData?.user ?? null
 
   const { data: eventData, isLoading: eventLoading } = useQuery({
     queryKey: ['event', id],
@@ -63,8 +66,12 @@ export function EventVotePage() {
   }, [myData])
 
   const registerMutation = useMutation({
-    mutationFn: () =>
-      registerParticipant(id!, { kind: 'guest', displayName: guestNameInput }),
+    mutationFn: (kind: 'guest' | 'discord') => {
+      const displayName = kind === 'discord'
+        ? (sessionUser?.displayName ?? guestNameInput)
+        : guestNameInput
+      return registerParticipant(id!, { kind, displayName })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myVotes', id] })
       setRegisterError(undefined)
@@ -197,31 +204,66 @@ export function EventVotePage() {
               marginBottom: 24,
             }}
           >
-            <h2 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700 }}>参加者名を入力</h2>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                value={guestNameInput}
-                onChange={(e) => setGuestNameInput(e.target.value)}
-                placeholder="表示名（1〜80文字）"
-                style={{
-                  flex: 1,
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--color-border)',
-                  background: 'var(--color-canvas)',
-                  color: 'var(--color-fg1)',
-                  fontSize: 14,
-                }}
-              />
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => registerMutation.mutate()}
-                disabled={registerMutation.isPending || guestNameInput.trim().length === 0}
-              >
-                登録
-              </Button>
+            <h2 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700 }}>参加方法を選択</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>Discord アカウントで参加</p>
+                {sessionUser ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => registerMutation.mutate('discord')}
+                    disabled={registerMutation.isPending}
+                  >
+                    {sessionUser.displayName} として参加
+                  </Button>
+                ) : (
+                  <a
+                    href={loginUrl(window.location.pathname)}
+                    style={{
+                      display: 'inline-block',
+                      padding: '8px 16px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--color-blurple)',
+                      color: '#fff',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    Discord でログイン
+                  </a>
+                )}
+              </div>
+              <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />
+              <div>
+                <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>ゲストとして参加</p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    value={guestNameInput}
+                    onChange={(e) => setGuestNameInput(e.target.value)}
+                    placeholder="表示名（1〜80文字）"
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-border)',
+                      background: 'var(--color-canvas)',
+                      color: 'var(--color-fg1)',
+                      fontSize: 14,
+                    }}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => registerMutation.mutate('guest')}
+                    disabled={registerMutation.isPending || guestNameInput.trim().length === 0}
+                  >
+                    登録
+                  </Button>
+                </div>
+              </div>
             </div>
             {registerError && (
               <p style={{ marginTop: 8, fontSize: 13, color: 'var(--color-no-ink)' }}>{registerError}</p>

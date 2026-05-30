@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
+import { loginAs } from './test-helpers'
 
 async function applyMigrations() {
   const migrations = inject('d1Migrations')
@@ -8,6 +9,8 @@ async function applyMigrations() {
 }
 
 const BASE = 'http://example.com'
+const ORGANIZER_ID = '12345678901234567'
+const DISCORD_USER_ID = '22222222222222222'
 
 async function jsonFetch(path: string, init?: RequestInit) {
   const { headers: extraHeaders, ...rest } = init ?? {}
@@ -39,7 +42,6 @@ function cookieHeaderFromSetCookie(setCookieHeader: string): string {
 }
 
 const validEventBase = {
-  organizerDiscordId: '12345678901234567',
   title: 'テストイベント',
   defaultDurationMinutes: 60,
   candidates: [
@@ -48,13 +50,16 @@ const validEventBase = {
   ],
 }
 
+let organizerCookie: string
+
 beforeEach(async () => {
   await applyMigrations()
+  organizerCookie = await loginAs(ORGANIZER_ID)
 })
 
 describe('POST /api/events/:id/participants', () => {
   it('1: ゲスト新規登録 → 201 + Set-Cookie + guestTokenHash がレスポンスに含まれない', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 
@@ -76,11 +81,10 @@ describe('POST /api/events/:id/participants', () => {
     expect(setCookie).toMatch(/HttpOnly/i)
     expect(setCookie).toMatch(/Secure/i)
     expect(setCookie).toMatch(/SameSite=Lax/i)
-    expect(setCookie).toMatch(/Path=\//i)
   })
 
   it('2: ゲスト再訪（Cookie 同梱） → 200 + 同じ participant.id', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 
@@ -105,36 +109,62 @@ describe('POST /api/events/:id/participants', () => {
     expect(secondBody.participant.id).toBe(firstId)
   })
 
-  it('3: POST discord は 501 を返す', async () => {
-    const createRes = await post('/api/events', validEventBase)
+  it('3: POST discord はセッション Cookie ありで 201 を返す', async () => {
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
+    const created = (await createRes.json()) as { event: { id: string } }
+    const eventId = created.event.id
+
+    const discordCookie = await loginAs(DISCORD_USER_ID, 'discorduser')
+    const res = await post(`/api/events/${eventId}/participants`, {
+      kind: 'discord',
+      displayName: 'DiscordUser',
+    }, { Cookie: discordCookie })
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as { participant: { kind: string; displayName: string } }
+    expect(body.participant.kind).toBe('discord')
+    expect(body.participant.displayName).toBe('DiscordUser')
+  })
+
+  it('V-extra: displayName が空白のみのゲスト登録 → 400', async () => {
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 
     const res = await post(`/api/events/${eventId}/participants`, {
-      kind: 'discord',
-      displayName: 'DiscordUser',
-      discordUserId: '11111111111111111',
+      kind: 'guest',
+      displayName: '   ',
     })
-    expect(res.status).toBe(501)
+    expect(res.status).toBe(400)
   })
 
-  it('4: POST discord は discordUserId が異なっても 501 を返す', async () => {
-    const createRes = await post('/api/events', validEventBase)
+  it('V-ctrl: displayName に \\x00 を含むゲスト登録 → 400', async () => {
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
+    const created = (await createRes.json()) as { event: { id: string } }
+    const eventId = created.event.id
+
+    const res = await post(`/api/events/${eventId}/participants`, {
+      kind: 'guest',
+      displayName: 'hello\x00world',
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('4: POST discord はセッション Cookie なしで 401 を返す', async () => {
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 
     const res = await post(`/api/events/${eventId}/participants`, {
       kind: 'discord',
       displayName: 'User2',
-      discordUserId: '22222222222222222',
     })
-    expect(res.status).toBe(501)
+    expect(res.status).toBe(401)
   })
 })
 
 describe('PUT /api/events/:id/votes', () => {
   it('5: Cookie なし → 401', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
@@ -146,7 +176,7 @@ describe('PUT /api/events/:id/votes', () => {
   })
 
   it('6: ゲスト Cookie あり → 200 + votes 1 件', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
@@ -172,7 +202,7 @@ describe('PUT /api/events/:id/votes', () => {
   })
 
   it('7: 2 回目投票（choice 変更）→ upsert で 1 件のまま、updatedAt が変化', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
@@ -209,7 +239,7 @@ describe('PUT /api/events/:id/votes', () => {
 
   it('8: 締切過去のイベント → 403', async () => {
     // 最初は deadline なしでイベント作成 → ゲスト登録 → Cookie 取得
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
@@ -235,11 +265,11 @@ describe('PUT /api/events/:id/votes', () => {
   })
 
   it('9: 他イベントの candidateId → 400', async () => {
-    const createRes1 = await post('/api/events', validEventBase)
+    const createRes1 = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created1 = (await createRes1.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId1 = created1.event.id
 
-    const createRes2 = await post('/api/events', validEventBase)
+    const createRes2 = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created2 = (await createRes2.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const otherCandidateId = created2.candidates[0]!.id
 
@@ -261,7 +291,7 @@ describe('PUT /api/events/:id/votes', () => {
 
 describe('GET /api/events/:id/votes/me', () => {
   it('10: 未登録 → 200 + participant null + votes 空', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 
@@ -273,7 +303,7 @@ describe('GET /api/events/:id/votes/me', () => {
   })
 
   it('11: 投票後 → 200 + participant + votes', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id

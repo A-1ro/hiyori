@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
 import { formatICalDateTime, escapeICalText, foldICalLine, eventToVEvent, wrapInVCalendar } from '../ics/serialize'
+import { loginAs } from './test-helpers'
 
 async function applyMigrations() {
   const migrations = inject('d1Migrations')
@@ -10,10 +11,10 @@ async function applyMigrations() {
 
 const BASE = 'http://example.com'
 
-async function post(path: string, body: unknown) {
+async function post(path: string, body: unknown, headers?: Record<string, string>) {
   const res = await SELF.fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(headers ?? {}) },
     body: JSON.stringify(body),
   })
   return res
@@ -22,7 +23,6 @@ async function post(path: string, body: unknown) {
 const ORGANIZER_ID = '12345678901234567'
 
 const validEventBase = {
-  organizerDiscordId: ORGANIZER_ID,
   title: 'テストイベント',
   defaultDurationMinutes: 60,
   candidates: [
@@ -30,8 +30,11 @@ const validEventBase = {
   ],
 }
 
+let organizerCookie: string
+
 beforeEach(async () => {
   await applyMigrations()
+  organizerCookie = await loginAs(ORGANIZER_ID)
 })
 
 describe('serialize.ts', () => {
@@ -98,7 +101,7 @@ describe('serialize.ts', () => {
 
 describe('GET /api/events/:id/decision.ics', () => {
   it('T6: 未確定 (Decision 無し) → 404', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }
     const eventId = created.event.id
 
@@ -109,15 +112,12 @@ describe('GET /api/events/:id/decision.ics', () => {
   })
 
   it('T7: 確定済み → 200 + 正しい Content-Type/Disposition + body', async () => {
-    const createRes = await post('/api/events', validEventBase)
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
 
-    await post(`/api/events/${eventId}/decision`, {
-      candidateId,
-      actorDiscordId: ORGANIZER_ID,
-    })
+    await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
 
     const res = await SELF.fetch(`${BASE}/api/events/${eventId}/decision.ics`)
     expect(res.status).toBe(200)

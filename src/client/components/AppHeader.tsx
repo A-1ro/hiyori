@@ -1,7 +1,14 @@
 import type { ReactNode } from 'react'
-import { Logo } from './primitives'
+import { useLocation } from 'react-router'
+import { Logo, Button } from './primitives'
+import { useSession, useLogout, loginUrl } from '../auth/useSession'
 
 export function AppHeader({ right, onHome }: { right?: ReactNode; onHome?: () => void }) {
+  const { data: sessionData } = useSession()
+  const logout = useLogout()
+  const location = useLocation()
+  const user = sessionData?.user ?? null
+
   return (
     <header
       style={{
@@ -22,7 +29,34 @@ export function AppHeader({ right, onHome }: { right?: ReactNode; onHome?: () =>
       <div style={{ cursor: onHome ? 'pointer' : 'default' }} onClick={onHome}>
         <Logo size={28} />
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>{right}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {right}
+        {user ? (
+          <>
+            <span style={{ fontSize: 13, color: 'var(--color-fg2)' }}>{user.displayName}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => logout.mutate()}
+              disabled={logout.isPending}
+            >
+              ログアウト
+            </Button>
+          </>
+        ) : (
+          <a
+            href={loginUrl(location.pathname)}
+            style={{
+              fontSize: 13,
+              color: 'var(--color-blurple-ink)',
+              textDecoration: 'none',
+              fontWeight: 600,
+            }}
+          >
+            Discord でログイン
+          </a>
+        )}
+      </div>
     </header>
   )
 }

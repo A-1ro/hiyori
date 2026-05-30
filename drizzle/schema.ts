@@ -68,3 +68,22 @@ export const audit_logs = sqliteTable('audit_logs', {
   payload: text('payload', { mode: 'json' }).$type<unknown>().notNull(),
   createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
 })
+
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey().notNull(),
+  discordUserId: text('discordUserId').notNull(),
+  username: text('username').notNull(),
+  globalName: text('globalName'),
+  avatar: text('avatar'),
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updatedAt', { mode: 'timestamp_ms' }).notNull(),
+})
+
+export const sessions = sqliteTable('sessions', {
+  id: text('id').primaryKey().notNull(),
+  userId: text('userId').notNull(),
+  tokenHash: text('tokenHash').notNull(),
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
+  lastUsedAt: integer('lastUsedAt', { mode: 'timestamp_ms' }).notNull(),
+  expiresAt: integer('expiresAt', { mode: 'timestamp_ms' }).notNull(),
+})
