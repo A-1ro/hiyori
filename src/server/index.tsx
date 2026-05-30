@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
 
 import { applyDecision, cancelDecision } from './services/decision'
+import { eventToVEvent, wrapInVCalendar } from './ics/serialize'
 import { notifyDecisionApplied, notifyDecisionCancelled } from './discord/notifier'
 import { verifyDiscordSignature } from './discord/verify'
 import { auditLogFields, auditLogTableName } from '../models/auditLog'
@@ -656,6 +657,45 @@ window.__vite_plugin_react_preamble_installed__ = true
         return c.json({ isOrganizer })
       },
     )
+    .get('/api/events/:id/decision.ics', async (c) => {
+      const id = c.req.param('id')
+      const eventRow = await Event.findOne(id)
+      if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+
+      const decisionRows = await app.db.select().from(decisions)
+        .where(eq(decisions.eventId, id)).limit(1)
+      if (decisionRows.length === 0) return c.json({ error: 'Not Found' }, 404)
+      const decisionRow = decisionRows[0]!
+
+      const candidateRow = await Candidate.findOne(decisionRow.candidateId)
+      if (!candidateRow) throw new HTTPException(500, { message: 'Candidate not found for decision' })
+
+      const body = wrapInVCalendar([
+        eventToVEvent({
+          event: { id: eventRow.id, title: eventRow.title, description: eventRow.description },
+          decision: {
+            icsUid: decisionRow.icsUid,
+            icsSequence: decisionRow.icsSequence,
+            decidedAt: decisionRow.decidedAt,
+            cancelledAt: decisionRow.cancelledAt,
+          },
+          candidate: { startAt: candidateRow.startAt, endAt: candidateRow.endAt },
+        }),
+      ])
+
+      const safeTitle = eventRow.title
+        .replace(/[^A-Za-z0-9_\-]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .substring(0, 100)
+      const filename = safeTitle && safeTitle.length > 0 ? `${safeTitle}.ics` : `event-${id}.ics`
+
+      return c.body(body, 200, {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'no-store',
+      })
+    })
     .post('/api/discord/interactions', async (c) => {
       const publicKey = c.env.DISCORD_PUBLIC_KEY
       if (!publicKey) return c.json({ error: 'Discord not configured' }, 503)

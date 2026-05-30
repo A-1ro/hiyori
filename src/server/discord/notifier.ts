@@ -40,8 +40,7 @@ export function buildDecisionEmbed(args: {
               type: 2,
               style: 5,
               label: 'Apple Calendar に追加',
-              // TODO(F-07): F-07 実装後にエンドポイント整合を確認
-              url: `https://${workerHost}/api/events/${event.id}.ics`,
+              url: `https://${workerHost}/api/events/${event.id}/decision.ics`,
             },
           ],
         },
