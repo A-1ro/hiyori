@@ -483,6 +483,82 @@ window.__vite_plugin_react_preamble_installed__ = true
         votes: Vote.toResponseMany(voteRows),
       }, 200)
     })
+    .get('/api/events/:id/tally', async (c) => {
+      const id = c.req.param('id')
+      const eventRow = await Event.findOne(id)
+      if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+
+      const [candidateRows, participantRows] = await Promise.all([
+        Candidate.findMany({ where: { eventId: id }, orderBy: { column: 'startAt', direction: 'asc' }, limit: 1000 }),
+        Participant.findMany({ where: { eventId: id }, orderBy: { column: 'createdAt', direction: 'asc' }, limit: 1000 }),
+      ])
+
+      const candidateIds = candidateRows.map((r) => r.id)
+      // nanoka の findMany が WHERE IN をサポートしないため drizzle 直クエリ
+      const voteRows = candidateIds.length > 0
+        ? await app.db.select().from(votes).where(inArray(votes.candidateId, candidateIds))
+        : []
+
+      let decisionRow: { candidateId: string; decidedAt: Date } | null = null
+      if (eventRow.status === 'closed') {
+        const decisionRows = await Decision.findMany({ where: { eventId: id }, limit: 1 })
+        if (decisionRows.length > 0) {
+          decisionRow = { candidateId: decisionRows[0]!.candidateId, decidedAt: decisionRows[0]!.decidedAt }
+        }
+      }
+
+      const SCORE: Record<string, number> = { yes: 2, maybe: 1, no: 0 }
+
+      type VotesByParticipantId = Record<string, { choice: 'yes' | 'maybe' | 'no'; comment: string | null; updatedAt: string }>
+      const votesByCandidateId = new Map<string, VotesByParticipantId>()
+      for (const v of voteRows) {
+        if (!votesByCandidateId.has(v.candidateId)) {
+          votesByCandidateId.set(v.candidateId, {})
+        }
+        votesByCandidateId.get(v.candidateId)![v.participantId] = {
+          choice: v.choice as 'yes' | 'maybe' | 'no',
+          comment: v.comment ?? null,
+          updatedAt: v.updatedAt.toISOString(),
+        }
+      }
+
+      const tallyEvent = {
+        id: eventRow.id,
+        title: eventRow.title,
+        status: eventRow.status,
+        ...(eventRow.deadline ? { deadline: eventRow.deadline.toISOString() } : {}),
+        timezone: eventRow.timezone,
+        defaultDurationMinutes: eventRow.defaultDurationMinutes,
+      }
+
+      const tallyCandidates = candidateRows.map((cand) => {
+        const byParticipant = votesByCandidateId.get(cand.id) ?? {}
+        const counts = { yes: 0, maybe: 0, no: 0 }
+        let totalScore = 0
+        for (const v of Object.values(byParticipant)) {
+          const choice = v.choice as 'yes' | 'maybe' | 'no'
+          counts[choice]++
+          totalScore += SCORE[choice] ?? 0
+        }
+        return {
+          id: cand.id,
+          startAt: cand.startAt.toISOString(),
+          endAt: cand.endAt.toISOString(),
+          totalScore,
+          counts,
+          votesByParticipantId: byParticipant,
+        }
+      })
+
+      return c.json({
+        event: tallyEvent,
+        participants: Participant.toResponseMany(participantRows),
+        candidates: tallyCandidates,
+        decision: decisionRow
+          ? { candidateId: decisionRow.candidateId, decidedAt: decisionRow.decidedAt.toISOString() }
+          : null,
+      })
+    })
 
   app.notFound((c) => {
     if (c.req.path.startsWith('/api/')) {
