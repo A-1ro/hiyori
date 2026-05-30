@@ -1,0 +1,23 @@
+// Wrangler configuration. See https://developers.cloudflare.com/workers/wrangler/configuration/
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "day-matcher",
+  "main": "src/server/index.tsx",
+  "compatibility_date": "2026-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "day-matcher",
+      // ローカル開発では未使用。`wrangler d1 create day-matcher` 後の id に差し替える
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "drizzle/migrations"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "development"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
