@@ -1,8 +1,14 @@
+import { useNavigate } from 'react-router'
 import { AppHeader } from '../components/AppHeader'
 import { MiniMatrix } from '../components/MiniMatrix'
 import { Badge, Button, DiscordMark, Icon } from '../components/primitives'
 
+function loginHref(returnTo: string): string {
+  return `/api/auth/discord?returnTo=${encodeURIComponent(returnTo)}`
+}
+
 export function LandingScreen() {
+  const navigate = useNavigate()
   return (
     <div>
       <AppHeader
@@ -11,6 +17,9 @@ export function LandingScreen() {
             variant="ghost"
             size="sm"
             icon={<DiscordMark size={17} color="var(--color-blurple)" />}
+            onClick={() => {
+              window.location.href = loginHref('/')
+            }}
           >
             ログイン
           </Button>
@@ -59,10 +68,18 @@ export function LandingScreen() {
             variant="primary"
             size="lg"
             iconRight={<Icon name="arrow-right" size={18} color="#fff" />}
+            onClick={() => navigate('/events/new')}
           >
             日程調整をつくる
           </Button>
-          <Button variant="discord" size="lg" icon={<DiscordMark size={19} />}>
+          <Button
+            variant="discord"
+            size="lg"
+            icon={<DiscordMark size={19} />}
+            onClick={() => {
+              window.location.href = loginHref('/')
+            }}
+          >
             Discord でログイン
           </Button>
         </div>
