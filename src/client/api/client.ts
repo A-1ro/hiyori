@@ -229,3 +229,26 @@ export async function fetchPermissions(
   })
   return handleResponse(res)
 }
+
+export interface SubscriptionResponse {
+  id: string
+  ownerDiscordId: string
+  scope: string
+  createdAt: string
+  lastAccessedAt?: string | null
+}
+
+export async function createSubscription(input: { actorDiscordId: string }) {
+  const res = await api.api.subscriptions.$post({ json: input })
+  return handleResponse<{ subscription: SubscriptionResponse; webcalUrl: string }>(res)
+}
+
+export async function deleteSubscription(id: string, input: { actorDiscordId: string }) {
+  const res = await api.api.subscriptions[':id'].$delete({ param: { id }, json: input })
+  return handleResponse<void>(res)
+}
+
+export async function regenerateSubscription(id: string, input: { actorDiscordId: string }) {
+  const res = await api.api.subscriptions[':id'].regenerate.$post({ param: { id }, json: input })
+  return handleResponse<{ subscription: SubscriptionResponse; webcalUrl: string }>(res)
+}

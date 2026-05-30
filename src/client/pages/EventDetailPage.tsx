@@ -8,6 +8,7 @@ import {
   deleteEvent,
   deleteCandidate,
   fetchTally,
+  createSubscription,
   ApiError,
   type CandidateResponse,
 } from '../api/client'
@@ -203,6 +204,27 @@ export function EventDetailPage() {
             disabled={deleteMutation.isPending}
           >
             削除
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Icon name="calendar" size={14} />}
+            onClick={async () => {
+              let actor = localStorage.getItem('hiyori_actor_discord_id')
+              if (!actor) {
+                actor = window.prompt('Discord ユーザー ID を入力してください (17-20 桁)') || ''
+                if (!/^\d{17,20}$/.test(actor)) return
+                localStorage.setItem('hiyori_actor_discord_id', actor)
+              }
+              try {
+                const { webcalUrl } = await createSubscription({ actorDiscordId: actor })
+                window.location.href = webcalUrl
+              } catch {
+                alert('購読の作成に失敗しました')
+              }
+            }}
+          >
+            Apple Calendar に購読
           </Button>
         </div>
 

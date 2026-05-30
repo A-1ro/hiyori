@@ -25,7 +25,7 @@ import { decisionFields, decisionTableName } from '../models/decision'
 import { eventFields, eventTableName } from '../models/event'
 import { participantFields, participantTableName } from '../models/participant'
 import { voteFields, voteTableName } from '../models/vote'
-import { audit_logs, candidates, decisions, events, participants, votes } from '../../drizzle/schema'
+import { audit_logs, calendar_subscriptions, candidates, decisions, events, participants, votes } from '../../drizzle/schema'
 
 export interface Env {
   DB: D1Database
@@ -75,6 +75,16 @@ function generateGuestToken(): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+function generateSubscriptionToken(): string {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function buildWebcalUrl(host: string, token: string): string {
+  return `webcal://${host}/feeds/${token}.ics`
+}
+
 async function hashGuestToken(token: string): Promise<string> {
   const encoded = new TextEncoder().encode(token)
   const hashBuffer = await crypto.subtle.digest('SHA-256', encoded)
@@ -93,6 +103,10 @@ const registerParticipantBody = z.discriminatedUnion('kind', [
     discordUserId: z.string().regex(/^\d{17,20}$/),
   }),
 ])
+
+const subscriptionMutationBody = z.object({
+  actorDiscordId: z.string().regex(/^\d{17,20}$/),
+})
 
 const createDecisionBody = z.object({
   candidateId: z.string().uuid(),
@@ -130,7 +144,7 @@ const buildApp = (env: Env) => {
   const Participant = app.model(participantTableName, participantFields)
   const Vote = app.model(voteTableName, voteFields)
   const Decision = app.model(decisionTableName, decisionFields)
-  app.model(calendarSubscriptionTableName, calendarSubscriptionFields)
+  const CalendarSubscription = app.model(calendarSubscriptionTableName, calendarSubscriptionFields)
   app.model(auditLogTableName, auditLogFields)
 
   // M2: /api/* に同一オリジンのみ許可する CORS チェック
@@ -657,6 +671,61 @@ window.__vite_plugin_react_preamble_installed__ = true
         return c.json({ isOrganizer })
       },
     )
+    .post(
+      '/api/subscriptions',
+      zValidator('json', subscriptionMutationBody, (result, c) => {
+        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+      }),
+      async (c) => {
+        const body = c.req.valid('json')
+        const token = generateSubscriptionToken()
+        const id = crypto.randomUUID()
+        const createdAt = new Date()
+        await app.db.insert(calendar_subscriptions).values({
+          id, ownerDiscordId: body.actorDiscordId, token, scope: 'user-all', createdAt,
+        })
+        const row = await CalendarSubscription.findOne(id)
+        if (!row) throw new HTTPException(500, { message: 'Subscription creation failed' })
+        const webcalUrl = buildWebcalUrl(new URL(c.req.url).host, token)
+        return c.json({ subscription: CalendarSubscription.toResponse(row), webcalUrl }, 201)
+      },
+    )
+    .delete(
+      '/api/subscriptions/:id',
+      zValidator('json', subscriptionMutationBody, (result, c) => {
+        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+      }),
+      async (c) => {
+        const id = c.req.param('id')
+        const body = c.req.valid('json')
+        const row = await CalendarSubscription.findOne(id)
+        if (!row || row.ownerDiscordId !== body.actorDiscordId) {
+          return c.json({ error: 'Not Found' }, 404)
+        }
+        await CalendarSubscription.delete(id)
+        return new Response(null, { status: 204 })
+      },
+    )
+    .post(
+      '/api/subscriptions/:id/regenerate',
+      zValidator('json', subscriptionMutationBody, (result, c) => {
+        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+      }),
+      async (c) => {
+        const id = c.req.param('id')
+        const body = c.req.valid('json')
+        const row = await CalendarSubscription.findOne(id)
+        if (!row || row.ownerDiscordId !== body.actorDiscordId) {
+          return c.json({ error: 'Not Found' }, 404)
+        }
+        const newToken = generateSubscriptionToken()
+        await CalendarSubscription.update(id, { token: newToken })
+        const updated = await CalendarSubscription.findOne(id)
+        if (!updated) throw new HTTPException(500, { message: 'Regenerate failed' })
+        const webcalUrl = buildWebcalUrl(new URL(c.req.url).host, newToken)
+        return c.json({ subscription: CalendarSubscription.toResponse(updated), webcalUrl })
+      },
+    )
     .get('/api/events/:id/decision.ics', async (c) => {
       const id = c.req.param('id')
       const eventRow = await Event.findOne(id)
@@ -694,6 +763,63 @@ window.__vite_plugin_react_preamble_installed__ = true
         'Content-Type': 'text/calendar; charset=utf-8',
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Cache-Control': 'no-store',
+      })
+    })
+    .get('/feeds/:filename', async (c) => {
+      const filename = c.req.param('filename')
+      const match = filename.match(/^([0-9a-f]{64})\.ics$/)
+      if (!match) return c.json({ error: 'Not Found' }, 404)
+      const token = match[1]!
+
+      const subs = await CalendarSubscription.findMany({ where: { token }, limit: 1 })
+      if (subs.length === 0) return c.json({ error: 'Not Found' }, 404)
+      const sub = subs[0]!
+
+      const myParticipants = await app.db.select().from(participants)
+        .where(eq(participants.discordUserId, sub.ownerDiscordId))
+      const eventIds = [...new Set(myParticipants.map((p) => p.eventId))]
+
+      let decisionRows: typeof decisions.$inferSelect[] = []
+      if (eventIds.length > 0) {
+        decisionRows = await app.db.select().from(decisions)
+          .where(and(inArray(decisions.eventId, eventIds), isNull(decisions.cancelledAt)))
+      }
+
+      const vevents: string[][] = []
+      for (const d of decisionRows) {
+        const ev = await Event.findOne(d.eventId)
+        const cand = await Candidate.findOne(d.candidateId)
+        if (!ev || !cand) continue
+        vevents.push(eventToVEvent({
+          event: { id: ev.id, title: ev.title, description: ev.description },
+          decision: {
+            icsUid: d.icsUid,
+            icsSequence: d.icsSequence,
+            decidedAt: d.decidedAt,
+            cancelledAt: d.cancelledAt,
+          },
+          candidate: { startAt: cand.startAt, endAt: cand.endAt },
+        }))
+      }
+
+      const body = wrapInVCalendar(vevents)
+
+      const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body))
+      const etag = `"${Array.from(new Uint8Array(hashBuf), (b) => b.toString(16).padStart(2, '0')).join('').slice(0, 16)}"`
+
+      c.executionCtx.waitUntil(CalendarSubscription.update(sub.id, { lastAccessedAt: new Date() }))
+
+      if (c.req.header('If-None-Match') === etag) {
+        return new Response(null, {
+          status: 304,
+          headers: { ETag: etag, 'Cache-Control': 'private, max-age=300' },
+        })
+      }
+
+      return c.body(body, 200, {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Cache-Control': 'private, max-age=300',
+        ETag: etag,
       })
     })
     .post('/api/discord/interactions', async (c) => {
