@@ -313,3 +313,73 @@ export function Badge({
     </span>
   )
 }
+
+export function Field({
+  label,
+  hint,
+  children,
+}: {
+  label?: ReactNode
+  hint?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <div>
+      {label && (
+        <label
+          style={{
+            display: 'block',
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--color-fg2)',
+            marginBottom: 7,
+          }}
+        >
+          {label}
+        </label>
+      )}
+      {children}
+      {hint && (
+        <div style={{ fontSize: 12, color: 'var(--color-fg3)', marginTop: 6 }}>{hint}</div>
+      )}
+    </div>
+  )
+}
+
+export function Input({
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+}: {
+  value: string
+  onChange?: (value: string) => void
+  placeholder?: string
+  type?: string
+}) {
+  const [focus, setFocus] = useState(false)
+  return (
+    <input
+      type={type}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange?.(e.target.value)}
+      onFocus={() => setFocus(true)}
+      onBlur={() => setFocus(false)}
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        fontFamily: 'inherit',
+        fontSize: 15,
+        color: 'var(--color-fg1)',
+        background: 'var(--color-surface)',
+        borderRadius: 'var(--radius-sm)',
+        padding: '12px 14px',
+        outline: 'none',
+        border: `1px solid ${focus ? 'var(--color-blue)' : 'var(--color-border-strong)'}`,
+        boxShadow: focus ? 'var(--shadow-focus)' : 'none',
+        transition: 'all 130ms var(--ease-out)',
+      }}
+    />
+  )
+}
