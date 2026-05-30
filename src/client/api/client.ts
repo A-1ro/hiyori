@@ -112,3 +112,62 @@ export async function deleteCandidate(eventId: string, candidateId: string): Pro
   })
   return handleResponse(res)
 }
+
+export interface ParticipantResponse {
+  id: string
+  eventId: string
+  kind: string
+  displayName: string
+  createdAt: string
+}
+
+export interface VoteResponse {
+  id: string
+  candidateId: string
+  participantId: string
+  choice: string
+  comment?: string
+  updatedAt: string
+}
+
+export interface RegisterParticipantInput {
+  kind: 'guest'
+  displayName: string
+}
+
+export interface PutVoteInput {
+  candidateId: string
+  choice: 'yes' | 'maybe' | 'no'
+  comment?: string
+}
+
+export async function registerParticipant(
+  eventId: string,
+  input: RegisterParticipantInput,
+): Promise<{ participant: ParticipantResponse }> {
+  const res = await api.api.events[':id'].participants.$post({
+    param: { id: eventId },
+    json: input,
+  })
+  return handleResponse(res)
+}
+
+export async function fetchMyVotes(
+  eventId: string,
+): Promise<{ participant: ParticipantResponse | null; votes: VoteResponse[] }> {
+  const res = await api.api.events[':id'].votes.me.$get({
+    param: { id: eventId },
+  })
+  return handleResponse(res)
+}
+
+export async function putVotes(
+  eventId: string,
+  votes: PutVoteInput[],
+): Promise<{ votes: VoteResponse[] }> {
+  const res = await api.api.events[':id'].votes.$put({
+    param: { id: eventId },
+    json: { votes },
+  })
+  return handleResponse(res)
+}

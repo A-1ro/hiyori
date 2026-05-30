@@ -1,7 +1,12 @@
 /** @jsxImportSource hono/jsx */
 import { d1Adapter, nanoka } from '@nanokajs/core'
+import type { RowType } from '@nanokajs/core'
+import type { BatchItem } from 'drizzle-orm/batch'
 import { eq, inArray } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
+import { getCookie, setCookie } from 'hono/cookie'
+import { cors } from 'hono/cors'
+import type { Context } from 'hono'
 import { Link, Script, ViteClient } from 'vite-ssr-components/hono'
 import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
@@ -56,6 +61,45 @@ const addCandidateBody = z.object({
   endAt: z.string().datetime().optional(),
 })
 
+const GUEST_COOKIE_PREFIX = 'hiyori_guest_'
+
+function generateGuestToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function hashGuestToken(token: string): Promise<string> {
+  const encoded = new TextEncoder().encode(token)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded)
+  return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+const registerParticipantBody = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('guest'),
+    displayName: z.string().min(1).max(80),
+  }),
+  z.object({
+    kind: z.literal('discord'),
+    displayName: z.string().min(1).max(80),
+    // TODO(F-06): discordUserId はセッションから取得する
+    discordUserId: z.string().regex(/^\d{17,20}$/),
+  }),
+])
+
+const putVotesBody = z.object({
+  votes: z
+    .array(
+      z.object({
+        candidateId: z.string().uuid(),
+        choice: z.enum(['yes', 'maybe', 'no']),
+        comment: z.string().max(500).optional(),
+      }),
+    )
+    .min(1)
+    .max(50),
+})
+
 function isAllDay(startAt: Date, endAt: Date): boolean {
   const midnight = (d: Date) => d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0
   const diffMs = endAt.getTime() - startAt.getTime()
@@ -72,6 +116,16 @@ const buildApp = (env: Env) => {
   const Decision = app.model(decisionTableName, decisionFields)
   app.model(calendarSubscriptionTableName, calendarSubscriptionFields)
   app.model(auditLogTableName, auditLogFields)
+
+  // M2: /api/* に同一オリジンのみ許可する CORS チェック
+  app.use('/api/*', cors({
+    origin: (origin, c) => {
+      if (!origin) return origin
+      const url = new URL(c.req.url)
+      return origin === url.origin ? origin : null
+    },
+    credentials: true,
+  }))
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
@@ -113,6 +167,18 @@ window.__vite_plugin_react_preamble_installed__ = true
       </body>
     </html>
   )
+
+  async function resolveParticipantByCookie(
+    c: Context<{ Bindings: Env }>,
+    eventId: string,
+  ): Promise<RowType<typeof participantFields> | null> {
+    const cookieName = `${GUEST_COOKIE_PREFIX}${eventId}`
+    const guestToken = getCookie(c, cookieName)
+    if (!guestToken) return null
+    const hash = await hashGuestToken(guestToken)
+    const rows = await Participant.findMany({ where: { eventId, guestTokenHash: hash }, limit: 1 })
+    return rows.length > 0 ? rows[0]! : null
+  }
 
   const routes = app
     .get('/api/health', (c) => c.json({ ok: true, ts: new Date().toISOString() }))
@@ -278,6 +344,144 @@ window.__vite_plugin_react_preamble_installed__ = true
       await Candidate.delete(candidateId)
 
       return new Response(null, { status: 204 })
+    })
+    .post(
+      '/api/events/:id/participants',
+      zValidator('json', registerParticipantBody, (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        const eventId = c.req.param('id')
+        const eventRow = await Event.findOne(eventId)
+        if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+
+        if (eventRow.deadline && new Date() > eventRow.deadline) {
+          return c.json({ error: 'Deadline passed' }, 403)
+        }
+
+        const body = c.req.valid('json')
+
+        if (body.kind === 'discord') {
+          // TODO(F-06): Discord セッション経由で participant を作成する
+          return c.json({ error: 'Discord participants require F-06 OAuth, not yet implemented' }, 501)
+        }
+
+        // kind === 'guest'
+        const cookieName = `${GUEST_COOKIE_PREFIX}${eventId}`
+        const existingToken = getCookie(c, cookieName)
+        if (existingToken) {
+          const hash = await hashGuestToken(existingToken)
+          const existing = await Participant.findMany({
+            where: { eventId, guestTokenHash: hash },
+            limit: 1,
+          })
+          if (existing.length > 0) {
+            const updated = await Participant.update(existing[0]!.id, { displayName: body.displayName })
+            return c.json({ participant: Participant.toResponse(updated ?? existing[0]!) }, 200)
+          }
+        }
+
+        const token = generateGuestToken()
+        const tokenHash = await hashGuestToken(token)
+        const newId = crypto.randomUUID()
+        const now = new Date()
+        await app.db.insert(participants).values({
+          id: newId,
+          eventId,
+          kind: 'guest',
+          displayName: body.displayName,
+          guestTokenHash: tokenHash,
+          createdAt: now,
+        })
+        const created = await Participant.findOne(newId)
+        if (!created) throw new HTTPException(500, { message: 'Internal Server Error' })
+        setCookie(c, cookieName, token, {
+          httpOnly: true,
+          secure: true,
+          sameSite: 'Lax',
+          path: '/',
+          maxAge: 34560000,
+        })
+        return c.json({ participant: Participant.toResponse(created) }, 201)
+      },
+    )
+    .put(
+      '/api/events/:id/votes',
+      zValidator('json', putVotesBody, (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        const eventId = c.req.param('id')
+        const eventRow = await Event.findOne(eventId)
+        if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+
+        if (eventRow.deadline && new Date() > eventRow.deadline) {
+          return c.json({ error: 'Deadline passed' }, 403)
+        }
+
+        // TODO(F-06): Discord 参加者の認証は Cookie ベースに置き換える
+        const body = c.req.valid('json')
+        const participantRow = await resolveParticipantByCookie(c, eventId)
+
+        if (!participantRow) {
+          return c.json({ error: 'Unauthorized' }, 401)
+        }
+
+        // candidateId が全て当該イベントの候補か検証
+        const incomingCandidateIds = body.votes.map((v) => v.candidateId)
+        const eventCandidates = await Candidate.findMany({ where: { eventId }, limit: 1000 })
+        const validCandidateIdSet = new Set(eventCandidates.map((c) => c.id))
+        const invalid = incomingCandidateIds.find((id) => !validCandidateIdSet.has(id))
+        if (invalid) {
+          return c.json({ error: 'Invalid candidateId' }, 400)
+        }
+
+        const participantId = participantRow.id
+        const now = new Date()
+        const upsertStatements = body.votes.map((v) =>
+          app.db
+            .insert(votes)
+            .values({
+              id: crypto.randomUUID(),
+              candidateId: v.candidateId,
+              participantId,
+              choice: v.choice,
+              comment: v.comment ?? null,
+              updatedAt: now,
+            })
+            .onConflictDoUpdate({
+              target: [votes.candidateId, votes.participantId],
+              set: { choice: v.choice, comment: v.comment ?? null, updatedAt: now },
+            }),
+        )
+
+        await app.batch(upsertStatements as unknown as readonly [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
+
+        const voteRows = await Vote.findMany({ where: { participantId }, limit: 1000 })
+        return c.json({ votes: Vote.toResponseMany(voteRows) }, 200)
+      },
+    )
+    .get('/api/events/:id/votes/me', async (c) => {
+      const eventId = c.req.param('id')
+      const eventRow = await Event.findOne(eventId)
+      if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+
+      // TODO(F-06): Discord 参加者の解決はセッションが入るまでサポートしない
+      const participantRow = await resolveParticipantByCookie(c, eventId)
+
+      if (!participantRow) {
+        return c.json({ participant: null, votes: [] }, 200)
+      }
+
+      const voteRows = await Vote.findMany({ where: { participantId: participantRow.id }, limit: 1000 })
+      return c.json({
+        participant: Participant.toResponse(participantRow),
+        votes: Vote.toResponseMany(voteRows),
+      }, 200)
     })
 
   app.notFound((c) => {

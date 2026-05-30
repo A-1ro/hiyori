@@ -5,8 +5,8 @@ export const participantFields = {
   id: t.uuid().primary().readOnly(),
   eventId: t.uuid(),
   kind: t.string(),
-  discordUserId: t.string().optional(),
+  discordUserId: t.string().serverOnly().optional(),
   displayName: t.string().min(1).max(80),
-  guestToken: t.string().serverOnly().optional(),
+  guestTokenHash: t.string().serverOnly().optional(),
   createdAt: t.timestamp().default(() => new Date()).readOnly(),
 }
