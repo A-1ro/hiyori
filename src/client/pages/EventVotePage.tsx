@@ -24,6 +24,7 @@ import {
   VOTE_OPTS,
   type VoteChoice,
 } from '../components/primitives'
+import { BulkVoteBar } from '../components/events/BulkVoteBar'
 import { useSession, loginUrl } from '../auth/useSession'
 
 const WD = ['日', '月', '火', '水', '木', '金', '土']
@@ -201,6 +202,13 @@ export function EventVotePage() {
     setVotes((prev) => {
       const next = { ...prev }
       for (const s of day.slots) next[s.id] = choice
+      return next
+    })
+  }
+  const setBulk = (candidateIds: string[], choice: VoteChoice) => {
+    setVotes((prev) => {
+      const next = { ...prev }
+      for (const id of candidateIds) next[id] = choice
       return next
     })
   }
@@ -382,6 +390,11 @@ export function EventVotePage() {
             </p>
           )}
         </div>
+
+        {/* bulk bar */}
+        {participant && eventData.candidates.length > 0 && (
+          <BulkVoteBar candidates={eventData.candidates} onApply={setBulk} />
+        )}
 
         {/* day cards */}
         {days.length === 0 ? (
