@@ -153,6 +153,50 @@ describe('Webcal feed', () => {
     expect(feedRes.status).toBe(404)
   })
 
+  it('W8: 同じユーザーの POST × 2 → 1 件のみ・2 回目は 200 で同一 id', async () => {
+    const res1 = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+    expect(res1.status).toBe(201)
+    const body1 = (await res1.json()) as { subscription: { id: string }; webcalUrl: string }
+
+    const res2 = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+    expect(res2.status).toBe(200)
+    const body2 = (await res2.json()) as { subscription: { id: string }; webcalUrl: string }
+
+    expect(body2.subscription.id).toBe(body1.subscription.id)
+    expect(body2.webcalUrl).toBe(body1.webcalUrl)
+
+    // DB 上も 1 件のみ
+    const db = (env as { DB: D1Database }).DB
+    const rows = await db.prepare(
+      `SELECT id FROM calendar_subscriptions WHERE ownerDiscordId = ?`
+    ).bind(ORGANIZER_ID).all<{ id: string }>()
+    expect(rows.results.length).toBe(1)
+  })
+
+  it('W9: 直接挿入で 2 件あっても POST/GET は最古 1 件に整理する', async () => {
+    const db = (env as { DB: D1Database }).DB
+    const now = Date.now()
+    const idOld = crypto.randomUUID()
+    const idNew = crypto.randomUUID()
+    await db.prepare(
+      `INSERT INTO calendar_subscriptions (id, ownerDiscordId, token, scope, createdAt) VALUES (?, ?, ?, ?, ?)`
+    ).bind(idOld, ORGANIZER_ID, 'a'.repeat(64), 'user-all', now - 1000).run()
+    await db.prepare(
+      `INSERT INTO calendar_subscriptions (id, ownerDiscordId, token, scope, createdAt) VALUES (?, ?, ?, ?, ?)`
+    ).bind(idNew, ORGANIZER_ID, 'b'.repeat(64), 'user-all', now).run()
+
+    const res = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { subscription: { id: string } }
+    expect(body.subscription.id).toBe(idOld)
+
+    const rows = await db.prepare(
+      `SELECT id FROM calendar_subscriptions WHERE ownerDiscordId = ?`
+    ).bind(ORGANIZER_ID).all<{ id: string }>()
+    expect(rows.results.length).toBe(1)
+    expect(rows.results[0]!.id).toBe(idOld)
+  })
+
   it('W7: regenerate → 旧 token 失効 + 新 token で 200', async () => {
     const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
     const subBody = (await subRes.json()) as { subscription: { id: string }; webcalUrl: string }

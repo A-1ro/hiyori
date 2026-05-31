@@ -12,7 +12,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply hiyori --remote",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "discord:register": "node scripts/register-discord-commands.mjs"
+    "discord:register": "node --env-file-if-exists=.dev.vars scripts/register-discord-commands.mjs"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.8.0",

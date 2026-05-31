@@ -886,12 +886,16 @@ window.__vite_plugin_react_preamble_installed__ = true
       const session = await requireSession(c, app, sessions, users)
       const rows = await CalendarSubscription.findMany({
         where: { ownerDiscordId: session.discordUserId },
-        orderBy: { column: 'createdAt', direction: 'desc' },
+        orderBy: { column: 'createdAt', direction: 'asc' },
         limit: 50,
       })
+      const kept = rows.slice(0, 1)
+      for (let i = 1; i < rows.length; i++) {
+        await CalendarSubscription.delete(rows[i]!.id)
+      }
       const host = new URL(c.req.url).host
       return c.json({
-        subscriptions: rows.map((row) => ({
+        subscriptions: kept.map((row) => ({
           id: row.id,
           ownerDiscordId: row.ownerDiscordId,
           scope: row.scope,
@@ -903,6 +907,20 @@ window.__vite_plugin_react_preamble_installed__ = true
     })
     .post('/api/subscriptions', async (c) => {
       const session = await requireSession(c, app, sessions, users)
+      const host = new URL(c.req.url).host
+      const existing = await CalendarSubscription.findMany({
+        where: { ownerDiscordId: session.discordUserId },
+        orderBy: { column: 'createdAt', direction: 'asc' },
+        limit: 50,
+      })
+      if (existing.length > 0) {
+        const keep = existing[0]!
+        for (let i = 1; i < existing.length; i++) {
+          await CalendarSubscription.delete(existing[i]!.id)
+        }
+        const webcalUrl = buildWebcalUrl(host, keep.token)
+        return c.json({ subscription: CalendarSubscription.toResponse(keep), webcalUrl }, 200)
+      }
       const token = generateSubscriptionToken()
       const id = crypto.randomUUID()
       const createdAt = new Date()
@@ -911,7 +929,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       })
       const row = await CalendarSubscription.findOne(id)
       if (!row) throw new HTTPException(500, { message: 'Subscription creation failed' })
-      const webcalUrl = buildWebcalUrl(new URL(c.req.url).host, token)
+      const webcalUrl = buildWebcalUrl(host, token)
       return c.json({ subscription: CalendarSubscription.toResponse(row), webcalUrl }, 201)
     })
     .delete('/api/subscriptions/:id', async (c) => {

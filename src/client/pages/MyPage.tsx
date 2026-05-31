@@ -322,7 +322,7 @@ function SubscriptionsSection() {
     },
   })
 
-  const subs = data?.subscriptions ?? []
+  const sub = data?.subscriptions[0] ?? null
 
   return (
     <section style={{ marginTop: 28 }}>
@@ -345,18 +345,6 @@ function SubscriptionsSection() {
         >
           Apple Calendar 購読
         </h2>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            setError(undefined)
-            createMut.mutate()
-          }}
-          disabled={createMut.isPending}
-          icon={<Icon name="plus" size={14} />}
-        >
-          新規購読
-        </Button>
       </div>
       <p
         style={{
@@ -366,35 +354,45 @@ function SubscriptionsSection() {
           lineHeight: 1.55,
         }}
       >
-        Webcal URL をカレンダーアプリに登録すると、参加イベントの確定日が自動で同期されます。
+        Webcal URL を 1 つカレンダーアプリに登録すると、参加イベントの確定日がすべて自動で同期されます。
       </p>
       {isLoading ? (
         <div style={{ fontSize: 13, color: 'var(--color-fg3)' }}>読み込み中...</div>
-      ) : subs.length === 0 ? (
+      ) : sub === null ? (
         <div
           style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 12,
             padding: '20px 16px',
-            fontSize: 13,
-            color: 'var(--color-fg3)',
-            textAlign: 'center',
             background: 'var(--color-surface)',
             border: '1px dashed var(--color-border)',
             borderRadius: 'var(--radius-md)',
           }}
         >
-          購読はまだありません。
+          <div style={{ fontSize: 13, color: 'var(--color-fg3)' }}>
+            購読 URL はまだ作成されていません。
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setError(undefined)
+              createMut.mutate()
+            }}
+            disabled={createMut.isPending}
+            icon={<Icon name="plus" size={14} color="#fff" />}
+          >
+            購読 URL を作成
+          </Button>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {subs.map((s) => (
-            <SubscriptionCard
-              key={s.id}
-              subscription={s}
-              onDeleted={() => qc.invalidateQueries({ queryKey: ['mySubscriptions'] })}
-              onRegenerated={() => qc.invalidateQueries({ queryKey: ['mySubscriptions'] })}
-            />
-          ))}
-        </div>
+        <SubscriptionCard
+          subscription={sub}
+          onDeleted={() => qc.invalidateQueries({ queryKey: ['mySubscriptions'] })}
+          onRegenerated={() => qc.invalidateQueries({ queryKey: ['mySubscriptions'] })}
+        />
       )}
       {error && (
         <p style={{ marginTop: 8, fontSize: 13, color: 'var(--color-no-ink)' }}>{error}</p>
