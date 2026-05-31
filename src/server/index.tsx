@@ -182,6 +182,9 @@ window.__vite_plugin_react_preamble_installed__ = true
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Hiyori</title>
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
         <ViteClient />
         {isDev && <script type="module" src="/@react-refresh" />}
         {isDev && (

@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react'
+import hiyoriLogo from '../assets/images/hiyori-logo-trimmed.png'
 
 type IconName =
   | 'calendar'
@@ -84,33 +85,13 @@ export function DiscordMark({ size = 20, color = '#fff' }: { size?: number; colo
 
 function LogoMark({ size = 32 }: { size?: number }) {
   return (
-    <svg
+    <img
+      src={hiyoriLogo}
       width={size}
       height={size}
-      viewBox="0 0 56 56"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      role="img"
-      aria-label="Hiyori"
+      alt="Hiyori"
       style={{ display: 'block', flex: 'none' }}
-    >
-      <rect x="14" y="5" width="5" height="10" rx="2.5" fill="#1d1d1f" />
-      <rect x="37" y="5" width="5" height="10" rx="2.5" fill="#1d1d1f" />
-      <clipPath id="hiyori-tile">
-        <rect x="7" y="9" width="42" height="40" rx="12" />
-      </clipPath>
-      <g clipPath="url(#hiyori-tile)">
-        <rect x="7" y="9" width="42" height="40" fill="#1d1d1f" />
-        <rect x="7" y="9" width="42" height="11" fill="#5865f2" />
-      </g>
-      <path
-        d="M18 33 L25 40 L39 25"
-        stroke="#ffffff"
-        strokeWidth="4.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    />
   )
 }
 

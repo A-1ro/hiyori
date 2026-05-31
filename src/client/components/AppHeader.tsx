@@ -27,7 +27,7 @@ export function AppHeader({ right, onHome }: { right?: ReactNode; onHome?: () =>
       }}
     >
       <div style={{ cursor: onHome ? 'pointer' : 'default' }} onClick={onHome}>
-        <Logo size={28} />
+        <Logo size={32} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {right}
