@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchEvent,
   fetchMyVotes,
+  fetchMyBusy,
   registerParticipant,
   putVotes,
   ApiError,
@@ -94,6 +95,12 @@ export function EventVotePage() {
     queryKey: ['myVotes', id],
     queryFn: () => fetchMyVotes(id!),
     enabled: !!id,
+  })
+
+  const { data: busyData } = useQuery({
+    queryKey: ['myBusy', id],
+    queryFn: () => fetchMyBusy(id!),
+    enabled: !!id && !!sessionUser,
   })
 
   useEffect(() => {
@@ -393,7 +400,11 @@ export function EventVotePage() {
 
         {/* bulk bar */}
         {participant && eventData.candidates.length > 0 && (
-          <BulkVoteBar candidates={eventData.candidates} onApply={setBulk} />
+          <BulkVoteBar
+            candidates={eventData.candidates}
+            onApply={setBulk}
+            busyStartAts={busyData?.startAts}
+          />
         )}
 
         {/* day cards */}

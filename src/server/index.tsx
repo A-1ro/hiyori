@@ -2,7 +2,7 @@
 import { d1Adapter, nanoka } from '@nanokajs/core'
 import type { RowType } from '@nanokajs/core'
 import type { BatchItem } from 'drizzle-orm/batch'
-import { eq, inArray, and, isNull } from 'drizzle-orm'
+import { eq, inArray, and, isNull, ne } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
 import { getCookie, setCookie } from 'hono/cookie'
 import { cors } from 'hono/cors'
@@ -918,6 +918,24 @@ window.__vite_plugin_react_preamble_installed__ = true
       return c.json({
         organized: Event.toResponseMany(organized),
         participating: Event.toResponseMany(participating),
+      })
+    })
+    .get('/api/me/busy', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
+      const excludeEventId = c.req.query('excludeEventId')
+      const conditions = [
+        eq(participants.discordUserId, session.discordUserId),
+        isNull(decisions.cancelledAt),
+      ]
+      if (excludeEventId) conditions.push(ne(decisions.eventId, excludeEventId))
+      const rows = await app.db
+        .selectDistinct({ startAt: candidates.startAt })
+        .from(decisions)
+        .innerJoin(candidates, eq(candidates.id, decisions.candidateId))
+        .innerJoin(participants, eq(participants.eventId, decisions.eventId))
+        .where(and(...conditions))
+      return c.json({
+        startAts: rows.map((r) => r.startAt.toISOString()),
       })
     })
     .get('/api/me/subscriptions', async (c) => {
