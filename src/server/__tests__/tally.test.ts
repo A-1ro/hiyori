@@ -73,7 +73,7 @@ describe('GET /api/events/:id/tally', () => {
     const body = (await res.json()) as {
       participants: unknown[]
       candidates: Array<{ totalScore: number; counts: { yes: number; maybe: number; no: number }; votesByParticipantId: Record<string, unknown> }>
-      decision: unknown
+      decisions: unknown[]
     }
     expect(body.participants).toEqual([])
     expect(body.candidates).toHaveLength(2)
@@ -84,7 +84,7 @@ describe('GET /api/events/:id/tally', () => {
       expect(cand.counts.no).toBe(0)
       expect(cand.votesByParticipantId).toEqual({})
     }
-    expect(body.decision).toBeNull()
+    expect(body.decisions).toEqual([])
   })
 
   it('T3: 候補 2 × 参加者 2 投票 → スコアと counts が正しい', async () => {

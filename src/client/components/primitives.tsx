@@ -383,3 +383,66 @@ export function Input({
     />
   )
 }
+
+export type VoteChoice = 'yes' | 'maybe' | 'no'
+export const VOTE_OPTS: Array<{ key: VoteChoice; mark: string; label: string; ink: string }> = [
+  { key: 'yes', mark: '○', label: '参加できる', ink: 'var(--color-yes-ink)' },
+  { key: 'maybe', mark: '△', label: 'かも', ink: 'var(--color-maybe-ink)' },
+  { key: 'no', mark: '×', label: '無理', ink: 'var(--color-no-ink)' },
+]
+
+export function VoteControl({
+  value,
+  onChange,
+  size = 'md',
+}: {
+  value: VoteChoice | undefined
+  onChange: (choice: VoteChoice) => void
+  size?: 'sm' | 'md'
+}) {
+  const dim = size === 'sm' ? { w: 60, h: 42, mk: 17, tx: 9 } : { w: 80, h: 52, mk: 21, tx: 10 }
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        background: 'var(--color-gray-100)',
+        borderRadius: 'var(--radius-md)',
+        padding: 4,
+        gap: 4,
+      }}
+    >
+      {VOTE_OPTS.map((o) => {
+        const on = value === o.key
+        return (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => onChange(o.key)}
+            style={{
+              fontFamily: 'inherit',
+              border: 'none',
+              cursor: 'pointer',
+              width: dim.w,
+              height: dim.h,
+              borderRadius: 'var(--radius-sm)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              fontWeight: 600,
+              background: on ? '#fff' : 'transparent',
+              color: on ? o.ink : 'var(--color-fg3)',
+              boxShadow: on ? 'var(--shadow-sm)' : 'none',
+              transform: on ? 'scale(1)' : 'scale(0.98)',
+              transition: 'all 200ms var(--ease-spring)',
+            }}
+          >
+            <span style={{ fontSize: dim.mk, lineHeight: 1 }}>{o.mark}</span>
+            <span style={{ fontSize: dim.tx }}>{o.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}

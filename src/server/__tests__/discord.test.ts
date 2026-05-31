@@ -234,7 +234,7 @@ describe('Discord 通知 waitUntil', () => {
       throw new Error(`Unexpected fetch: ${urlStr}`)
     }))
 
-    const res = await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+    const res = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
 
     await new Promise((r) => setTimeout(r, 50))
@@ -276,7 +276,7 @@ describe('Discord 通知 waitUntil', () => {
       throw new Error(`Unexpected fetch: ${urlStr}`)
     }))
 
-    const res = await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+    const res = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
 
     await new Promise((r) => setTimeout(r, 50))
@@ -323,7 +323,7 @@ describe('Discord 通知 waitUntil', () => {
     }))
 
     // 先に確定
-    await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+    await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
 
     // waitUntil を消化して discordMessageId を永続化
     await new Promise((r) => setTimeout(r, 50))

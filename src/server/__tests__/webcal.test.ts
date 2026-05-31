@@ -52,7 +52,7 @@ async function createEventAndDecide() {
     `INSERT INTO participants (id, eventId, kind, discordUserId, displayName, createdAt) VALUES (?, ?, ?, ?, ?, ?)`
   ).bind(crypto.randomUUID(), eventId, 'discord', ORGANIZER_ID, 'Owner', Date.now()).run()
 
-  await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+  await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
 
   return { eventId, candidateId }
 }

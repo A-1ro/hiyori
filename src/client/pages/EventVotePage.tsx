@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, Link } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -12,34 +12,74 @@ import {
   type PutVoteInput,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
-import { Button, Icon } from '../components/primitives'
+import {
+  Avatar,
+  Badge,
+  Button,
+  DiscordMark,
+  Field,
+  Icon,
+  Input,
+  VoteControl,
+  VOTE_OPTS,
+  type VoteChoice,
+} from '../components/primitives'
 import { useSession, loginUrl } from '../auth/useSession'
 
-type Choice = 'yes' | 'maybe' | 'no'
+const WD = ['日', '月', '火', '水', '木', '金', '土']
 
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString('ja-JP', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+function partsOf(iso: string) {
+  const dt = new Date(iso)
+  return {
+    ymd: `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`,
+    md: `${dt.getMonth() + 1}/${dt.getDate()}`,
+    hm: `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`,
+    wd: dt.getDay(),
+    ts: dt.getTime(),
+  }
 }
 
-const CHOICE_LABELS: Record<Choice, string> = { yes: '○', maybe: '△', no: '×' }
-const CHOICE_COLORS: Record<Choice, string> = {
-  yes: 'var(--color-yes-ink)',
-  maybe: 'var(--color-maybe-ink)',
-  no: 'var(--color-no-ink)',
+function formatDeadline(iso: string) {
+  const dt = new Date(iso)
+  return `${dt.getMonth() + 1}/${dt.getDate()} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
+}
+
+interface Slot {
+  id: string
+  start: string
+  end: string
+  ts: number
+}
+interface DayGroup {
+  ymd: string
+  md: string
+  wd: number
+  slots: Slot[]
+}
+
+function groupByDay(candidates: CandidateResponse[]): DayGroup[] {
+  const map = new Map<string, DayGroup>()
+  for (const c of candidates) {
+    const s = partsOf(c.startAt)
+    const e = partsOf(c.endAt)
+    if (!map.has(s.ymd)) {
+      map.set(s.ymd, { ymd: s.ymd, md: s.md, wd: s.wd, slots: [] })
+    }
+    map.get(s.ymd)!.slots.push({ id: c.id, start: s.hm, end: e.hm, ts: s.ts })
+  }
+  const days = [...map.values()]
+  days.sort((a, b) => a.ymd.localeCompare(b.ymd))
+  for (const d of days) d.slots.sort((a, b) => a.ts - b.ts)
+  return days
 }
 
 export function EventVotePage() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
-  const [guestNameInput, setGuestNameInput] = useState('')
+  const [asGuest, setAsGuest] = useState(false)
+  const [guestName, setGuestName] = useState('')
   const [registerError, setRegisterError] = useState<string | undefined>()
-  const [localVotes, setLocalVotes] = useState<Record<string, { choice: Choice; comment: string }>>({})
+  const [votes, setVotes] = useState<Record<string, VoteChoice>>({})
   const { data: sessionData } = useSession()
   const sessionUser = sessionData?.user ?? null
 
@@ -57,19 +97,18 @@ export function EventVotePage() {
 
   useEffect(() => {
     if (myData && myData.votes.length > 0) {
-      const initial: Record<string, { choice: Choice; comment: string }> = {}
+      const initial: Record<string, VoteChoice> = {}
       for (const v of myData.votes) {
-        initial[v.candidateId] = { choice: v.choice as Choice, comment: v.comment ?? '' }
+        initial[v.candidateId] = v.choice as VoteChoice
       }
-      setLocalVotes(initial)
+      setVotes(initial)
     }
   }, [myData])
 
   const registerMutation = useMutation({
     mutationFn: (kind: 'guest' | 'discord') => {
-      const displayName = kind === 'discord'
-        ? (sessionUser?.displayName ?? guestNameInput)
-        : guestNameInput
+      const displayName =
+        kind === 'discord' ? (sessionUser?.displayName ?? guestName) : guestName
       return registerParticipant(id!, { kind, displayName })
     },
     onSuccess: () => {
@@ -82,32 +121,35 @@ export function EventVotePage() {
   })
 
   const voteMutation = useMutation({
-    mutationFn: (votes: PutVoteInput[]) => putVotes(id!, votes),
-    onMutate: async (votes) => {
+    mutationFn: (payload: PutVoteInput[]) => putVotes(id!, payload),
+    onMutate: async (payload) => {
       await queryClient.cancelQueries({ queryKey: ['myVotes', id] })
       const previous = queryClient.getQueryData(['myVotes', id])
-      queryClient.setQueryData(['myVotes', id], (old: { participant: unknown; votes: VoteResponse[] } | undefined) => {
-        if (!old) return old
-        const now = new Date().toISOString()
-        const updated = votes.map((v) => ({
-          id: crypto.randomUUID(),
-          candidateId: v.candidateId,
-          participantId: myData?.participant?.id ?? '',
-          choice: v.choice,
-          comment: v.comment,
-          updatedAt: now,
-        }))
-        const merged = [...old.votes]
-        for (const u of updated) {
-          const idx = merged.findIndex((r) => r.candidateId === u.candidateId)
-          if (idx >= 0) merged[idx] = u
-          else merged.push(u)
-        }
-        return { ...old, votes: merged }
-      })
+      queryClient.setQueryData(
+        ['myVotes', id],
+        (old: { participant: unknown; votes: VoteResponse[] } | undefined) => {
+          if (!old) return old
+          const now = new Date().toISOString()
+          const updated = payload.map((v) => ({
+            id: crypto.randomUUID(),
+            candidateId: v.candidateId,
+            participantId: myData?.participant?.id ?? '',
+            choice: v.choice,
+            comment: v.comment,
+            updatedAt: now,
+          }))
+          const merged = [...old.votes]
+          for (const u of updated) {
+            const idx = merged.findIndex((r) => r.candidateId === u.candidateId)
+            if (idx >= 0) merged[idx] = u
+            else merged.push(u)
+          }
+          return { ...old, votes: merged }
+        },
+      )
       return { previous }
     },
-    onError: (_err, _votes, context?: { previous: unknown }) => {
+    onError: (_err, _payload, context?: { previous: unknown }) => {
       if (context?.previous !== undefined) {
         queryClient.setQueryData(['myVotes', id], context.previous)
       }
@@ -117,11 +159,19 @@ export function EventVotePage() {
     },
   })
 
+  const days = useMemo(
+    () => (eventData ? groupByDay(eventData.candidates) : []),
+    [eventData],
+  )
+  const totalSlots = eventData?.candidates.length ?? 0
+  const answered = Object.keys(votes).length
+  const participant = myData?.participant ?? null
+
   if (eventLoading || myLoading) {
     return (
       <div>
         <AppHeader />
-        <main style={{ maxWidth: 720, margin: '0 auto', padding: '48px 24px' }}>
+        <main style={{ maxWidth: 600, margin: '0 auto', padding: '48px 24px' }}>
           <p style={{ color: 'var(--color-fg3)' }}>読み込み中...</p>
         </main>
       </div>
@@ -132,233 +182,412 @@ export function EventVotePage() {
     return (
       <div>
         <AppHeader />
-        <main style={{ maxWidth: 720, margin: '0 auto', padding: '48px 24px' }}>
+        <main style={{ maxWidth: 600, margin: '0 auto', padding: '48px 24px' }}>
           <p style={{ color: 'var(--color-no-ink)' }}>イベントが見つかりません。</p>
-          <Link to="/" style={{ display: 'inline-block', marginTop: 16 }}>ホームへ</Link>
+          <Link to="/" style={{ display: 'inline-block', marginTop: 16 }}>
+            ホームへ
+          </Link>
         </main>
       </div>
     )
   }
 
-  const { event, candidates } = eventData
-  const participant = myData?.participant ?? null
+  const { event } = eventData
 
-  const handleChoiceChange = (candidateId: string, choice: Choice) => {
-    setLocalVotes((prev) => ({
-      ...prev,
-      [candidateId]: { choice, comment: prev[candidateId]?.comment ?? '' },
-    }))
+  const setVote = (candidateId: string, choice: VoteChoice) => {
+    setVotes((prev) => ({ ...prev, [candidateId]: choice }))
   }
-
-  const handleCommentChange = (candidateId: string, comment: string) => {
-    setLocalVotes((prev) => {
-      if (!prev[candidateId]) return prev
-      return {
-        ...prev,
-        [candidateId]: { choice: prev[candidateId].choice, comment },
-      }
+  const setDay = (day: DayGroup, choice: VoteChoice) => {
+    setVotes((prev) => {
+      const next = { ...prev }
+      for (const s of day.slots) next[s.id] = choice
+      return next
     })
   }
 
   const handleSubmit = () => {
-    const votes: PutVoteInput[] = Object.entries(localVotes).map(([candidateId, { choice, comment }]) => ({
+    const payload: PutVoteInput[] = Object.entries(votes).map(([candidateId, choice]) => ({
       candidateId,
       choice,
-      comment: comment || undefined,
     }))
-    if (votes.length === 0) return
-    voteMutation.mutate(votes)
+    if (payload.length === 0) return
+    voteMutation.mutate(payload)
   }
+
+  const ready = answered > 0 && !!participant
 
   return (
     <div>
       <AppHeader
         right={
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Icon name="chevron-left" size={16} />}
-            onClick={() => history.back()}
-          >
-            戻る
-          </Button>
+          event.deadline ? (
+            <Badge tone="neutral" dot>
+              締切 {formatDeadline(event.deadline)}
+            </Badge>
+          ) : undefined
         }
       />
-      <main style={{ maxWidth: 720, margin: '0 auto', padding: '40px 24px 80px' }}>
-        <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: 'var(--color-fg1)' }}>
-          {event.title} — 投票
-        </h1>
-        {participant ? (
-          <p style={{ margin: '0 0 24px', fontSize: 14, color: 'var(--color-fg3)' }}>
-            {participant.displayName} として投票中
-          </p>
-        ) : null}
+      <main style={{ maxWidth: 600, margin: '0 auto', padding: '32px 24px 110px' }}>
+        <h2
+          style={{
+            margin: '0 0 4px',
+            fontSize: 26,
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
+            color: 'var(--color-fg1)',
+          }}
+        >
+          {event.title}
+        </h2>
+        <p style={{ margin: '0 0 24px', fontSize: 14.5, color: 'var(--color-fg2)' }}>
+          参加できる<b style={{ color: 'var(--color-fg1)' }}>時間帯</b>に{' '}
+          <b style={{ color: 'var(--color-fg1)' }}>○ △ ×</b> で答えてください。
+        </p>
 
-        {!participant && (
-          <div
-            style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
-              padding: 20,
-              marginBottom: 24,
-            }}
-          >
-            <h2 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700 }}>参加方法を選択</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>Discord アカウントで参加</p>
-                {sessionUser ? (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => registerMutation.mutate('discord')}
-                    disabled={registerMutation.isPending}
-                  >
-                    {sessionUser.displayName} として参加
-                  </Button>
-                ) : (
-                  <a
-                    href={loginUrl(window.location.pathname)}
-                    style={{
-                      display: 'inline-block',
-                      padding: '8px 16px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'var(--color-blurple)',
-                      color: '#fff',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      textDecoration: 'none',
-                    }}
-                  >
-                    Discord でログイン
-                  </a>
-                )}
+        {/* identity */}
+        <div
+          style={{
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: 14,
+            marginBottom: 22,
+            boxShadow: 'var(--shadow-xs)',
+          }}
+        >
+          {participant ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+              <Avatar
+                name={participant.displayName}
+                kind={participant.kind === 'discord' ? 'discord' : 'guest'}
+                size={36}
+                idx={0}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>
+                  {participant.displayName} として回答
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--color-fg3)' }}>
+                  {participant.kind === 'discord' ? 'Discord でログイン中' : 'ゲストとして参加'}
+                </div>
               </div>
-              <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />
-              <div>
-                <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>ゲストとして参加</p>
+            </div>
+          ) : asGuest ? (
+            <div>
+              <Field label="お名前（ゲスト）" hint="匿名では回答できません">
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    type="text"
-                    value={guestNameInput}
-                    onChange={(e) => setGuestNameInput(e.target.value)}
-                    placeholder="表示名（1〜80文字）"
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--color-border)',
-                      background: 'var(--color-canvas)',
-                      color: 'var(--color-fg1)',
-                      fontSize: 14,
-                    }}
+                  <Input
+                    value={guestName}
+                    onChange={setGuestName}
+                    placeholder="例）みか"
                   />
                   <Button
-                    variant="secondary"
-                    size="sm"
+                    variant="primary"
+                    size="md"
                     onClick={() => registerMutation.mutate('guest')}
-                    disabled={registerMutation.isPending || guestNameInput.trim().length === 0}
+                    disabled={registerMutation.isPending || guestName.trim().length === 0}
                   >
                     登録
                   </Button>
                 </div>
-              </div>
+              </Field>
+              <button
+                type="button"
+                onClick={() => setAsGuest(false)}
+                style={{
+                  marginTop: 10,
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  fontSize: 13,
+                  color: 'var(--color-blue)',
+                  padding: 0,
+                }}
+              >
+                Discord でログインする
+              </button>
             </div>
-            {registerError && (
-              <p style={{ marginTop: 8, fontSize: 13, color: 'var(--color-no-ink)' }}>{registerError}</p>
-            )}
-          </div>
-        )}
-
-        <section>
-          <h2 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: 'var(--color-fg1)' }}>
-            候補枠 ({candidates.length})
-          </h2>
-          {candidates.length === 0 ? (
-            <p style={{ color: 'var(--color-fg3)', fontSize: 14 }}>候補枠がありません。</p>
+          ) : sessionUser ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+              <Avatar
+                name={sessionUser.displayName}
+                kind="discord"
+                size={36}
+                idx={0}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>
+                  {sessionUser.displayName} として参加
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--color-fg3)' }}>
+                  Discord でログイン中
+                </div>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => registerMutation.mutate('discord')}
+                disabled={registerMutation.isPending}
+              >
+                参加する
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setAsGuest(true)}>
+                名前を変える
+              </Button>
+            </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {candidates.map((cand: CandidateResponse) => {
-                const current = localVotes[cand.id]
-                return (
-                  <div
-                    key={cand.id}
-                    style={{
-                      padding: '12px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--color-border)',
-                      background: 'var(--color-surface)',
-                    }}
-                  >
-                    <div style={{ fontSize: 14, color: 'var(--color-fg1)', marginBottom: 8 }}>
-                      {formatDateTime(cand.startAt)} 〜 {formatDateTime(cand.endAt)}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                      {(['yes', 'maybe', 'no'] as Choice[]).map((choice) => (
-                        <button
-                          key={choice}
-                          onClick={() => handleChoiceChange(cand.id, choice)}
-                          disabled={!participant}
-                          style={{
-                            padding: '4px 16px',
-                            borderRadius: 'var(--radius-sm)',
-                            border: `2px solid ${current?.choice === choice ? CHOICE_COLORS[choice] : 'var(--color-border)'}`,
-                            background: current?.choice === choice ? 'var(--color-surface-raised)' : 'transparent',
-                            color: current?.choice === choice ? CHOICE_COLORS[choice] : 'var(--color-fg2)',
-                            fontWeight: current?.choice === choice ? 700 : 400,
-                            cursor: participant ? 'pointer' : 'not-allowed',
-                            fontSize: 16,
-                          }}
-                        >
-                          {CHOICE_LABELS[choice]}
-                        </button>
-                      ))}
-                    </div>
-                    {current && (
-                      <input
-                        type="text"
-                        value={current.comment}
-                        onChange={(e) => handleCommentChange(cand.id, e.target.value)}
-                        placeholder="コメント（任意、500文字以内）"
-                        maxLength={500}
-                        disabled={!participant}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--color-border)',
-                          background: 'var(--color-canvas)',
-                          color: 'var(--color-fg1)',
-                          fontSize: 13,
-                          boxSizing: 'border-box',
-                        }}
-                      />
-                    )}
-                  </div>
-                )
-              })}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <a
+                href={loginUrl(window.location.pathname)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 9,
+                  padding: '12px 20px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-blurple)',
+                  color: '#fff',
+                  fontSize: 15,
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                  boxShadow: '0 1px 2px rgba(88,101,242,.4)',
+                }}
+              >
+                <DiscordMark size={19} />
+                Discord でログイン
+              </a>
+              <button
+                type="button"
+                onClick={() => setAsGuest(true)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  fontSize: 13,
+                  color: 'var(--color-fg3)',
+                  padding: 0,
+                  textAlign: 'center',
+                }}
+              >
+                ログインなしで名前を入れて回答する
+              </button>
             </div>
           )}
-        </section>
+          {registerError && (
+            <p style={{ marginTop: 8, fontSize: 13, color: 'var(--color-no-ink)' }}>
+              {registerError}
+            </p>
+          )}
+        </div>
 
-        {participant && (
-          <div style={{ marginTop: 24 }}>
-            <Button
-              variant="primary"
-              onClick={handleSubmit}
-              disabled={voteMutation.isPending || Object.keys(localVotes).length === 0}
-            >
-              {voteMutation.isPending ? '送信中...' : '投票を送信'}
-            </Button>
-            {voteMutation.isSuccess && (
-              <span style={{ marginLeft: 12, fontSize: 13, color: 'var(--color-yes-ink)' }}>
-                投票を保存しました
-              </span>
-            )}
+        {/* day cards */}
+        {days.length === 0 ? (
+          <p style={{ color: 'var(--color-fg3)', fontSize: 14 }}>候補枠がありません。</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {days.map((day) => {
+              const dayDone = day.slots.every((s) => votes[s.id])
+              const wdLabel = WD[day.wd]
+              const wdColor =
+                day.wd === 0
+                  ? 'var(--color-no-ink)'
+                  : day.wd === 6
+                    ? 'var(--color-blue)'
+                    : 'var(--color-fg3)'
+              return (
+                <div
+                  key={day.ymd}
+                  style={{
+                    background: 'var(--color-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
+                    boxShadow: dayDone ? 'var(--shadow-sm)' : 'none',
+                    overflow: 'hidden',
+                    transition: 'box-shadow 200ms var(--ease-out)',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '11px 16px',
+                      borderBottom: '1px solid var(--separator)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 700,
+                        color: 'var(--color-fg1)',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {day.md}{' '}
+                      <span
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: wdColor,
+                          marginLeft: 1,
+                        }}
+                      >
+                        {wdLabel}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 500,
+                          color: 'var(--color-fg4)',
+                          marginLeft: 8,
+                        }}
+                      >
+                        {day.slots.length}枠
+                      </span>
+                    </div>
+                    {day.slots.length > 1 && participant && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span
+                          style={{ fontSize: 11, color: 'var(--color-fg4)', fontWeight: 600 }}
+                        >
+                          まとめて
+                        </span>
+                        {VOTE_OPTS.map((o) => (
+                          <button
+                            key={o.key}
+                            type="button"
+                            onClick={() => setDay(day, o.key)}
+                            title={`全${day.slots.length}枠を${o.mark}`}
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: 8,
+                              border: '1px solid var(--color-border)',
+                              background: 'var(--color-surface)',
+                              cursor: 'pointer',
+                              fontSize: 14,
+                              fontWeight: 700,
+                              color: o.ink,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            {o.mark}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {day.slots.map((s, i) => (
+                      <div
+                        key={s.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 14,
+                          padding: '11px 16px',
+                          borderTop: i ? '1px solid var(--separator)' : 'none',
+                        }}
+                      >
+                        <div
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <Icon name="clock" size={16} color="var(--color-fg4)" />
+                          <span
+                            style={{
+                              fontSize: 15,
+                              fontWeight: 600,
+                              color: 'var(--color-fg1)',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            {s.start}
+                            <span style={{ color: 'var(--color-fg4)', fontWeight: 500 }}>
+                              –{s.end}
+                            </span>
+                          </span>
+                        </div>
+                        <VoteControl
+                          size="sm"
+                          value={votes[s.id]}
+                          onChange={(v) => participant && setVote(s.id, v)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </main>
+
+      {/* sticky submit */}
+      {participant && totalSlots > 0 && (
+        <div
+          style={{
+            position: 'sticky',
+            bottom: 0,
+            background: 'var(--surface-frost)',
+            backdropFilter: 'blur(18px)',
+            WebkitBackdropFilter: 'blur(18px)',
+            borderTop: '1px solid var(--separator)',
+            padding: '14px 24px',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 600,
+              margin: '0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                fontSize: 13,
+                color: 'var(--color-fg2)',
+                fontWeight: 500,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              <span style={{ color: 'var(--color-fg1)', fontWeight: 600 }}>{answered}</span>
+              <span style={{ color: 'var(--color-fg3)' }}>/{totalSlots} 枠</span>
+              {answered < totalSlots && answered > 0 && (
+                <span
+                  style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-fg4)', fontWeight: 500 }}
+                >
+                  （途中送信OK・あとから追記できます）
+                </span>
+              )}
+            </div>
+            {voteMutation.isSuccess && (
+              <span style={{ fontSize: 12, color: 'var(--color-yes-ink)' }}>保存しました</span>
+            )}
+            <Button
+              variant="primary"
+              size="md"
+              disabled={!ready || voteMutation.isPending}
+              onClick={handleSubmit}
+            >
+              {voteMutation.isPending ? '送信中...' : '回答を送信'}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

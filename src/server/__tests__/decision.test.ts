@@ -40,6 +40,7 @@ const validEventBase = {
   candidates: [
     { startAt: '2026-07-01T10:00:00.000Z', endAt: '2026-07-01T11:00:00.000Z' },
     { startAt: '2026-07-02T10:00:00.000Z', endAt: '2026-07-02T11:00:00.000Z' },
+    { startAt: '2026-07-03T10:00:00.000Z', endAt: '2026-07-03T11:00:00.000Z' },
   ],
 }
 
@@ -53,20 +54,24 @@ beforeEach(async () => {
 })
 
 describe('POST /api/events/:id/decision', () => {
-  it('D1: organizer 一致で POST → 201 + status=closed + icsSequence=0 + icsUid プレフィックス', async () => {
+  it('D1: organizer 一致で POST → 201 + status=closed + decisions に candidate を含む', async () => {
     const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
 
-    const res = await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+    const res = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
 
-    const body = (await res.json()) as { decision: { candidateId: string; icsUid: string; icsSequence: number }; event: { status: string } }
+    const body = (await res.json()) as {
+      decisions: Array<{ candidateId: string; icsUid: string; icsSequence: number }>
+      event: { status: string }
+    }
     expect(body.event.status).toBe('closed')
-    expect(body.decision.icsSequence).toBe(0)
-    expect(body.decision.candidateId).toBe(candidateId)
-    expect(body.decision.icsUid).toMatch(new RegExp(`^evt-${eventId}-`))
+    expect(body.decisions).toHaveLength(1)
+    expect(body.decisions[0]!.candidateId).toBe(candidateId)
+    expect(body.decisions[0]!.icsSequence).toBe(0)
+    expect(body.decisions[0]!.icsUid).toMatch(new RegExp(`^evt-${eventId}-`))
   })
 
   it('D2: 別 organizer で POST → 403', async () => {
@@ -75,80 +80,105 @@ describe('POST /api/events/:id/decision', () => {
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
 
-    const res = await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: otherCookie })
+    const res = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: otherCookie })
     expect(res.status).toBe(403)
   })
 
   it('D3: 未存在 eventId で POST → 404', async () => {
     const res = await post('/api/events/00000000-0000-4000-8000-000000000000/decision', {
-      candidateId: '00000000-0000-4000-8000-000000000001',
+      candidateIds: ['00000000-0000-4000-8000-000000000001'],
     }, { Cookie: organizerCookie })
     expect(res.status).toBe(404)
   })
 
   it('D4: 他イベントの candidateId で POST → 400', async () => {
-    // event1 作成
     const createRes1 = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created1 = (await createRes1.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId1 = created1.event.id
 
-    // event2 作成
     const createRes2 = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created2 = (await createRes2.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const candidateFromEvent2 = created2.candidates[0]!.id
 
-    // event1 に event2 の候補で確定しようとする
     const res = await post(`/api/events/${eventId1}/decision`, {
-      candidateId: candidateFromEvent2,
+      candidateIds: [candidateFromEvent2],
     }, { Cookie: organizerCookie })
     expect(res.status).toBe(400)
   })
 
-  it('D5: 再 POST で別 candidate → 200 + 同じ icsUid + icsSequence=1', async () => {
+  it('D5: 既存 decision に別 candidate を加えて POST → 200 + 2件アクティブ', async () => {
     const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId1 = created.candidates[0]!.id
     const candidateId2 = created.candidates[1]!.id
 
-    // 最初の確定
-    const res1 = await post(`/api/events/${eventId}/decision`, { candidateId: candidateId1 }, { Cookie: organizerCookie })
+    // 1件確定
+    const res1 = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId1] }, { Cookie: organizerCookie })
     expect(res1.status).toBe(201)
-    const body1 = (await res1.json()) as { decision: { icsUid: string; icsSequence: number } }
-    const firstIcsUid = body1.decision.icsUid
 
-    // 再確定（別 candidate）
-    const res2 = await post(`/api/events/${eventId}/decision`, { candidateId: candidateId2 }, { Cookie: organizerCookie })
-    expect(res2.status).toBe(200)
-    const body2 = (await res2.json()) as { decision: { candidateId: string; icsUid: string; icsSequence: number } }
-    expect(body2.decision.icsUid).toBe(firstIcsUid)
-    expect(body2.decision.icsSequence).toBe(1)
-    expect(body2.decision.candidateId).toBe(candidateId2)
+    // 2件目を追加（[1, 2] で上書き）
+    const res2 = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId1, candidateId2] }, { Cookie: organizerCookie })
+    expect(res2.status).toBe(201) // 新規追加があるので 201
+    const body2 = (await res2.json()) as {
+      decisions: Array<{ candidateId: string; icsUid: string; icsSequence: number }>
+      event: { status: string }
+    }
+    expect(body2.event.status).toBe('closed')
+    expect(body2.decisions).toHaveLength(2)
+    const sortedCands = body2.decisions.map((d) => d.candidateId).sort()
+    expect(sortedCands).toEqual([candidateId1, candidateId2].sort())
+  })
+
+  it('D5b: 既存 decision のうち 1 件だけ残す（縮小）→ 200 + 残った 1 件 + 外したのは cancelled', async () => {
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
+    const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
+    const eventId = created.event.id
+    const candidateId1 = created.candidates[0]!.id
+    const candidateId2 = created.candidates[1]!.id
+
+    // 2 件確定
+    await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId1, candidateId2] }, { Cookie: organizerCookie })
+
+    // candidate2 だけに縮小
+    const res = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId2] }, { Cookie: organizerCookie })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      decisions: Array<{ candidateId: string }>
+      event: { status: string }
+    }
+    expect(body.decisions).toHaveLength(1)
+    expect(body.decisions[0]!.candidateId).toBe(candidateId2)
+    expect(body.event.status).toBe('closed')
+
+    // DB: candidate1 の decision は cancelledAt 設定
+    const db = (env as { DB: D1Database }).DB
+    const row = await db.prepare('SELECT cancelledAt FROM decisions WHERE eventId = ? AND candidateId = ?').bind(eventId, candidateId1).first()
+    expect(row).not.toBeNull()
+    expect((row as { cancelledAt: number | null }).cancelledAt).not.toBeNull()
   })
 })
 
 describe('DELETE /api/events/:id/decision', () => {
-  it('D6: DELETE 正常 → 200 + cancelledAt 設定 + status=open + icsSequence+1', async () => {
+  it('D6: DELETE 正常 → 200 + 全 active が cancelled + status=open', async () => {
     const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
 
-    // 先に確定
-    await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+    await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
 
-    // 取り消し
     const res = await del(`/api/events/${eventId}/decision`, { Cookie: organizerCookie })
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { decision: { icsSequence: number }; event: { status: string } }
+    const body = (await res.json()) as { decisions: unknown[]; event: { status: string } }
     expect(body.event.status).toBe('open')
-    expect(body.decision.icsSequence).toBe(1)
+    expect(body.decisions).toEqual([])
 
-    // DB 直接確認: cancelledAt が設定されている
     const db = (env as { DB: D1Database }).DB
-    const row = await db.prepare('SELECT cancelledAt FROM decisions WHERE eventId = ?').bind(eventId).first()
+    const row = await db.prepare('SELECT cancelledAt, icsSequence FROM decisions WHERE eventId = ?').bind(eventId).first()
     expect(row).not.toBeNull()
     expect((row as { cancelledAt: number | null }).cancelledAt).not.toBeNull()
+    expect((row as { icsSequence: number }).icsSequence).toBe(1)
   })
 
   it('D7: 別 organizer で DELETE → 403', async () => {
@@ -157,7 +187,7 @@ describe('DELETE /api/events/:id/decision', () => {
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
 
-    await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+    await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
 
     const res = await del(`/api/events/${eventId}/decision`, { Cookie: otherCookie })
     expect(res.status).toBe(403)
@@ -174,33 +204,29 @@ describe('DELETE /api/events/:id/decision', () => {
 })
 
 describe('Decision シーケンス管理', () => {
-  it('D9: DELETE 後再 POST → 200 + 同じ icsUid 保持 + cancelledAt=null + icsSequence さらに +1', async () => {
+  it('D9: 取消後同 candidate で再確定 → 同じ icsUid 保持 + cancelledAt=null + icsSequence+2', async () => {
     const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
-    const candidateId1 = created.candidates[0]!.id
-    const candidateId2 = created.candidates[1]!.id
+    const candidateId = created.candidates[0]!.id
 
-    // 最初の確定 (icsSeq=0)
-    const res1 = await post(`/api/events/${eventId}/decision`, { candidateId: candidateId1 }, { Cookie: organizerCookie })
-    const body1 = (await res1.json()) as { decision: { icsUid: string; icsSequence: number } }
-    const firstIcsUid = body1.decision.icsUid
-    expect(body1.decision.icsSequence).toBe(0)
+    // 1: 確定 (seq=0)
+    const res1 = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
+    const body1 = (await res1.json()) as { decisions: Array<{ icsUid: string; icsSequence: number }> }
+    const firstIcsUid = body1.decisions[0]!.icsUid
+    expect(body1.decisions[0]!.icsSequence).toBe(0)
 
-    // 取り消し (icsSeq=1)
-    const res2 = await del(`/api/events/${eventId}/decision`, { Cookie: organizerCookie })
-    const body2 = (await res2.json()) as { decision: { icsSequence: number } }
-    expect(body2.decision.icsSequence).toBe(1)
+    // 2: 全取消 (seq=1)
+    await del(`/api/events/${eventId}/decision`, { Cookie: organizerCookie })
 
-    // 再確定 (icsSeq=2)
-    const res3 = await post(`/api/events/${eventId}/decision`, { candidateId: candidateId2 }, { Cookie: organizerCookie })
-    expect(res3.status).toBe(200)
-    const body3 = (await res3.json()) as { decision: { icsUid: string; icsSequence: number; cancelledAt?: string } }
-    expect(body3.decision.icsUid).toBe(firstIcsUid)
-    expect(body3.decision.icsSequence).toBe(2)
-    expect(body3.decision.cancelledAt ?? null).toBeNull()
+    // 3: 同 candidate を再確定 → 既存行 reactivate (seq=2, 同 icsUid)
+    const res3 = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
+    expect(res3.status).toBe(201)
+    const body3 = (await res3.json()) as { decisions: Array<{ icsUid: string; icsSequence: number; cancelledAt?: string | null }> }
+    expect(body3.decisions[0]!.icsUid).toBe(firstIcsUid)
+    expect(body3.decisions[0]!.icsSequence).toBe(2)
+    expect(body3.decisions[0]!.cancelledAt ?? null).toBeNull()
 
-    // DB 直接確認: cancelledAt が null
     const db = (env as { DB: D1Database }).DB
     const row = await db.prepare('SELECT cancelledAt FROM decisions WHERE eventId = ?').bind(eventId).first()
     expect((row as { cancelledAt: number | null }).cancelledAt).toBeNull()
@@ -212,7 +238,7 @@ describe('Decision シーケンス管理', () => {
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
 
-    await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+    await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
     await del(`/api/events/${eventId}/decision`, { Cookie: organizerCookie })
 
     const db = (env as { DB: D1Database }).DB
@@ -229,28 +255,46 @@ describe('Decision シーケンス管理', () => {
     expect(cancelLog).not.toBeNull()
   })
 
-  it('D11: 確定後 tally の decision が返る / 取消後 decision が null になる', async () => {
+  it('D11: 確定後 tally の decisions が返る / 取消後 decisions が空配列になる', async () => {
     const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
 
-    // 確定前: decision null
     const tally1 = await get(`/api/events/${eventId}/tally`)
-    const tallyBody1 = (await tally1.json()) as { decision: unknown }
-    expect(tallyBody1.decision).toBeNull()
+    const tallyBody1 = (await tally1.json()) as { decisions: unknown[] }
+    expect(tallyBody1.decisions).toEqual([])
 
-    // 確定後: decision あり
-    await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+    await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
     const tally2 = await get(`/api/events/${eventId}/tally`)
-    const tallyBody2 = (await tally2.json()) as { decision: { candidateId: string } | null }
-    expect(tallyBody2.decision).not.toBeNull()
-    expect(tallyBody2.decision?.candidateId).toBe(candidateId)
+    const tallyBody2 = (await tally2.json()) as { decisions: Array<{ candidateId: string }> }
+    expect(tallyBody2.decisions).toHaveLength(1)
+    expect(tallyBody2.decisions[0]!.candidateId).toBe(candidateId)
 
-    // 取消後: decision null
     await del(`/api/events/${eventId}/decision`, { Cookie: organizerCookie })
     const tally3 = await get(`/api/events/${eventId}/tally`)
-    const tallyBody3 = (await tally3.json()) as { decision: unknown }
-    expect(tallyBody3.decision).toBeNull()
+    const tallyBody3 = (await tally3.json()) as { decisions: unknown[] }
+    expect(tallyBody3.decisions).toEqual([])
+  })
+
+  it('D12: 複数件同時確定 → 全 candidate がアクティブ + 各々独立 icsUid', async () => {
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
+    const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
+    const eventId = created.event.id
+    const ids = created.candidates.map((c) => c.id)
+
+    const res = await post(`/api/events/${eventId}/decision`, { candidateIds: ids }, { Cookie: organizerCookie })
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as {
+      decisions: Array<{ candidateId: string; icsUid: string; icsSequence: number }>
+      event: { status: string }
+    }
+    expect(body.decisions).toHaveLength(3)
+    expect(body.event.status).toBe('closed')
+    const uids = new Set(body.decisions.map((d) => d.icsUid))
+    expect(uids.size).toBe(3)
+    for (const d of body.decisions) {
+      expect(d.icsSequence).toBe(0)
+    }
   })
 })

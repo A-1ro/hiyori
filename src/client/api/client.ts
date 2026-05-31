@@ -183,7 +183,7 @@ export interface TallyResponse {
   event: { id: string; title: string; status: string; deadline?: string; timezone: string; defaultDurationMinutes: number }
   participants: TallyParticipant[]
   candidates: TallyCandidate[]
-  decision: TallyDecision | null
+  decisions: TallyDecision[]
 }
 
 export async function fetchTally(eventId: string): Promise<TallyResponse> {
@@ -202,17 +202,17 @@ export interface DecisionResponse {
   cancelledAt?: string | null
 }
 
-export async function createDecision(
+export async function applyDecisions(
   eventId: string,
-  input: { candidateId: string },
-): Promise<{ decision: DecisionResponse; event: EventResponse }> {
+  input: { candidateIds: string[] },
+): Promise<{ decisions: DecisionResponse[]; event: EventResponse }> {
   const res = await api.api.events[':id'].decision.$post({ param: { id: eventId }, json: input })
   return handleResponse(res)
 }
 
-export async function cancelDecision(
+export async function cancelDecisions(
   eventId: string,
-): Promise<{ decision: DecisionResponse; event: EventResponse }> {
+): Promise<{ decisions: DecisionResponse[]; event: EventResponse }> {
   const res = await api.api.events[':id'].decision.$delete({ param: { id: eventId } })
   return handleResponse(res)
 }

@@ -117,7 +117,7 @@ describe('GET /api/events/:id/decision.ics', () => {
     const eventId = created.event.id
     const candidateId = created.candidates[0]!.id
 
-    await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: organizerCookie })
+    await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
 
     const res = await SELF.fetch(`${BASE}/api/events/${eventId}/decision.ics`)
     expect(res.status).toBe(200)

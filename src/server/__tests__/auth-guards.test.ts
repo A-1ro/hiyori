@@ -118,7 +118,7 @@ describe('POST /api/events/:id/decision — 認証ガード', () => {
     const organizerCookie = await loginAs(ORGANIZER_ID)
     const { eventId, candidateId } = await createEventWithSession(organizerCookie)
 
-    const res = await post(`/api/events/${eventId}/decision`, { candidateId })
+    const res = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] })
     expect(res.status).toBe(401)
   })
 
@@ -127,7 +127,7 @@ describe('POST /api/events/:id/decision — 認証ガード', () => {
     const otherCookie = await loginAs(OTHER_ID)
     const { eventId, candidateId } = await createEventWithSession(organizerCookie)
 
-    const res = await post(`/api/events/${eventId}/decision`, { candidateId }, { Cookie: otherCookie })
+    const res = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: otherCookie })
     expect(res.status).toBe(403)
   })
 })

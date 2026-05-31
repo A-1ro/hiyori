@@ -11,9 +11,9 @@ import { Link, Script, ViteClient } from 'vite-ssr-components/hono'
 import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
 
-import { applyDecision, cancelDecision } from './services/decision'
+import { applyDecisions, cancelAllDecisions } from './services/decision'
 import { eventToVEvent, wrapInVCalendar } from './ics/serialize'
-import { notifyDecisionApplied, notifyDecisionCancelled } from './discord/notifier'
+import { notifyDecisionsChanged } from './discord/notifier'
 import { verifyDiscordSignature } from './discord/verify'
 import { auditLogFields, auditLogTableName } from '../models/auditLog'
 import {
@@ -110,7 +110,7 @@ const registerParticipantBody = z.discriminatedUnion('kind', [
 ])
 
 const createDecisionBody = z.object({
-  candidateId: z.string().uuid(),
+  candidateIds: z.array(z.string().uuid()).min(1).max(50),
 })
 
 const putVotesBody = z.object({
@@ -686,17 +686,13 @@ window.__vite_plugin_react_preamble_installed__ = true
         ? await app.db.select().from(votes).where(inArray(votes.candidateId, candidateIds))
         : []
 
-      let decisionRow: { candidateId: string; decidedAt: Date } | null = null
-      {
-        const decisionRows = await app.db
-          .select()
-          .from(decisions)
-          .where(and(eq(decisions.eventId, id), isNull(decisions.cancelledAt)))
-          .limit(1) as { candidateId: string; decidedAt: Date }[]
-        if (decisionRows.length > 0) {
-          decisionRow = { candidateId: decisionRows[0]!.candidateId, decidedAt: decisionRows[0]!.decidedAt }
-        }
-      }
+      const decisionRowsActive = (await app.db
+        .select()
+        .from(decisions)
+        .where(and(eq(decisions.eventId, id), isNull(decisions.cancelledAt)))) as {
+        candidateId: string
+        decidedAt: Date
+      }[]
 
       const SCORE: Record<string, number> = { yes: 2, maybe: 1, no: 0 }
 
@@ -745,9 +741,9 @@ window.__vite_plugin_react_preamble_installed__ = true
         event: tallyEvent,
         participants: Participant.toResponseMany(participantRows),
         candidates: tallyCandidates,
-        decision: decisionRow
-          ? { candidateId: decisionRow.candidateId, decidedAt: decisionRow.decidedAt.toISOString() }
-          : null,
+        decisions: decisionRowsActive
+          .map((d) => ({ candidateId: d.candidateId, decidedAt: d.decidedAt.toISOString() }))
+          .sort((a, b) => a.decidedAt.localeCompare(b.decidedAt)),
       })
     })
     .post(
@@ -760,25 +756,29 @@ window.__vite_plugin_react_preamble_installed__ = true
         const eventId = c.req.param('id')
         const body = c.req.valid('json')
         const workerHost = new URL(c.req.url).host
-        const result = await applyDecision(
+        const result = await applyDecisions(
           { app, Event, Candidate, Decision, workerHost },
-          { eventId, candidateId: body.candidateId, actorDiscordId: session.discordUserId },
+          { eventId, candidateIds: body.candidateIds, actorDiscordId: session.discordUserId },
         )
         c.executionCtx.waitUntil(
-          notifyDecisionApplied(
+          notifyDecisionsChanged(
             { app, Decision, workerHost },
             c.env,
             {
-              decision: result.decision,
               event: result.event,
-              candidate: result.candidate,
+              added: [...result.added, ...result.reactivated],
+              cancelled: result.cancelled,
               participants: result.participants,
             },
           ),
         )
+        const status = result.added.length + result.reactivated.length > 0 ? 201 : 200
         return c.json(
-          { decision: Decision.toResponse(result.decision), event: Event.toResponse(result.event) },
-          result.kind === 'created' ? 201 : 200,
+          {
+            decisions: result.activeDecisions.map((d) => Decision.toResponse(d)),
+            event: Event.toResponse(result.event),
+          },
+          status,
         )
       },
     )
@@ -786,23 +786,29 @@ window.__vite_plugin_react_preamble_installed__ = true
       const session = await requireSession(c, app, sessions, users)
       const eventId = c.req.param('id')
       const workerHost = new URL(c.req.url).host
-      const result = await cancelDecision(
+      const result = await cancelAllDecisions(
         { app, Event, Candidate, Decision, workerHost },
         { eventId, actorDiscordId: session.discordUserId },
       )
       c.executionCtx.waitUntil(
-        notifyDecisionCancelled(
+        notifyDecisionsChanged(
           { app, Decision, workerHost },
           c.env,
           {
-            decision: result.decision,
             event: result.event,
-            candidate: result.candidate,
+            added: [],
+            cancelled: result.cancelled,
             participants: result.participants,
           },
         ),
       )
-      return c.json({ decision: Decision.toResponse(result.decision), event: Event.toResponse(result.event) }, 200)
+      return c.json(
+        {
+          decisions: result.activeDecisions.map((d) => Decision.toResponse(d)),
+          event: Event.toResponse(result.event),
+        },
+        200,
+      )
     })
     .get('/api/events/:id/permissions', async (c) => {
       const id = c.req.param('id')
@@ -855,26 +861,34 @@ window.__vite_plugin_react_preamble_installed__ = true
       const eventRow = await Event.findOne(id)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
 
+      // 取消済みも含めて出力（SEQUENCE+STATUS:CANCELLED が iCal クライアントに削除指示を伝える）
       const decisionRows = await app.db.select().from(decisions)
-        .where(eq(decisions.eventId, id)).limit(1)
+        .where(eq(decisions.eventId, id))
       if (decisionRows.length === 0) return c.json({ error: 'Not Found' }, 404)
-      const decisionRow = decisionRows[0]!
 
-      const candidateRow = await Candidate.findOne(decisionRow.candidateId)
-      if (!candidateRow) throw new HTTPException(500, { message: 'Candidate not found for decision' })
+      const candIds = [...new Set(decisionRows.map((d) => d.candidateId))]
+      const candRows = candIds.length > 0
+        ? await app.db.select().from(candidates).where(inArray(candidates.id, candIds))
+        : []
+      const candById = new Map(candRows.map((c) => [c.id, c]))
 
-      const body = wrapInVCalendar([
-        eventToVEvent({
+      const vevents: string[][] = []
+      for (const d of decisionRows) {
+        const cand = candById.get(d.candidateId)
+        if (!cand) continue
+        vevents.push(eventToVEvent({
           event: { id: eventRow.id, title: eventRow.title, description: eventRow.description },
           decision: {
-            icsUid: decisionRow.icsUid,
-            icsSequence: decisionRow.icsSequence,
-            decidedAt: decisionRow.decidedAt,
-            cancelledAt: decisionRow.cancelledAt,
+            icsUid: d.icsUid,
+            icsSequence: d.icsSequence,
+            decidedAt: d.decidedAt,
+            cancelledAt: d.cancelledAt,
           },
-          candidate: { startAt: candidateRow.startAt, endAt: candidateRow.endAt },
-        }),
-      ])
+          candidate: { startAt: cand.startAt, endAt: cand.endAt },
+        }))
+      }
+
+      const body = wrapInVCalendar(vevents)
 
       const safeTitle = eventRow.title
         .replace(/[^A-Za-z0-9_\-]/g, '_')
