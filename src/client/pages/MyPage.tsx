@@ -344,7 +344,7 @@ function SubscriptionsSection() {
             letterSpacing: '-0.01em',
           }}
         >
-          Apple Calendar 購読
+          カレンダー購読
         </h2>
       </div>
       <p
@@ -523,7 +523,7 @@ export function MyPage() {
               lineHeight: 1.6,
             }}
           >
-            主催・参加したイベントと、Apple Calendar 購読を管理できます。
+            主催・参加したイベントと、カレンダー購読を管理できます。
           </p>
           <Button
             variant="discord"

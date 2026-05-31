@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
@@ -28,6 +28,7 @@ export function EventDetailPage() {
   const navigate = useNavigate()
   const [copied, setCopied] = useState(false)
   const [subError, setSubError] = useState<string | undefined>()
+  const [subModalUrl, setSubModalUrl] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['event', id],
@@ -104,7 +105,7 @@ export function EventDetailPage() {
     setSubError(undefined)
     try {
       const { webcalUrl } = await createSubscription()
-      window.location.href = webcalUrl
+      setSubModalUrl(webcalUrl)
     } catch (e) {
       setSubError(
         e instanceof ApiError && e.status === 401
@@ -377,10 +378,10 @@ export function EventDetailPage() {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>
-                Apple Calendar に自動で反映
+                カレンダーアプリに自動で反映
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--color-fg3)' }}>
-                Webcal を購読すると、次回以降の確定も自動で届きます
+                Webcal / iCalendar を購読すると、次回以降の確定も自動で届きます
               </div>
             </div>
             <Button variant="secondary" size="sm" onClick={handleSubscribe}>
@@ -424,6 +425,9 @@ export function EventDetailPage() {
             </Button>
           </div>
         </main>
+        {subModalUrl && (
+          <SubscribeModal webcalUrl={subModalUrl} onClose={() => setSubModalUrl(null)} />
+        )}
       </div>
     )
   }
@@ -625,7 +629,7 @@ export function EventDetailPage() {
             onClick={handleSubscribe}
             icon={<Icon name="calendar" size={14} />}
           >
-            Apple Calendar に購読
+            カレンダーを購読
           </Button>
           <Button
             variant="danger"
@@ -650,6 +654,221 @@ export function EventDetailPage() {
           </p>
         )}
       </main>
+      {subModalUrl && (
+        <SubscribeModal webcalUrl={subModalUrl} onClose={() => setSubModalUrl(null)} />
+      )}
+    </div>
+  )
+}
+
+function SubscribeModal({
+  webcalUrl,
+  onClose,
+}: {
+  webcalUrl: string
+  onClose: () => void
+}) {
+  const httpsUrl = webcalUrl.replace(/^webcal:\/\//, 'https://')
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(httpsUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1600)
+    } catch {
+      // clipboard unavailable
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="カレンダーに購読"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.45)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        zIndex: 50,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 440,
+          background: 'var(--color-surface)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-lg)',
+          padding: 22,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+          <h3
+            style={{
+              flex: 1,
+              margin: 0,
+              fontSize: 17,
+              fontWeight: 700,
+              color: 'var(--color-fg1)',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            カレンダーに購読
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="閉じる"
+            style={{
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              padding: 4,
+              color: 'var(--color-fg3)',
+              fontSize: 20,
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <p
+          style={{
+            margin: '0 0 16px',
+            fontSize: 12.5,
+            color: 'var(--color-fg3)',
+            lineHeight: 1.55,
+          }}
+        >
+          確定した日程をお使いのカレンダーに自動で同期できます。
+        </p>
+
+        <section
+          style={{
+            marginBottom: 12,
+            padding: 14,
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--color-border)',
+            background: 'var(--color-surface-2)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: 'var(--color-fg1)',
+              marginBottom: 4,
+            }}
+          >
+            Apple カレンダー / Outlook（デスクトップ）/ Thunderbird
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: 'var(--color-fg3)',
+              lineHeight: 1.55,
+              marginBottom: 10,
+            }}
+          >
+            ボタンを押すと購読ダイアログが開きます。
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              window.location.href = webcalUrl
+            }}
+            icon={<Icon name="calendar" size={14} color="#fff" />}
+          >
+            ワンクリックで購読
+          </Button>
+        </section>
+
+        <section
+          style={{
+            padding: 14,
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--color-border)',
+            background: 'var(--color-surface-2)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: 'var(--color-fg1)',
+              marginBottom: 4,
+            }}
+          >
+            Google カレンダー / Outlook.com など
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: 'var(--color-fg3)',
+              lineHeight: 1.55,
+              marginBottom: 10,
+            }}
+          >
+            下の URL をコピーして、カレンダー側の「URL で追加」に貼り付けてください。
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '8px 10px',
+            }}
+          >
+            <span
+              style={{
+                flex: 1,
+                fontSize: 12,
+                color: 'var(--color-fg2)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              }}
+              title={httpsUrl}
+            >
+              {httpsUrl}
+            </span>
+            <Button
+              variant={copied ? 'secondary' : 'primary'}
+              size="sm"
+              onClick={handleCopy}
+              icon={
+                <Icon
+                  name={copied ? 'check' : 'copy'}
+                  size={13}
+                  color={copied ? 'var(--color-yes-ink)' : '#fff'}
+                />
+              }
+            >
+              {copied ? 'コピー済み' : 'コピー'}
+            </Button>
+          </div>
+        </section>
+      </div>
     </div>
   )
 }

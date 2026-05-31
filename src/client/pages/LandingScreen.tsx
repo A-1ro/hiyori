@@ -36,7 +36,7 @@ export function LandingScreen() {
       >
         <div style={{ display: 'inline-flex', marginBottom: 22 }}>
           <Badge tone="discord" dot>
-            Discord と Apple Calendar をつなぐ
+            Discord とカレンダーをつなぐ
           </Badge>
         </div>
         <h1
@@ -62,7 +62,7 @@ export function LandingScreen() {
           }}
         >
           候補日を出して、<b style={{ color: 'var(--color-fg1)' }}>○ △ ×</b>{' '}
-          で答えるだけ。決まった日は Discord に通知され、Apple Calendar にも自動で追加されます。
+          で答えるだけ。決まった日は Discord に通知され、お使いのカレンダーにも自動で追加されます。
         </p>
         <div className="dm-hero-ctas">
           <Button

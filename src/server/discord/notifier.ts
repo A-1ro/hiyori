@@ -168,7 +168,7 @@ export function buildDecisionEmbed(args: {
             {
               type: 2,
               style: 5,
-              label: 'Apple Calendar に追加',
+              label: 'カレンダーに追加',
               url: `https://${workerHost}/api/events/${event.id}/decision.ics`,
             },
           ],
