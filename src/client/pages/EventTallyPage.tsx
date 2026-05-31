@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -54,6 +54,7 @@ export function EventTallyPage() {
   const queryClient = useQueryClient()
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [hoverCol, setHoverCol] = useState<string | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   const { data: tallyData, isLoading: tallyLoading } = useQuery({
     queryKey: ['tally', id],
@@ -173,6 +174,16 @@ export function EventTallyPage() {
     applyMutation.mutate([...sel])
   }
 
+  const scrollToBest = () => {
+    if (!bestId) return
+    const container = scrollContainerRef.current
+    if (!container) return
+    const target = container.querySelector<HTMLElement>(`[data-cand-id="${bestId}"]`)
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    }
+  }
+
   // 編集中=現在の選択と、サーバ側に保存されている確定セットが違うか
   const isDirty = useMemo(() => {
     if (sel.size !== confirmedSet.size) return true
@@ -236,7 +247,7 @@ export function EventTallyPage() {
         >
           {event.title}
         </h2>
-        <p
+        <div
           style={{
             margin: '0 0 24px',
             fontSize: 14.5,
@@ -244,6 +255,7 @@ export function EventTallyPage() {
             display: 'flex',
             alignItems: 'center',
             gap: 7,
+            flexWrap: 'wrap',
           }}
         >
           <Icon name="users" size={16} color="var(--color-fg3)" /> {participants.length}名が回答
@@ -255,12 +267,24 @@ export function EventTallyPage() {
               <span style={{ color: 'var(--color-fg4)', fontWeight: 500 }}>（複数選択可）</span>
             </>
           )}
-        </p>
+          {bestId && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Icon name="sparkles" size={14} />}
+              onClick={scrollToBest}
+              style={{ marginLeft: 'auto' }}
+            >
+              最有力を見つける
+            </Button>
+          )}
+        </div>
 
         {slots.length === 0 ? (
           <p style={{ color: 'var(--color-fg3)', fontSize: 14 }}>候補枠がありません。</p>
         ) : (
           <div
+            ref={scrollContainerRef}
             style={{
               background: 'var(--color-surface)',
               border: '1px solid var(--color-border)',
@@ -325,6 +349,7 @@ export function EventTallyPage() {
                     return (
                       <th
                         key={s.cand.id}
+                        data-cand-id={s.cand.id}
                         {...colCellProps(s.cand.id)}
                         style={{
                           padding: '4px 6px 8px',
