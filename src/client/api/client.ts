@@ -261,6 +261,17 @@ export async function fetchMyEvents(): Promise<MyEventsResponse> {
   return handleResponse(res)
 }
 
+export interface MyBusyResponse {
+  startAts: string[]
+}
+
+export async function fetchMyBusy(excludeEventId?: string): Promise<MyBusyResponse> {
+  const res = await api.api.me.busy.$get({
+    query: excludeEventId ? { excludeEventId } : {},
+  })
+  return handleResponse(res)
+}
+
 export interface MySubscription extends SubscriptionResponse {
   webcalUrl: string
 }

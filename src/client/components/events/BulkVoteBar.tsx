@@ -65,12 +65,19 @@ function Chip({
   )
 }
 
+function ymdOf(iso: string): string {
+  const dt = new Date(iso)
+  return `${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`
+}
+
 export function BulkVoteBar({
   candidates,
   onApply,
+  busyStartAts,
 }: {
   candidates: CandidateResponse[]
   onApply: (candidateIds: string[], choice: VoteChoice) => void
+  busyStartAts?: string[]
 }) {
   const [wd, setWd] = useState<Set<number>>(new Set())
   const [tod, setTod] = useState<Set<TimeOfDay>>(new Set())
@@ -85,6 +92,12 @@ export function BulkVoteBar({
       })
       .map((c) => c.id)
   }, [candidates, wd, tod])
+
+  const busyTargetIds = useMemo(() => {
+    if (!busyStartAts || busyStartAts.length === 0) return []
+    const busySet = new Set(busyStartAts.map(ymdOf))
+    return candidates.filter((c) => busySet.has(ymdOf(c.startAt))).map((c) => c.id)
+  }, [candidates, busyStartAts])
 
   const toggleWd = (id: number) => {
     setWd((prev) => {
@@ -108,6 +121,10 @@ export function BulkVoteBar({
     onApply(targetIds, choice)
     setWd(new Set())
     setTod(new Set())
+  }
+  const applyBusy = () => {
+    if (busyTargetIds.length === 0) return
+    onApply(busyTargetIds, 'no')
   }
 
   const hasFilter = wd.size > 0 || tod.size > 0
@@ -248,6 +265,47 @@ export function BulkVoteBar({
           </button>
         </div>
       </div>
+
+      {busyTargetIds.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            marginTop: 10,
+            paddingTop: 10,
+            borderTop: '1px dashed var(--separator)',
+          }}
+        >
+          <div style={{ fontSize: 12.5, color: 'var(--color-fg2)' }}>
+            他予定と被る日{' '}
+            <b style={{ color: 'var(--color-fg1)', fontWeight: 700 }}>{busyTargetIds.length}</b>{' '}
+            <span style={{ color: 'var(--color-fg4)' }}>枠</span>
+          </div>
+          <button
+            type="button"
+            onClick={applyBusy}
+            title={`他予定と被る日 ${busyTargetIds.length} 枠を全部 ×`}
+            style={{
+              fontFamily: 'inherit',
+              fontSize: 13,
+              fontWeight: 700,
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--color-no-ink)',
+              background: 'var(--color-no-soft)',
+              color: 'var(--color-no-ink)',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <span style={{ fontSize: 15 }}>×</span> 他予定の日を全部
+          </button>
+        </div>
+      )}
     </section>
   )
 }
