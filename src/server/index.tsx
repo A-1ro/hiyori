@@ -822,6 +822,69 @@ window.__vite_plugin_react_preamble_installed__ = true
       const isOrganizer = eventRow.organizerDiscordId === s.discordUserId
       return c.json({ isOrganizer })
     })
+    .get('/api/me/events', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
+      const did = session.discordUserId
+
+      const organized = await Event.findMany({
+        where: { organizerDiscordId: did },
+        orderBy: { column: 'createdAt', direction: 'desc' },
+        limit: 200,
+      })
+
+      const myParticipants = await Participant.findMany({
+        where: { discordUserId: did },
+        limit: 500,
+      })
+      const participatedEventIds = [...new Set(myParticipants.map((p) => p.eventId))]
+
+      let participating: typeof organized = []
+      if (participatedEventIds.length > 0) {
+        const rows = await app.db
+          .select()
+          .from(events)
+          .where(inArray(events.id, participatedEventIds))
+        participating = rows
+          .filter((e) => e.organizerDiscordId !== did)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .map((e) => ({
+            id: e.id,
+            organizerDiscordId: e.organizerDiscordId,
+            title: e.title,
+            description: e.description ?? undefined,
+            defaultDurationMinutes: e.defaultDurationMinutes,
+            status: e.status,
+            deadline: e.deadline ?? undefined,
+            timezone: e.timezone,
+            discordChannelId: e.discordChannelId ?? undefined,
+            createdAt: e.createdAt,
+          }))
+      }
+
+      return c.json({
+        organized: Event.toResponseMany(organized),
+        participating: Event.toResponseMany(participating),
+      })
+    })
+    .get('/api/me/subscriptions', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
+      const rows = await CalendarSubscription.findMany({
+        where: { ownerDiscordId: session.discordUserId },
+        orderBy: { column: 'createdAt', direction: 'desc' },
+        limit: 50,
+      })
+      const host = new URL(c.req.url).host
+      return c.json({
+        subscriptions: rows.map((row) => ({
+          id: row.id,
+          ownerDiscordId: row.ownerDiscordId,
+          scope: row.scope,
+          createdAt: row.createdAt.toISOString(),
+          lastAccessedAt: row.lastAccessedAt ? row.lastAccessedAt.toISOString() : null,
+          webcalUrl: buildWebcalUrl(host, row.token),
+        })),
+      })
+    })
     .post('/api/subscriptions', async (c) => {
       const session = await requireSession(c, app, sessions, users)
       const token = generateSubscriptionToken()

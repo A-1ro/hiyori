@@ -14,11 +14,68 @@ beforeEach(async () => {
 })
 
 describe('GET /api/auth/discord', () => {
-  it('A1: DISCORD_CLIENT_ID 未設定なら 503', async () => {
-    const res = await SELF.fetch(`${BASE}/api/auth/discord`)
-    expect(res.status).toBe(503)
-    const body = (await res.json()) as { error: string }
-    expect(body.error).toContain('configured')
+  const TEST_CLIENT_ID = 'test-client-id-1234567890'
+
+  function withDiscordClientId<T>(fn: () => Promise<T>): Promise<T> {
+    const e = env as { DISCORD_CLIENT_ID?: string }
+    const original = e.DISCORD_CLIENT_ID
+    e.DISCORD_CLIENT_ID = TEST_CLIENT_ID
+    return fn().finally(() => {
+      if (original === undefined) delete e.DISCORD_CLIENT_ID
+      else e.DISCORD_CLIENT_ID = original
+    })
+  }
+
+  function decodeStateBundle(urlState: string): { s: string; r: string } {
+    const padding = '==='.slice(0, (4 - (urlState.length % 4)) % 4)
+    return JSON.parse(atob(urlState + padding)) as { s: string; r: string }
+  }
+
+  it('A1: Discord authorize URL に 302 redirect し、必要な query と state cookie を付ける', async () => {
+    await withDiscordClientId(async () => {
+      const res = await SELF.fetch(
+        `${BASE}/api/auth/discord?returnTo=${encodeURIComponent('/events/abc')}`,
+        { redirect: 'manual' },
+      )
+      expect(res.status).toBe(302)
+
+      const location = res.headers.get('location')
+      expect(location).not.toBeNull()
+      const url = new URL(location!)
+      expect(`${url.origin}${url.pathname}`).toBe('https://discord.com/api/oauth2/authorize')
+      expect(url.searchParams.get('response_type')).toBe('code')
+      expect(url.searchParams.get('scope')).toBe('identify')
+      expect(url.searchParams.get('client_id')).toBe(TEST_CLIENT_ID)
+      expect(url.searchParams.get('redirect_uri')).toMatch(/\/api\/auth\/discord\/callback$/)
+      expect(url.searchParams.get('state')).toBeTruthy()
+
+      const setCookie = res.headers.get('set-cookie')
+      expect(setCookie).not.toBeNull()
+      expect(setCookie).toMatch(/hiyori_oauth_state=/)
+      expect(setCookie).toMatch(/HttpOnly/i)
+      expect(setCookie).toMatch(/SameSite=Lax/i)
+      expect(setCookie).toMatch(/Path=\/api\/auth\/discord/i)
+
+      // state cookie の値 = URL state bundle の s フィールド (CSRF 防御の核)
+      const cookieValue = setCookie!.match(/hiyori_oauth_state=([^;]+)/)![1]!
+      const parsed = decodeStateBundle(url.searchParams.get('state')!)
+      expect(parsed.s).toBe(cookieValue)
+      expect(parsed.r).toBe('/events/abc')
+    })
+  })
+
+  it('A1-unsafe: 危険な returnTo は state bundle.r で / に丸められる (open redirect 防御)', async () => {
+    await withDiscordClientId(async () => {
+      for (const unsafe of ['//evil.com', 'https://evil.com/x', 'no-leading-slash', '']) {
+        const res = await SELF.fetch(
+          `${BASE}/api/auth/discord?returnTo=${encodeURIComponent(unsafe)}`,
+          { redirect: 'manual' },
+        )
+        expect(res.status).toBe(302)
+        const urlState = new URL(res.headers.get('location')!).searchParams.get('state')!
+        expect(decodeStateBundle(urlState).r).toBe('/')
+      }
+    })
   })
 })
 

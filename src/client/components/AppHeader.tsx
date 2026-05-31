@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useLocation } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { Logo, Button } from './primitives'
 import { useSession, useLogout, loginUrl } from '../auth/useSession'
 
@@ -8,6 +8,7 @@ export function AppHeader({ right, onHome }: { right?: ReactNode; onHome?: () =>
   const logout = useLogout()
   const location = useLocation()
   const user = sessionData?.user ?? null
+  const onMyPage = location.pathname === '/me'
 
   return (
     <header
@@ -33,7 +34,21 @@ export function AppHeader({ right, onHome }: { right?: ReactNode; onHome?: () =>
         {right}
         {user ? (
           <>
-            <span style={{ fontSize: 13, color: 'var(--color-fg2)' }}>{user.displayName}</span>
+            {onMyPage ? (
+              <span style={{ fontSize: 13, color: 'var(--color-fg2)' }}>{user.displayName}</span>
+            ) : (
+              <Link
+                to="/me"
+                style={{
+                  fontSize: 13,
+                  color: 'var(--color-fg2)',
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                }}
+              >
+                {user.displayName}
+              </Link>
+            )}
             <Button
               variant="ghost"
               size="sm"

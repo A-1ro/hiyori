@@ -248,3 +248,22 @@ export async function regenerateSubscription(id: string) {
   const res = await api.api.subscriptions[':id'].regenerate.$post({ param: { id } })
   return handleResponse<{ subscription: SubscriptionResponse; webcalUrl: string }>(res)
 }
+
+export interface MyEventsResponse {
+  organized: EventResponse[]
+  participating: EventResponse[]
+}
+
+export async function fetchMyEvents(): Promise<MyEventsResponse> {
+  const res = await api.api.me.events.$get()
+  return handleResponse(res)
+}
+
+export interface MySubscription extends SubscriptionResponse {
+  webcalUrl: string
+}
+
+export async function fetchMySubscriptions(): Promise<{ subscriptions: MySubscription[] }> {
+  const res = await api.api.me.subscriptions.$get()
+  return handleResponse(res)
+}
