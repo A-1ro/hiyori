@@ -132,6 +132,30 @@ const putVotesBody = z.object({
     .max(365),
 })
 
+// D1 caps each query at 100 bind parameters. Chunk IN(...) lookups so callers
+// can pass arbitrarily long id lists without hitting the cap.
+const D1_BIND_CHUNK = 90
+
+async function selectInChunks<TRow>(
+  ids: readonly string[],
+  fetcher: (chunk: string[]) => Promise<TRow[]>,
+): Promise<TRow[]> {
+  if (ids.length === 0) return []
+  const out: TRow[] = []
+  for (let i = 0; i < ids.length; i += D1_BIND_CHUNK) {
+    out.push(...(await fetcher(ids.slice(i, i + D1_BIND_CHUNK))))
+  }
+  return out
+}
+
+function chunkIds<T>(ids: readonly string[], build: (chunk: string[]) => T): T[] {
+  const out: T[] = []
+  for (let i = 0; i < ids.length; i += D1_BIND_CHUNK) {
+    out.push(build(ids.slice(i, i + D1_BIND_CHUNK)))
+  }
+  return out
+}
+
 function isAllDay(startAt: Date, endAt: Date): boolean {
   const midnight = (d: Date) => d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0
   const diffMs = endAt.getTime() - startAt.getTime()
@@ -508,10 +532,14 @@ window.__vite_plugin_react_preamble_installed__ = true
       const candidateRows = await Candidate.findMany({ where: { eventId: id }, limit: 10000 })
       const candidateIds = candidateRows.map((r) => r.id)
 
-      // votes → decisions → participants → candidates → events の順で D1 batch により atomic に削除
+      // decisions → votes → participants → candidates → events の順で D1 batch により atomic に削除。
+      // votes は候補 id が D1 の bind 上限 (100) を超え得るので chunkIds で複数文に分割する。
+      const voteDeletes = chunkIds(candidateIds, (chunk) =>
+        app.db.delete(votes).where(inArray(votes.candidateId, chunk)),
+      )
       await app.batch([
-        app.db.delete(votes).where(inArray(votes.candidateId, candidateIds)),
         app.db.delete(decisions).where(eq(decisions.eventId, id)),
+        ...voteDeletes,
         app.db.delete(participants).where(eq(participants.eventId, id)),
         app.db.delete(candidates).where(eq(candidates.eventId, id)),
         app.db.delete(events).where(eq(events.id, id)),
@@ -739,9 +767,9 @@ window.__vite_plugin_react_preamble_installed__ = true
 
       const candidateIds = candidateRows.map((r) => r.id)
       // nanoka の findMany が WHERE IN をサポートしないため drizzle 直クエリ
-      const voteRows = candidateIds.length > 0
-        ? await app.db.select().from(votes).where(inArray(votes.candidateId, candidateIds))
-        : []
+      const voteRows = await selectInChunks(candidateIds, (chunk) =>
+        app.db.select().from(votes).where(inArray(votes.candidateId, chunk)),
+      )
 
       const decisionRowsActive = (await app.db
         .select()
@@ -894,10 +922,9 @@ window.__vite_plugin_react_preamble_installed__ = true
 
       let participating: typeof organized = []
       if (participatedEventIds.length > 0) {
-        const rows = await app.db
-          .select()
-          .from(events)
-          .where(inArray(events.id, participatedEventIds))
+        const rows = await selectInChunks(participatedEventIds, (chunk) =>
+          app.db.select().from(events).where(inArray(events.id, chunk)),
+        )
         participating = rows
           .filter((e) => e.organizerDiscordId !== did)
           .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -1005,9 +1032,9 @@ window.__vite_plugin_react_preamble_installed__ = true
       if (decisionRows.length === 0) return c.json({ error: 'Not Found' }, 404)
 
       const candIds = [...new Set(decisionRows.map((d) => d.candidateId))]
-      const candRows = candIds.length > 0
-        ? await app.db.select().from(candidates).where(inArray(candidates.id, candIds))
-        : []
+      const candRows = await selectInChunks(candIds, (chunk) =>
+        app.db.select().from(candidates).where(inArray(candidates.id, chunk)),
+      )
       const candById = new Map(candRows.map((c) => [c.id, c]))
 
       const vevents: string[][] = []
@@ -1055,11 +1082,10 @@ window.__vite_plugin_react_preamble_installed__ = true
         .where(eq(participants.discordUserId, sub.ownerDiscordId))
       const eventIds = [...new Set(myParticipants.map((p) => p.eventId))]
 
-      let decisionRows: typeof decisions.$inferSelect[] = []
-      if (eventIds.length > 0) {
-        decisionRows = await app.db.select().from(decisions)
-          .where(and(inArray(decisions.eventId, eventIds), isNull(decisions.cancelledAt)))
-      }
+      const decisionRows = await selectInChunks(eventIds, (chunk) =>
+        app.db.select().from(decisions)
+          .where(and(inArray(decisions.eventId, chunk), isNull(decisions.cancelledAt))),
+      )
 
       const vevents: string[][] = []
       for (const d of decisionRows) {

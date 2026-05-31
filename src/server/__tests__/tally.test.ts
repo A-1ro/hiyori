@@ -196,4 +196,33 @@ describe('GET /api/events/:id/tally', () => {
     const res = await get(`/api/events/${eventId}/tally`)
     expect(res.status).toBe(200)
   })
+
+  it('T-chunk: 候補 120 件のイベントでも /tally が 200 を返す（D1 bind 上限の回帰）', async () => {
+    const N = 120
+    const candidates = Array.from({ length: N }, (_, i) => {
+      const dt = new Date('2030-01-01T10:00:00.000Z')
+      dt.setUTCDate(dt.getUTCDate() + i)
+      return {
+        startAt: dt.toISOString(),
+        endAt: new Date(dt.getTime() + 30 * 60 * 1000).toISOString(),
+      }
+    })
+
+    const createRes = await post(
+      '/api/events',
+      {
+        title: 'big-event',
+        defaultDurationMinutes: 30,
+        candidates,
+      },
+      { Cookie: organizerCookie },
+    )
+    expect(createRes.status).toBe(201)
+    const created = (await createRes.json()) as { event: { id: string } }
+
+    const res = await get(`/api/events/${created.event.id}/tally`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { candidates: unknown[] }
+    expect(body.candidates).toHaveLength(N)
+  })
 })
