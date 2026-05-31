@@ -5,15 +5,12 @@ import { AppHeader } from '../components/AppHeader'
 import { Button } from '../components/primitives'
 import { EventComposer, type ComposerPayload } from '../components/events/EventComposer'
 
-const DISCORD_CHANNEL_ID_PATTERN = /^\d{17,20}$/
-
 export function EventCreatePage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const channelFromQuery = searchParams.get('channel')?.trim() ?? ''
-  const presetChannelId = DISCORD_CHANNEL_ID_PATTERN.test(channelFromQuery)
-    ? channelFromQuery
-    : ''
+  // /hiyori new スラッシュコマンドが発行した HMAC 署名トークン。サーバーで検証されるので、
+  // クライアント側ではフォーマット検証はしない（不正値はサーバーが 400 で弾く）。
+  const channelToken = searchParams.get('channelToken')?.trim() || undefined
 
   const mutation = useMutation({
     mutationFn: (payload: ComposerPayload) =>
@@ -23,7 +20,7 @@ export function EventCreatePage() {
         defaultDurationMinutes: payload.defaultDurationMinutes,
         deadline: payload.deadline,
         timezone: payload.timezone,
-        discordChannelId: payload.discordChannelId,
+        discordChannelToken: payload.discordChannelToken,
         candidates: payload.candidates,
       }),
     onSuccess: (result) => {
@@ -57,7 +54,7 @@ export function EventCreatePage() {
         </p>
         <EventComposer
           mode="create"
-          presetDiscordChannelId={presetChannelId || undefined}
+          discordChannelToken={channelToken}
           submitLabel="この内容でつくる"
           submittingLabel="作成中..."
           isSubmitting={mutation.isPending}

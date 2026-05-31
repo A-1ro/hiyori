@@ -80,6 +80,17 @@ Session cookie: `hiyori_session`, HttpOnly, Secure, SameSite=Lax, Path=/, 30-day
 
 Test helper: `loginAs(discordUserId)` in `src/server/__tests__/test-helpers.ts` inserts a user+session directly into D1 and returns a `hiyori_session=<token>` string for use as a `Cookie` header.
 
+### Discord チャンネル連携（cross-tenant 投稿防止）
+
+Hiyori はマルチサーバー対応（1 Bot を任意の Discord サーバーに招待 OK）だが、**Hiyori にログインした任意のユーザーが任意のチャンネル ID を貼って Bot に投稿させる**攻撃面を塞ぐため、`POST/PATCH /api/events` は raw な `discordChannelId` を一切受け付けない。
+
+- 受け付けるのは `discordChannelToken`（`src/server/discord/channel-token.ts` の HMAC-SHA256 署名トークン、7 日 TTL）のみ。
+- 発行ルートは `/hiyori new` スラッシュコマンドのみ（`src/server/index.tsx` の interactions ハンドラ）。Discord 側がスラッシュコマンド実行者のチャンネルアクセス権を保証するので、暗黙の所属チェックになる。
+- 検証鍵は `DISCORD_CHANNEL_TOKEN_SECRET` Worker secret。**未設定なら Discord 連携機能は無効**（トークン提示時に 503）。
+- UI 側に手動入力フィールドは置かない（`EventComposer` から削除済み）。クライアントは `?channelToken=<jwt-like>` クエリで受け取った値をそのまま `discordChannelToken` として送るだけ。
+- 編集ページからは連携の付け替え / 解除は行わない設計。やり直したい場合は `/hiyori new` から作成し直す。
+- Embed 内のユーザー入力（`event.title` / `event.description` / `participant.displayName`）は `src/server/discord/markdown.ts` の `escapeMarkdown()` で必ずエスケープ。Bot メッセージは `allowed_mentions: { parse: [] }` を必ず付けて `@everyone` / ロール ping を無効化（`src/server/discord/client.ts`）。
+
 ## File layout
 
 ```

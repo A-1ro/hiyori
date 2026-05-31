@@ -35,7 +35,7 @@ export function EventEditPage() {
         defaultDurationMinutes: payload.defaultDurationMinutes,
         deadline: payload.deadline ?? null,
         timezone: payload.timezone,
-        discordChannelId: payload.discordChannelId ?? null,
+        // Discord 連携の付け替え/解除は編集 UI から行わない（/hiyori new 経由で再作成）
       })
 
       // 候補の差分: ISO 文字列ペアで一致判定
@@ -121,6 +121,7 @@ export function EventEditPage() {
         <EventComposer
           mode="edit"
           initial={initial}
+          linkedDiscordChannelId={data.event.discordChannelId}
           submitLabel="保存する"
           submittingLabel="保存中..."
           isSubmitting={mutation.isPending}

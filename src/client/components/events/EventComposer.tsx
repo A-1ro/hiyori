@@ -1,7 +1,6 @@
 import { useState, type CSSProperties } from 'react'
-import { Button, DiscordMark, Field, Icon, Input } from '../primitives'
+import { Button, Field, Icon, Input } from '../primitives'
 import { MonthCalendar, WD } from '../MonthCalendar'
-import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../../lib/discord'
 
 const DURATIONS = [30, 60, 90, 120, 180, 240, 300, 360, 480] as const
 const durLabel = (m: number) =>
@@ -77,7 +76,6 @@ export interface ComposerInitial {
   defaultDurationMinutes: number
   deadline: string
   timezone: string
-  discordChannelId: string
   dates: Set<string>
   activeBands: Set<BandKey>
   customTimes: string[]
@@ -90,14 +88,18 @@ export interface ComposerPayload {
   defaultDurationMinutes: number
   deadline?: string
   timezone: string
-  discordChannelId?: string
+  // Discord 連携は /hiyori new スラッシュコマンド由来の HMAC 署名トークン経由のみ。
+  discordChannelToken?: string
   candidates: Array<{ startAt: string; endAt: string }>
 }
 
 export interface EventComposerProps {
   mode: 'create' | 'edit'
   initial?: Partial<ComposerInitial>
-  presetDiscordChannelId?: string
+  // 既にチャンネル連携済みの場合は表示用 ID（編集ページで「連携中」表記に使う）。
+  linkedDiscordChannelId?: string
+  // /hiyori new から渡された HMAC 署名済みトークン。指定時はチャンネル連携付きで作成。
+  discordChannelToken?: string
   submitLabel: string
   submittingLabel: string
   isSubmitting: boolean
@@ -117,7 +119,6 @@ export function buildComposerInitial(
     defaultDurationMinutes: number
     deadline?: string
     timezone: string
-    discordChannelId?: string
   },
   candidates: ReadonlyArray<{ startAt: string; endAt: string }>,
 ): ComposerInitial {
@@ -147,7 +148,6 @@ export function buildComposerInitial(
     defaultDurationMinutes: event.defaultDurationMinutes,
     deadline: event.deadline ? event.deadline.replace('Z', '').slice(0, 16) : '',
     timezone: event.timezone,
-    discordChannelId: event.discordChannelId ?? '',
     dates,
     activeBands,
     customTimes: [...customSet].sort(),
@@ -158,7 +158,8 @@ export function buildComposerInitial(
 export function EventComposer({
   mode,
   initial,
-  presetDiscordChannelId,
+  linkedDiscordChannelId,
+  discordChannelToken,
   submitLabel,
   submittingLabel,
   isSubmitting,
@@ -179,12 +180,7 @@ export function EventComposer({
   const [slotDur, setSlotDur] = useState<Record<string, number>>(initial?.slotDur ?? {})
   const [openDurSlot, setOpenDurSlot] = useState<string | null>(null)
   const [deadline, setDeadline] = useState(initial?.deadline ?? '')
-  const [discordChannelId, setDiscordChannelId] = useState(
-    initial?.discordChannelId ?? presetDiscordChannelId ?? '',
-  )
-  const [advancedOpen, setAdvancedOpen] = useState(
-    Boolean(initial?.deadline || initial?.discordChannelId || presetDiscordChannelId),
-  )
+  const [advancedOpen, setAdvancedOpen] = useState(Boolean(initial?.deadline))
 
   const timezone = initial?.timezone ?? 'Asia/Tokyo'
 
@@ -230,7 +226,7 @@ export function EventComposer({
       defaultDurationMinutes: dur,
       deadline: deadline ? new Date(deadline).toISOString() : undefined,
       timezone,
-      discordChannelId: discordChannelId.trim() || undefined,
+      discordChannelToken,
       candidates,
     })
   }
@@ -740,38 +736,24 @@ export function EventComposer({
                   }}
                 />
               </Field>
-
-              <Field
-                label="Discord チャンネル ID（任意）"
-                hint="確定したらこのチャンネルに通知が流れます"
-              >
-                <Input
-                  value={discordChannelId}
-                  onChange={setDiscordChannelId}
-                  placeholder="例）1234567890123456789"
-                />
-                <a
-                  href={DISCORD_BOT_INVITE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    marginTop: 8,
-                    fontSize: 12.5,
-                    color: 'var(--color-blurple)',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <DiscordMark size={13} color="var(--color-blurple)" />
-                  {DISCORD_BOT_INVITE_LABEL}
-                  <Icon name="arrow-right" size={12} />
-                </a>
-              </Field>
             </div>
           )}
         </div>
+
+        {(discordChannelToken || linkedDiscordChannelId) && (
+          <div
+            style={{
+              borderTop: '1px solid var(--color-border)',
+              paddingTop: 14,
+              fontSize: 13,
+              color: 'var(--color-fg2)',
+            }}
+          >
+            {discordChannelToken
+              ? 'Discord チャンネルに連携した状態で作成します（確定時にチャンネルへ通知）。'
+              : `Discord チャンネル ${linkedDiscordChannelId} と連携中。`}
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 24 }}>

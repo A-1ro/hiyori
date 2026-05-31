@@ -15,6 +15,7 @@ import { applyDecisions, cancelAllDecisions } from './services/decision'
 import { eventToVEvent, wrapInVCalendar } from './ics/serialize'
 import { notifyDecisionsChanged, announceEventCreated } from './discord/notifier'
 import { verifyDiscordSignature } from './discord/verify'
+import { signChannelToken, verifyChannelToken } from './discord/channel-token'
 import { auditLogFields, auditLogTableName } from '../models/auditLog'
 import {
   calendarSubscriptionFields,
@@ -41,6 +42,9 @@ export interface Env {
   DISCORD_CLIENT_ID?: string
   DISCORD_CLIENT_SECRET?: string
   DISCORD_OAUTH_REDIRECT_URI?: string
+  // /hiyori new スラッシュコマンド由来の channel ID を Hiyori が HMAC 署名するための秘密鍵。
+  // POST/PATCH /api/events で discordChannelToken の検証に使う。未設定なら Discord 連携不可。
+  DISCORD_CHANNEL_TOKEN_SECRET?: string
 }
 
 const displayNameSchema = z.string().min(1).max(80).refine(
@@ -57,7 +61,8 @@ const createEventBody = z.object({
   defaultDurationMinutes: z.number().int().min(1).max(60 * 24),
   deadline: z.string().datetime().optional(),
   timezone: z.string().max(64).optional(),
-  discordChannelId: z.string().regex(/^\d{17,20}$/).optional(),
+  // /hiyori new から発行された HMAC 署名トークン。直接 channel ID を受け付けない。
+  discordChannelToken: z.string().min(1).max(1024).optional(),
   candidates: z
     .array(
       z.object({
@@ -75,7 +80,8 @@ const patchEventBody = z.object({
   deadline: z.string().datetime().optional().nullable(),
   defaultDurationMinutes: z.number().int().min(1).max(60 * 24).optional(),
   timezone: z.string().max(64).optional(),
-  discordChannelId: z.string().regex(/^\d{17,20}$/).optional().nullable(),
+  // 連携を解除する場合は null、新規 / 更新は HMAC 署名トークン。
+  discordChannelToken: z.string().min(1).max(1024).optional().nullable(),
 })
 
 const addCandidateBody = z.object({
@@ -344,6 +350,21 @@ window.__vite_plugin_react_preamble_installed__ = true
         const session = await requireSession(c, app, sessions, users)
         const body = c.req.valid('json')
 
+        let resolvedChannelId: string | null = null
+        if (body.discordChannelToken) {
+          if (!c.env.DISCORD_CHANNEL_TOKEN_SECRET) {
+            throw new HTTPException(503, { message: 'Discord channel binding not configured' })
+          }
+          const verified = await verifyChannelToken(
+            c.env.DISCORD_CHANNEL_TOKEN_SECRET,
+            body.discordChannelToken,
+          )
+          if (!verified) {
+            throw new HTTPException(400, { message: 'Invalid or expired Discord channel token' })
+          }
+          resolvedChannelId = verified.channelId
+        }
+
         const candidateInputs = body.candidates.map((cand) => {
           const startAt = new Date(cand.startAt)
           const endAt = cand.endAt ? new Date(cand.endAt) : new Date(startAt.getTime() + body.defaultDurationMinutes * 60000)
@@ -380,7 +401,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             status: 'open',
             deadline: body.deadline ? new Date(body.deadline) : null,
             timezone: body.timezone ?? 'UTC',
-            discordChannelId: body.discordChannelId ?? null,
+            discordChannelId: resolvedChannelId,
             createdAt: eventCreatedAt,
           }),
           ...candidateInserts,
@@ -446,13 +467,30 @@ window.__vite_plugin_react_preamble_installed__ = true
         if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
 
         const body = c.req.valid('json')
+
         const updateData: Partial<typeof eventRow> = {}
         if (body.title !== undefined) updateData.title = body.title
         if (body.description !== undefined) updateData.description = body.description
         if (body.deadline !== undefined) updateData.deadline = body.deadline ? new Date(body.deadline) : undefined
         if (body.defaultDurationMinutes !== undefined) updateData.defaultDurationMinutes = body.defaultDurationMinutes
         if (body.timezone !== undefined) updateData.timezone = body.timezone
-        if (body.discordChannelId !== undefined) updateData.discordChannelId = body.discordChannelId ?? undefined
+        if (body.discordChannelToken !== undefined) {
+          if (body.discordChannelToken === null) {
+            updateData.discordChannelId = undefined
+          } else {
+            if (!c.env.DISCORD_CHANNEL_TOKEN_SECRET) {
+              throw new HTTPException(503, { message: 'Discord channel binding not configured' })
+            }
+            const verified = await verifyChannelToken(
+              c.env.DISCORD_CHANNEL_TOKEN_SECRET,
+              body.discordChannelToken,
+            )
+            if (!verified) {
+              throw new HTTPException(400, { message: 'Invalid or expired Discord channel token' })
+            }
+            updateData.discordChannelId = verified.channelId
+          }
+        }
 
         const updated = await Event.update(id, updateData)
         if (!updated) return c.json({ error: 'Not Found' }, 404)
@@ -1105,9 +1143,17 @@ window.__vite_plugin_react_preamble_installed__ = true
 
         if (commandName === 'hiyori' && subName === 'new') {
           const host = new URL(c.req.url).host
-          const path = channelId
-            ? `/events/new?channel=${encodeURIComponent(channelId)}`
-            : `/events/new`
+          // Discord はこのチャンネルでスラッシュコマンドが実行された事実を保証する（実行者は
+          // チャンネルメンバーに限られる）。その事実を Hiyori 側で HMAC 署名して短命トークン化し、
+          // クライアントから create event API へ提示させる。
+          let path = '/events/new'
+          if (channelId && c.env.DISCORD_CHANNEL_TOKEN_SECRET) {
+            const channelToken = await signChannelToken(
+              c.env.DISCORD_CHANNEL_TOKEN_SECRET,
+              channelId,
+            )
+            path = `/events/new?channelToken=${encodeURIComponent(channelToken)}`
+          }
           const createUrl = `https://${host}${path}`
           const returnTo = encodeURIComponent(path)
           const loginUrl = `https://${host}/api/auth/discord?returnTo=${returnTo}`

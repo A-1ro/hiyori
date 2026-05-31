@@ -4,6 +4,7 @@ import type { decisionFields } from '../../models/decision'
 import { audit_logs } from '../../../drizzle/schema'
 import type { Env } from '../index'
 import { postDecisionMessage, editDecisionMessage, DiscordApiError } from './client'
+import { escapeMarkdown } from './markdown'
 
 type DrizzleDb = BaseSQLiteDatabase<'async', any>
 
@@ -38,11 +39,11 @@ export function buildAnnouncementEmbed(args: {
   const eventUrl = `https://${workerHost}/events/${event.id}`
   const baseDescription = event.description?.trim()
   const description = baseDescription
-    ? `${baseDescription}\n\n以下のリンクから候補日に回答できます。`
+    ? `${escapeMarkdown(baseDescription)}\n\n以下のリンクから候補日に回答できます。`
     : '候補日への回答を募集中です。以下のリンクから回答してください。'
 
   const embed = {
-    title: event.title,
+    title: escapeMarkdown(event.title),
     url: eventUrl,
     color: 0x5865f2,
     description,
@@ -134,7 +135,7 @@ export function buildDecisionEmbed(args: {
   cancelled: boolean
 }): { embed: object; components: object[] } {
   const { event, slots, participants, workerHost, cancelled } = args
-  const names = participants.map((p) => p.displayName).join(', ')
+  const names = participants.map((p) => escapeMarkdown(p.displayName)).join(', ')
 
   const slotsLines = slots
     .map((s) => `- <t:${Math.floor(s.startAt.getTime() / 1000)}:F>`)
@@ -153,7 +154,7 @@ export function buildDecisionEmbed(args: {
     : `日時: <t:${Math.floor((slots[0]?.startAt.getTime() ?? 0) / 1000)}:F>\n参加者: ${names}`
 
   const embed = {
-    title: `${prefix}${event.title}`,
+    title: `${prefix}${escapeMarkdown(event.title)}`,
     color: cancelled ? 0xc0392b : 0x3498db,
     description,
   }

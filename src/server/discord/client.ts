@@ -24,7 +24,11 @@ export async function postDecisionMessage(
         Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ embeds: [args.embed], components: args.components }),
+      body: JSON.stringify({
+        embeds: [args.embed],
+        components: args.components,
+        allowed_mentions: { parse: [] },
+      }),
     },
   )
 
@@ -49,7 +53,11 @@ export async function editDecisionMessage(
         Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ embeds: [args.embed], components: args.components }),
+      body: JSON.stringify({
+        embeds: [args.embed],
+        components: args.components,
+        allowed_mentions: { parse: [] },
+      }),
     },
   )
 
@@ -58,3 +66,4 @@ export async function editDecisionMessage(
     throw new DiscordApiError(body.message ?? 'Discord API error', res.status, body.code)
   }
 }
+

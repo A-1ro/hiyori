@@ -53,7 +53,8 @@ export interface CreateEventInput {
   defaultDurationMinutes: number
   deadline?: string
   timezone?: string
-  discordChannelId?: string
+  // /hiyori new スラッシュコマンド由来の HMAC 署名トークン。手動入力は受け付けない。
+  discordChannelToken?: string
   candidates: Array<{ startAt: string; endAt?: string }>
 }
 
@@ -63,7 +64,8 @@ export interface UpdateEventInput {
   deadline?: string | null
   defaultDurationMinutes?: number
   timezone?: string
-  discordChannelId?: string | null
+  // 連携解除なら null、付け替えなら新しいトークン。
+  discordChannelToken?: string | null
 }
 
 export async function createEvent(
