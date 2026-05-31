@@ -53,6 +53,7 @@ export function EventTallyPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [sel, setSel] = useState<Set<string>>(new Set())
+  const [hoverCol, setHoverCol] = useState<string | null>(null)
 
   const { data: tallyData, isLoading: tallyLoading } = useQuery({
     queryKey: ['tally', id],
@@ -181,6 +182,19 @@ export function EventTallyPage() {
 
   const sep = (s: SlotCol): string =>
     s.isDayBoundary && s !== slots[0] ? '1px solid var(--color-border)' : 'none'
+  const colBg = (cid: string): string => {
+    if (sel.has(cid)) return 'var(--color-yes-soft)'
+    if (isOrganizer && hoverCol === cid) return 'var(--color-gray-50)'
+    return 'transparent'
+  }
+  const colCellProps = (cid: string) =>
+    isOrganizer
+      ? {
+          onClick: () => toggle(cid),
+          onMouseEnter: () => setHoverCol(cid),
+          onMouseLeave: () => setHoverCol(null),
+        }
+      : {}
   const selSlots = slots.filter((s) => sel.has(s.cand.id))
   const addedCount = [...sel].filter((c) => !confirmedSet.has(c)).length
   const removedCount = [...confirmedSet].filter((c) => !sel.has(c)).length
@@ -308,19 +322,19 @@ export function EventTallyPage() {
                   {slots.map((s) => {
                     const on = sel.has(s.cand.id)
                     const wasConfirmed = confirmedSet.has(s.cand.id)
-                    const bg = on ? 'var(--color-yes-soft)' : 'transparent'
                     return (
                       <th
                         key={s.cand.id}
-                        onClick={isOrganizer ? () => toggle(s.cand.id) : undefined}
+                        {...colCellProps(s.cand.id)}
                         style={{
                           padding: '4px 6px 8px',
                           textAlign: 'center',
                           cursor: isOrganizer ? 'pointer' : 'default',
                           minWidth: 56,
-                          background: bg,
+                          background: colBg(s.cand.id),
                           borderRadius: '10px 10px 0 0',
                           borderLeft: sep(s),
+                          transition: 'background 130ms var(--ease-out)',
                         }}
                       >
                         <div
@@ -405,17 +419,18 @@ export function EventTallyPage() {
                       {slots.map((s) => {
                         const cell: TallyVoteCell | undefined =
                           s.cand.votesByParticipantId[p.id]
-                        const on = sel.has(s.cand.id)
-                        const bg = on ? 'var(--color-yes-soft)' : 'transparent'
                         const cls = cell ? MKCLS[cell.choice] : null
                         return (
                           <td
                             key={s.cand.id}
+                            {...colCellProps(s.cand.id)}
                             style={{
                               textAlign: 'center',
                               height: 38,
-                              background: bg,
+                              background: colBg(s.cand.id),
                               borderLeft: sep(s),
+                              cursor: isOrganizer ? 'pointer' : 'default',
+                              transition: 'background 130ms var(--ease-out)',
                             }}
                             title={cell?.comment ?? undefined}
                           >
@@ -462,13 +477,16 @@ export function EventTallyPage() {
                     return (
                       <td
                         key={s.cand.id}
+                        {...colCellProps(s.cand.id)}
                         style={{
                           textAlign: 'center',
                           paddingTop: 12,
                           paddingBottom: 8,
-                          background: on ? 'var(--color-yes-soft)' : 'transparent',
+                          background: colBg(s.cand.id),
                           borderRadius: '0 0 10px 10px',
                           borderLeft: sep(s),
+                          cursor: isOrganizer ? 'pointer' : 'default',
+                          transition: 'background 130ms var(--ease-out)',
                         }}
                       >
                         <div
