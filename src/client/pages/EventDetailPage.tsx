@@ -1,12 +1,8 @@
-import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { $ZodIssue } from 'zod/v4/core'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import {
   fetchEvent,
-  updateEvent,
   deleteEvent,
-  deleteCandidate,
   fetchTally,
   createSubscription,
   ApiError,
@@ -14,7 +10,6 @@ import {
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
 import { Button, Badge, Icon } from '../components/primitives'
-import { EventForm, eventResponseToFormValues, type EventFormState } from '../components/events/EventForm'
 
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString('ja-JP', {
@@ -29,9 +24,6 @@ function formatDateTime(iso: string) {
 export function EventDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const [editOpen, setEditOpen] = useState(false)
-  const [editIssues, setEditIssues] = useState<$ZodIssue[] | undefined>()
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['event', id],
@@ -45,40 +37,10 @@ export function EventDetailPage() {
     enabled: !!id,
   })
 
-  const updateMutation = useMutation({
-    mutationFn: (state: EventFormState) =>
-      updateEvent(id!, {
-        title: state.title,
-        description: state.description || undefined,
-        defaultDurationMinutes: state.defaultDurationMinutes,
-        deadline: state.deadline ? new Date(state.deadline).toISOString() : null,
-        timezone: state.timezone || 'UTC',
-        discordChannelId: state.discordChannelId || null,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['event', id] })
-      setEditOpen(false)
-      setEditIssues(undefined)
-    },
-    onError: (err) => {
-      if (err instanceof ApiError) {
-        setEditIssues(err.issues)
-      }
-    },
-  })
-
   const deleteMutation = useMutation({
     mutationFn: () => deleteEvent(id!),
     onSuccess: () => {
       navigate('/')
-    },
-  })
-
-  const deleteCandidateMutation = useMutation({
-    mutationFn: (candidateId: string) => deleteCandidate(id!, candidateId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['event', id] })
-      queryClient.invalidateQueries({ queryKey: ['tally', id] })
     },
   })
 
@@ -181,17 +143,11 @@ export function EventDetailPage() {
           <Link to={`/events/${id}/tally`}>
             <Button variant="secondary" size="sm" icon={<Icon name="users" size={14} />}>集計を見る</Button>
           </Link>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Icon name="calendar" size={14} />}
-            onClick={() => {
-              setEditOpen(true)
-              setEditIssues(undefined)
-            }}
-          >
-            編集
-          </Button>
+          <Link to={`/events/${id}/edit`}>
+            <Button variant="secondary" size="sm" icon={<Icon name="calendar" size={14} />}>
+              編集
+            </Button>
+          </Link>
           <Button
             variant="danger"
             size="sm"
@@ -238,24 +194,17 @@ export function EventDetailPage() {
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
+                      gap: 8,
                       padding: '10px 14px',
                       borderRadius: 'var(--radius-sm)',
                       border: `1px solid ${isDecided ? 'var(--color-yes-ink)' : 'var(--color-border)'}`,
                       background: isDecided ? 'var(--color-yes-soft)' : 'var(--color-surface)',
                     }}
                   >
-                    <span style={{ fontSize: 14, color: 'var(--color-fg1)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {isDecided && <Badge tone="confirmed">★ 確定</Badge>}
+                    {isDecided && <Badge tone="confirmed">★ 確定</Badge>}
+                    <span style={{ fontSize: 14, color: 'var(--color-fg1)' }}>
                       {formatDateTime(cand.startAt)} 〜 {formatDateTime(cand.endAt)}
                     </span>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      icon={<Icon name="trash" size={13} />}
-                      onClick={() => deleteCandidateMutation.mutate(cand.id)}
-                      disabled={deleteCandidateMutation.isPending}
-                    />
                   </div>
                 )
               })}
@@ -263,61 +212,6 @@ export function EventDetailPage() {
           )}
         </section>
       </main>
-
-      {editOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 100,
-            padding: 24,
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setEditOpen(false)
-          }}
-        >
-          <div
-            style={{
-              background: 'var(--color-surface)',
-              borderRadius: 'var(--radius-xl)',
-              padding: 24,
-              width: '100%',
-              maxWidth: 520,
-              maxHeight: '80vh',
-              overflowY: 'auto',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 20,
-              }}
-            >
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>イベントを編集</h2>
-              <Button variant="ghost" size="sm" onClick={() => setEditOpen(false)}>
-                ✕
-              </Button>
-            </div>
-            <EventForm
-              initialValues={eventResponseToFormValues(event)}
-              onSubmit={(state) => {
-                setEditIssues(undefined)
-                updateMutation.mutate(state)
-              }}
-              submitLabel="保存"
-              isSubmitting={updateMutation.isPending}
-              issues={editIssues}
-              showCandidates={false}
-            />
-          </div>
-        </div>
-      )}
     </div>
   )
 }

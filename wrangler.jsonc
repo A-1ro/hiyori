@@ -1,23 +1,25 @@
 // Wrangler configuration. See https://developers.cloudflare.com/workers/wrangler/configuration/
 {
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "hiyori",
-  "main": "src/server/index.tsx",
-  "compatibility_date": "2026-05-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "hiyori",
-      // ローカル開発では未使用。`wrangler d1 create hiyori` 後の id に差し替える
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "drizzle/migrations"
-    }
-  ],
-  "vars": {
-    "ENVIRONMENT": "development"
-  },
-  "observability": {
-    "enabled": true
-  }
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "hiyori",
+	"main": "src/server/index.tsx",
+	"compatibility_date": "2026-05-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "hiyori",
+			// ローカル開発では未使用。`wrangler d1 create hiyori` 後の id に差し替える
+			"database_id": "4fb101ec-5490-452f-b7fb-a0e8ded356d2",
+			"migrations_dir": "drizzle/migrations"
+		}
+	],
+	"vars": {
+		"ENVIRONMENT": "development"
+	},
+	"observability": {
+		"enabled": true
+	}
 }

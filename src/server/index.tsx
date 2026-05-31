@@ -66,7 +66,7 @@ const createEventBody = z.object({
       }),
     )
     .min(1)
-    .max(50),
+    .max(365),
 })
 
 const patchEventBody = z.object({
@@ -123,7 +123,7 @@ const putVotesBody = z.object({
       }),
     )
     .min(1)
-    .max(50),
+    .max(365),
 })
 
 function isAllDay(startAt: Date, endAt: Date): boolean {
@@ -360,6 +360,13 @@ window.__vite_plugin_react_preamble_installed__ = true
           endAt: ci.endAt,
         }))
 
+        // D1 の SQLITE_MAX_VARIABLE_NUMBER 制約を避けるため candidates は分割 INSERT。
+        // 1 行 4 列なので 20 行 = 80 params に抑える（同一 batch 内なので atomic は維持）。
+        const CHUNK = 20
+        const candidateInserts = []
+        for (let i = 0; i < candidateValues.length; i += CHUNK) {
+          candidateInserts.push(app.db.insert(candidates).values(candidateValues.slice(i, i + CHUNK)))
+        }
         await app.batch([
           app.db.insert(events).values({
             id: eventId,
@@ -373,7 +380,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             discordChannelId: body.discordChannelId ?? null,
             createdAt: eventCreatedAt,
           }),
-          app.db.insert(candidates).values(candidateValues),
+          ...candidateInserts,
         ])
 
         const eventRow = await Event.findOne(eventId)
