@@ -1062,8 +1062,54 @@ window.__vite_plugin_react_preamble_installed__ = true
       const isValid = await verifyDiscordSignature(rawBody, signature, timestamp, publicKey)
       if (!isValid) return c.json({ error: 'Invalid signature' }, 401)
 
-      const body = JSON.parse(rawBody) as { type: number; member?: { user?: { id?: string } }; data?: { custom_id?: string } }
+      const body = JSON.parse(rawBody) as {
+        type: number
+        member?: { user?: { id?: string } }
+        user?: { id?: string }
+        channel_id?: string
+        channel?: { id?: string }
+        data?: { custom_id?: string; name?: string; options?: Array<{ name?: string }> }
+      }
       if (body.type === 1) return c.json({ type: 1 })
+      if (body.type === 2) {
+        const actorId = body.member?.user?.id ?? body.user?.id ?? null
+        const channelId = body.channel?.id ?? body.channel_id ?? null
+        const commandName = body.data?.name
+        const subName = body.data?.options?.[0]?.name
+
+        await app.db.insert(audit_logs).values({
+          id: crypto.randomUUID(),
+          actorDiscordId: actorId,
+          action: 'discord.command.received',
+          payload: { name: commandName, sub: subName, channelId },
+          createdAt: new Date(),
+        })
+
+        if (commandName === 'hiyori' && subName === 'new') {
+          const host = new URL(c.req.url).host
+          const path = channelId
+            ? `/events/new?channel=${encodeURIComponent(channelId)}`
+            : `/events/new`
+          const createUrl = `https://${host}${path}`
+          const returnTo = encodeURIComponent(path)
+          const loginUrl = `https://${host}/api/auth/discord?returnTo=${returnTo}`
+
+          return c.json({
+            type: 4,
+            data: {
+              flags: 64,
+              content: channelId
+                ? `このチャンネルに連携した状態で日程調整を作成できます。\n${createUrl}\n\nHiyori にログインしていない場合: ${loginUrl}`
+                : `日程調整を作成: ${createUrl}\n\nHiyori にログインしていない場合: ${loginUrl}`,
+            },
+          })
+        }
+
+        return c.json({
+          type: 4,
+          data: { flags: 64, content: '未対応のコマンドです' },
+        })
+      }
       if (body.type === 3) {
         await app.db.insert(audit_logs).values({
           id: crypto.randomUUID(),

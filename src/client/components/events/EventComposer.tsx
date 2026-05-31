@@ -96,6 +96,7 @@ export interface ComposerPayload {
 export interface EventComposerProps {
   mode: 'create' | 'edit'
   initial?: Partial<ComposerInitial>
+  presetDiscordChannelId?: string
   submitLabel: string
   submittingLabel: string
   isSubmitting: boolean
@@ -156,6 +157,7 @@ export function buildComposerInitial(
 export function EventComposer({
   mode,
   initial,
+  presetDiscordChannelId,
   submitLabel,
   submittingLabel,
   isSubmitting,
@@ -176,9 +178,11 @@ export function EventComposer({
   const [slotDur, setSlotDur] = useState<Record<string, number>>(initial?.slotDur ?? {})
   const [openDurSlot, setOpenDurSlot] = useState<string | null>(null)
   const [deadline, setDeadline] = useState(initial?.deadline ?? '')
-  const [discordChannelId, setDiscordChannelId] = useState(initial?.discordChannelId ?? '')
+  const [discordChannelId, setDiscordChannelId] = useState(
+    initial?.discordChannelId ?? presetDiscordChannelId ?? '',
+  )
   const [advancedOpen, setAdvancedOpen] = useState(
-    mode === 'edit' && Boolean(initial?.deadline || initial?.discordChannelId),
+    Boolean(initial?.deadline || initial?.discordChannelId || presetDiscordChannelId),
   )
 
   const timezone = initial?.timezone ?? 'Asia/Tokyo'

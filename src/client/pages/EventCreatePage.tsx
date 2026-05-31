@@ -1,12 +1,19 @@
-import { useNavigate } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { useMutation } from '@tanstack/react-query'
 import { createEvent } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
 import { Button } from '../components/primitives'
 import { EventComposer, type ComposerPayload } from '../components/events/EventComposer'
 
+const DISCORD_CHANNEL_ID_PATTERN = /^\d{17,20}$/
+
 export function EventCreatePage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const channelFromQuery = searchParams.get('channel')?.trim() ?? ''
+  const presetChannelId = DISCORD_CHANNEL_ID_PATTERN.test(channelFromQuery)
+    ? channelFromQuery
+    : ''
 
   const mutation = useMutation({
     mutationFn: (payload: ComposerPayload) =>
@@ -50,6 +57,7 @@ export function EventCreatePage() {
         </p>
         <EventComposer
           mode="create"
+          presetDiscordChannelId={presetChannelId || undefined}
           submitLabel="この内容でつくる"
           submittingLabel="作成中..."
           isSubmitting={mutation.isPending}

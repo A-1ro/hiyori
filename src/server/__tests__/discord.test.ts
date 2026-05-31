@@ -208,6 +208,70 @@ describe('POST /api/discord/interactions', () => {
       .first()
     expect(row).not.toBeNull()
   })
+
+  it('TS1: APPLICATION_COMMAND /hiyori new → ephemeral リンク (channel pre-fill)', async () => {
+    const { privateKey, publicKeyHex } = await generateEd25519KeyPair()
+    ;(env as Record<string, unknown>).DISCORD_PUBLIC_KEY = publicKeyHex
+
+    const body = JSON.stringify({
+      type: 2,
+      data: { name: 'hiyori', options: [{ name: 'new' }] },
+      channel_id: CHANNEL_ID,
+      member: { user: { id: '11111111111111111' } },
+    })
+    const timestamp = String(Math.floor(Date.now() / 1000))
+    const { signature } = await signInteraction(privateKey, body, timestamp)
+
+    const res = await SELF.fetch(`${BASE}/api/discord/interactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signature-Ed25519': signature,
+        'X-Signature-Timestamp': timestamp,
+      },
+      body,
+    })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { type: number; data: { flags: number; content: string } }
+    expect(json.type).toBe(4)
+    expect(json.data.flags).toBe(64)
+    expect(json.data.content).toContain(`/events/new?channel=${CHANNEL_ID}`)
+
+    const db = (env as { DB: D1Database }).DB
+    const row = await db
+      .prepare("SELECT * FROM audit_logs WHERE action = 'discord.command.received'")
+      .first()
+    expect(row).not.toBeNull()
+  })
+
+  it('TS2: APPLICATION_COMMAND 未対応コマンド → ephemeral 「未対応」', async () => {
+    const { privateKey, publicKeyHex } = await generateEd25519KeyPair()
+    ;(env as Record<string, unknown>).DISCORD_PUBLIC_KEY = publicKeyHex
+
+    const body = JSON.stringify({
+      type: 2,
+      data: { name: 'unknown' },
+      channel_id: CHANNEL_ID,
+      member: { user: { id: '11111111111111111' } },
+    })
+    const timestamp = String(Math.floor(Date.now() / 1000))
+    const { signature } = await signInteraction(privateKey, body, timestamp)
+
+    const res = await SELF.fetch(`${BASE}/api/discord/interactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signature-Ed25519': signature,
+        'X-Signature-Timestamp': timestamp,
+      },
+      body,
+    })
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { type: number; data: { flags: number; content: string } }
+    expect(json.type).toBe(4)
+    expect(json.data.flags).toBe(64)
+    expect(json.data.content).toContain('未対応')
+  })
 })
 
 describe('Discord 通知 waitUntil', () => {
