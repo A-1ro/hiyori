@@ -30,6 +30,98 @@ export interface EventLike {
   discordChannelId?: string | null
 }
 
+export function buildAnnouncementEmbed(args: {
+  event: { id: string; title: string; description?: string | null }
+  workerHost: string
+}): { embed: object; components: object[] } {
+  const { event, workerHost } = args
+  const eventUrl = `https://${workerHost}/events/${event.id}`
+  const baseDescription = event.description?.trim()
+  const description = baseDescription
+    ? `${baseDescription}\n\n以下のリンクから候補日に回答できます。`
+    : '候補日への回答を募集中です。以下のリンクから回答してください。'
+
+  const embed = {
+    title: event.title,
+    url: eventUrl,
+    color: 0x5865f2,
+    description,
+  }
+
+  const components: object[] = [
+    {
+      type: 1,
+      components: [
+        {
+          type: 2,
+          style: 5,
+          label: '日程を回答する',
+          url: `${eventUrl}/vote`,
+        },
+      ],
+    },
+  ]
+
+  return { embed, components }
+}
+
+export async function announceEventCreated(
+  ctx: { app: { db: DrizzleDb }; workerHost: string },
+  env: Env,
+  event: EventLike,
+): Promise<void> {
+  const { app, workerHost } = ctx
+  const now = new Date()
+
+  if (!event.discordChannelId) {
+    await app.db.insert(audit_logs).values({
+      id: crypto.randomUUID(),
+      actorDiscordId: null,
+      action: 'discord.announce.skipped',
+      payload: { reason: 'no_channel', eventId: event.id },
+      createdAt: now,
+    })
+    return
+  }
+  if (!env.DISCORD_BOT_TOKEN) {
+    await app.db.insert(audit_logs).values({
+      id: crypto.randomUUID(),
+      actorDiscordId: null,
+      action: 'discord.announce.skipped',
+      payload: { reason: 'no_token', eventId: event.id },
+      createdAt: now,
+    })
+    return
+  }
+
+  const { embed, components } = buildAnnouncementEmbed({ event, workerHost })
+  try {
+    const { messageId } = await postDecisionMessage(env, {
+      channelId: event.discordChannelId,
+      embed,
+      components,
+    })
+    await app.db.insert(audit_logs).values({
+      id: crypto.randomUUID(),
+      actorDiscordId: null,
+      action: 'discord.announce.success',
+      payload: { eventId: event.id, messageId },
+      createdAt: new Date(),
+    })
+  } catch (err) {
+    const payload = err instanceof DiscordApiError
+      ? { eventId: event.id, status: err.status, code: err.code, message: err.message }
+      : { eventId: event.id, message: String(err) }
+    await app.db.insert(audit_logs).values({
+      id: crypto.randomUUID(),
+      actorDiscordId: null,
+      action: 'discord.announce.failure',
+      payload,
+      createdAt: new Date(),
+    })
+  }
+}
+
 /**
  * 複数件の確定／取消通知用の単一埋め込みを構築する。`slots` は確定枠ごとに 1 件、
  * `cancelled=true` のときは「【キャンセル】」プレフィックス＋取消色。

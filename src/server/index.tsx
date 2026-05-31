@@ -13,7 +13,7 @@ import { zValidator } from '@hono/zod-validator'
 
 import { applyDecisions, cancelAllDecisions } from './services/decision'
 import { eventToVEvent, wrapInVCalendar } from './ics/serialize'
-import { notifyDecisionsChanged } from './discord/notifier'
+import { notifyDecisionsChanged, announceEventCreated } from './discord/notifier'
 import { verifyDiscordSignature } from './discord/verify'
 import { auditLogFields, auditLogTableName } from '../models/auditLog'
 import {
@@ -389,6 +389,22 @@ window.__vite_plugin_react_preamble_installed__ = true
         const eventRow = await Event.findOne(eventId)
         if (!eventRow) throw new HTTPException(500, { message: 'Internal Server Error' })
         const candidateRows = await Candidate.findMany({ where: { eventId }, limit: 1000 })
+
+        if (eventRow.discordChannelId) {
+          const workerHost = new URL(c.req.url).host
+          c.executionCtx.waitUntil(
+            announceEventCreated(
+              { app, workerHost },
+              c.env,
+              {
+                id: eventRow.id,
+                title: eventRow.title,
+                description: eventRow.description,
+                discordChannelId: eventRow.discordChannelId,
+              },
+            ),
+          )
+        }
 
         return c.json(
           {

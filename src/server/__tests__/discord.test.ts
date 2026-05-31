@@ -70,7 +70,6 @@ async function signInteraction(
 
 beforeEach(async () => {
   await applyMigrations()
-  ;(env as Record<string, unknown>).DISCORD_BOT_TOKEN = 'test_token'
   organizerCookie = await loginAs(ORGANIZER_ID)
 })
 
@@ -233,6 +232,7 @@ describe('Discord 通知 waitUntil', () => {
       }
       throw new Error(`Unexpected fetch: ${urlStr}`)
     }))
+    ;(env as Record<string, unknown>).DISCORD_BOT_TOKEN = 'test_token'
 
     const res = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
@@ -275,6 +275,7 @@ describe('Discord 通知 waitUntil', () => {
       }
       throw new Error(`Unexpected fetch: ${urlStr}`)
     }))
+    ;(env as Record<string, unknown>).DISCORD_BOT_TOKEN = 'test_token'
 
     const res = await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
     expect(res.status).toBe(201)
@@ -321,6 +322,7 @@ describe('Discord 通知 waitUntil', () => {
       }
       throw new Error(`Unexpected fetch: ${urlStr}`)
     }))
+    ;(env as Record<string, unknown>).DISCORD_BOT_TOKEN = 'test_token'
 
     // 先に確定
     await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
@@ -344,5 +346,91 @@ describe('Discord 通知 waitUntil', () => {
       .prepare("SELECT * FROM audit_logs WHERE action = 'discord.notify.success'")
       .all()
     expect(successLogs.results.length).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('調整リンクのチャンネル投稿 waitUntil', () => {
+  it('T7: イベント作成 + DISCORD_BOT_TOKEN + channelId → POST 成功 → discord.announce.success', async () => {
+    let postUrl: string | null = null
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => {
+      const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url
+      if (urlStr.startsWith('https://discord.com/')) {
+        postUrl = urlStr
+        return new Response(JSON.stringify({ id: 'announce_msg_1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      throw new Error(`Unexpected fetch: ${urlStr}`)
+    }))
+    ;(env as Record<string, unknown>).DISCORD_BOT_TOKEN = 'test_token'
+
+    const createRes = await SELF.fetch(`${BASE}/api/events`, {
+      method: 'POST',
+      body: JSON.stringify(validEventBase),
+      headers: { 'Content-Type': 'application/json', Cookie: organizerCookie },
+    })
+    expect(createRes.status).toBe(201)
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(postUrl).toMatch(
+      new RegExp(`^https://discord\\.com/api/v10/channels/${CHANNEL_ID}/messages$`),
+    )
+
+    const db = (env as { DB: D1Database }).DB
+    const successLog = await db
+      .prepare("SELECT * FROM audit_logs WHERE action = 'discord.announce.success'")
+      .first()
+    expect(successLog).not.toBeNull()
+  })
+
+  it('T8: 作成 + fetch モック 403 → イベントは 201 + discord.announce.failure', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => {
+      const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url
+      if (urlStr.startsWith('https://discord.com/')) {
+        return new Response(JSON.stringify({ code: 50013, message: 'Missing Permissions' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      throw new Error(`Unexpected fetch: ${urlStr}`)
+    }))
+    ;(env as Record<string, unknown>).DISCORD_BOT_TOKEN = 'test_token'
+
+    const createRes = await SELF.fetch(`${BASE}/api/events`, {
+      method: 'POST',
+      body: JSON.stringify(validEventBase),
+      headers: { 'Content-Type': 'application/json', Cookie: organizerCookie },
+    })
+    expect(createRes.status).toBe(201)
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    const db = (env as { DB: D1Database }).DB
+    const failureLog = await db
+      .prepare("SELECT * FROM audit_logs WHERE action = 'discord.announce.failure'")
+      .first()
+    expect(failureLog).not.toBeNull()
+  })
+
+  it('T9: discordChannelId 未指定 → fetch 呼ばれない / announce ログなし', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('fetch should not be called')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    ;(env as Record<string, unknown>).DISCORD_BOT_TOKEN = 'test_token'
+
+    const { discordChannelId: _omit, ...withoutChannel } = validEventBase
+    const createRes = await SELF.fetch(`${BASE}/api/events`, {
+      method: 'POST',
+      body: JSON.stringify(withoutChannel),
+      headers: { 'Content-Type': 'application/json', Cookie: organizerCookie },
+    })
+    expect(createRes.status).toBe(201)
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
