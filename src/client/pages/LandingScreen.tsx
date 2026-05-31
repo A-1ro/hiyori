@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router'
 import { AppHeader } from '../components/AppHeader'
 import { MiniMatrix } from '../components/MiniMatrix'
 import { Badge, Button, DiscordMark, Icon } from '../components/primitives'
+import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 
 function loginHref(returnTo: string): string {
   return `/api/auth/discord?returnTo=${encodeURIComponent(returnTo)}`
@@ -86,6 +87,24 @@ export function LandingScreen() {
         <p style={{ marginTop: 16, fontSize: 13, color: 'var(--color-fg3)' }}>
           ログインなしでも、名前を入れればすぐ回答できます。
         </p>
+        <div style={{ marginTop: 10 }}>
+          <a
+            href={DISCORD_BOT_INVITE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 13,
+              color: 'var(--color-blurple)',
+              textDecoration: 'none',
+            }}
+          >
+            <DiscordMark size={13} color="var(--color-blurple)" />
+            {DISCORD_BOT_INVITE_LABEL}
+          </a>
+        </div>
 
         <div
           style={{

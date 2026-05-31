@@ -10,6 +10,7 @@ import {
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
 import { Badge, Button, DiscordMark, Icon } from '../components/primitives'
+import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 
 const WD = ['日', '月', '火', '水', '木', '金', '土']
 
@@ -558,6 +559,22 @@ export function EventDetailPage() {
               >
                 Bot がチャンネルに URL を共有します
               </div>
+              <a
+                href={DISCORD_BOT_INVITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: 'var(--color-blurple)',
+                  textDecoration: 'underline',
+                }}
+              >
+                {DISCORD_BOT_INVITE_LABEL}
+              </a>
             </div>
           </div>
         )}

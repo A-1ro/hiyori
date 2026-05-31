@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from 'react'
-import { Button, Field, Icon, Input } from '../primitives'
+import { Button, DiscordMark, Field, Icon, Input } from '../primitives'
 import { MonthCalendar, WD } from '../MonthCalendar'
+import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../../lib/discord'
 
 const DURATIONS = [30, 60, 90, 120, 180, 240, 300, 360, 480] as const
 const durLabel = (m: number) =>
@@ -749,6 +750,24 @@ export function EventComposer({
                   onChange={setDiscordChannelId}
                   placeholder="例）1234567890123456789"
                 />
+                <a
+                  href={DISCORD_BOT_INVITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    marginTop: 8,
+                    fontSize: 12.5,
+                    color: 'var(--color-blurple)',
+                    textDecoration: 'none',
+                  }}
+                >
+                  <DiscordMark size={13} color="var(--color-blurple)" />
+                  {DISCORD_BOT_INVITE_LABEL}
+                  <Icon name="arrow-right" size={12} />
+                </a>
               </Field>
             </div>
           )}

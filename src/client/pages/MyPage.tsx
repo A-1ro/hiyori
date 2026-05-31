@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppHeader } from '../components/AppHeader'
 import { Avatar, Badge, Button, DiscordMark, Icon } from '../components/primitives'
 import { loginUrl, useLogout, useSession, type SessionUser } from '../auth/useSession'
+import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 import {
   ApiError,
   createSubscription,
@@ -575,6 +576,32 @@ export function MyPage() {
           >
             新しい日程調整をつくる
           </Button>
+        </div>
+
+        <div
+          style={{
+            marginTop: 32,
+            paddingTop: 24,
+            borderTop: '1px solid var(--separator)',
+            textAlign: 'center',
+          }}
+        >
+          <a
+            href={DISCORD_BOT_INVITE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 13,
+              color: 'var(--color-blurple)',
+              textDecoration: 'none',
+            }}
+          >
+            <DiscordMark size={14} color="var(--color-blurple)" />
+            {DISCORD_BOT_INVITE_LABEL}
+          </a>
         </div>
       </main>
     </div>
