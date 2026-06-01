@@ -12,20 +12,7 @@ export function LandingScreen() {
   const navigate = useNavigate()
   return (
     <div>
-      <AppHeader
-        right={
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<DiscordMark size={17} color="var(--color-blurple)" />}
-            onClick={() => {
-              window.location.href = loginHref('/')
-            }}
-          >
-            ログイン
-          </Button>
-        }
-      />
+      <AppHeader />
       <main
         style={{
           maxWidth: 720,

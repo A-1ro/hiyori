@@ -8,7 +8,7 @@ import {
   ApiError,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
-import { Button, Icon } from '../components/primitives'
+import { Button } from '../components/primitives'
 import {
   EventComposer,
   buildComposerInitial,
@@ -91,18 +91,7 @@ export function EventEditPage() {
 
   return (
     <div>
-      <AppHeader
-        right={
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Icon name="chevron-left" size={16} />}
-            onClick={() => navigate(`/events/${id}`)}
-          >
-            戻る
-          </Button>
-        }
-      />
+      <AppHeader back={{ onClick: () => navigate(`/events/${id}`) }} />
       <main style={{ maxWidth: 600, margin: '0 auto', padding: '40px 24px 96px' }}>
         <h2
           style={{

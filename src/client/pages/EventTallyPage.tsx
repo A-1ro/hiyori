@@ -213,26 +213,17 @@ export function EventTallyPage() {
   return (
     <div>
       <AppHeader
+        back={{ onClick: () => navigate(-1) }}
         right={
-          <>
-            {hasDecisions ? (
-              <Badge tone="confirmed" dot>
-                確定済み {confirmedSet.size}件
-              </Badge>
-            ) : (
-              <Badge tone="open" dot>
-                受付中
-              </Badge>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Icon name="chevron-left" size={16} />}
-              onClick={() => navigate(-1)}
-            >
-              戻る
-            </Button>
-          </>
+          hasDecisions ? (
+            <Badge tone="confirmed" dot>
+              確定済み {confirmedSet.size}件
+            </Badge>
+          ) : (
+            <Badge tone="open" dot>
+              受付中
+            </Badge>
+          )
         }
       />
       <main style={{ maxWidth: 1080, margin: '0 auto', padding: '32px 24px 140px' }}>

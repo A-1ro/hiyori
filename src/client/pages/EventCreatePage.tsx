@@ -2,7 +2,6 @@ import { useNavigate, useSearchParams } from 'react-router'
 import { useMutation } from '@tanstack/react-query'
 import { createEvent } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
-import { Button } from '../components/primitives'
 import { EventComposer, type ComposerPayload } from '../components/events/EventComposer'
 
 export function EventCreatePage() {
@@ -30,13 +29,7 @@ export function EventCreatePage() {
 
   return (
     <div>
-      <AppHeader
-        right={
-          <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
-            キャンセル
-          </Button>
-        }
-      />
+      <AppHeader back={{ onClick: () => navigate('/'), label: 'キャンセル' }} />
       <main style={{ maxWidth: 600, margin: '0 auto', padding: '40px 24px 96px' }}>
         <h2
           style={{

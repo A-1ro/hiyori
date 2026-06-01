@@ -484,7 +484,7 @@ export function MyPage() {
   if (sessionLoading) {
     return (
       <div>
-        <AppHeader onHome={() => navigate('/')} />
+        <AppHeader />
         <main style={{ maxWidth: 640, margin: '0 auto', padding: '48px 24px' }}>
           <p style={{ color: 'var(--color-fg3)' }}>読み込み中...</p>
         </main>
@@ -495,7 +495,7 @@ export function MyPage() {
   if (!user) {
     return (
       <div>
-        <AppHeader onHome={() => navigate('/')} />
+        <AppHeader />
         <main
           style={{ maxWidth: 480, margin: '0 auto', padding: '64px 24px', textAlign: 'center' }}
         >
@@ -542,7 +542,7 @@ export function MyPage() {
 
   return (
     <div>
-      <AppHeader onHome={() => navigate('/')} />
+      <AppHeader />
       <main style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px 80px' }}>
         <ProfileCard user={user} />
 
