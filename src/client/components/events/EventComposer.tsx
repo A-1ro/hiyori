@@ -455,8 +455,8 @@ export function EventComposer({
               候補日
             </label>
             <span style={{ fontSize: 12, color: 'var(--color-fg3)' }}>
-              タップ、または
-              <b style={{ color: 'var(--color-fg2)' }}>ドラッグで範囲選択</b>
+              タップで選択、
+              <b style={{ color: 'var(--color-fg2)' }}>範囲モード</b>でまとめて選択
             </span>
           </div>
           <MonthCalendar selected={selected} onChange={setSelected} />
