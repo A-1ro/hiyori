@@ -235,7 +235,7 @@ export function EventTallyPage() {
           </>
         }
       />
-      <main style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px 140px' }}>
+      <main style={{ maxWidth: 1080, margin: '0 auto', padding: '32px 24px 140px' }}>
         <h2
           style={{
             margin: '0 0 6px',
@@ -558,7 +558,7 @@ export function EventTallyPage() {
         >
           <div
             style={{
-              maxWidth: 720,
+              maxWidth: 1080,
               margin: '0 auto',
               display: 'flex',
               alignItems: 'center',
