@@ -206,12 +206,33 @@ window.$RefreshSig$ = () => (type) => type
 window.__vite_plugin_react_preamble_installed__ = true
 `.trim()
 
-  const renderShell = () => (
+  const renderShell = (reqUrl: string) => {
+    const u = new URL(reqUrl)
+    const ogUrl = `${u.origin}${u.pathname}`
+    const ogImage = `${u.origin}/hiyori-ogp.png`
+    const siteTitle = 'Hiyori — 時間帯で合わせる日程調整'
+    const siteDescription =
+      'Discord と使える日程調整ツール。時間帯ごとに○△×で聞くから「この人の○は昼？夜？」の確認がいらない。決まった日はカレンダーに自動で入ります。'
+    return (
     <html lang="ja">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Hiyori</title>
+        <title>{siteTitle}</title>
+        <meta name="description" content={siteDescription} />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="Hiyori" />
+        <meta property="og:title" content={siteTitle} />
+        <meta property="og:description" content={siteDescription} />
+        <meta property="og:url" content={ogUrl} />
+        <meta property="og:image" content={ogImage} />
+        <meta property="og:image:width" content="1729" />
+        <meta property="og:image:height" content="910" />
+        <meta property="og:locale" content="ja_JP" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={siteTitle} />
+        <meta name="twitter:description" content={siteDescription} />
+        <meta name="twitter:image" content={ogImage} />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
         <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
@@ -227,7 +248,8 @@ window.__vite_plugin_react_preamble_installed__ = true
         <div id="root"></div>
       </body>
     </html>
-  )
+    )
+  }
 
   async function resolveParticipantByCookie(
     c: Context<{ Bindings: Env }>,
@@ -1238,7 +1260,7 @@ window.__vite_plugin_react_preamble_installed__ = true
     if (c.req.method !== 'GET') {
       return c.json({ error: 'Not Found' }, 404)
     }
-    return c.html(renderShell())
+    return c.html(renderShell(c.req.url))
   })
 
   return routes

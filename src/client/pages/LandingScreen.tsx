@@ -23,7 +23,7 @@ export function LandingScreen() {
       >
         <div style={{ display: 'inline-flex', marginBottom: 22 }}>
           <Badge tone="discord" dot>
-            Discord とカレンダーをつなぐ
+            Discord 日程調整
           </Badge>
         </div>
         <h1
@@ -37,7 +37,7 @@ export function LandingScreen() {
             overflowWrap: 'anywhere',
           }}
         >
-          みんなの「行ける日」が、すぐ見つかる。
+          「○△× だけじゃ、日程って決まらなくない？」
         </h1>
         <p
           style={{
@@ -48,8 +48,9 @@ export function LandingScreen() {
             color: 'var(--color-fg2)',
           }}
         >
-          候補日を出して、<b style={{ color: 'var(--color-fg1)' }}>○ △ ×</b>{' '}
-          で答えるだけ。決まった日は Discord に通知され、お使いのカレンダーにも自動で追加されます。
+          同じ「○」でも、昼のつもりの人と夜のつもりの人がいる。Hiyori は
+          <b style={{ color: 'var(--color-fg1)' }}>時間帯ごと</b>
+          に聞くから、いちいち確認し直さなくていい。決まった日はカレンダーにも自動で入ります。
         </p>
         <div className="dm-hero-ctas">
           <Button
@@ -120,6 +121,22 @@ export function LandingScreen() {
             </Badge>
           </div>
           <MiniMatrix />
+          <p
+            style={{
+              margin: '16px 0 0',
+              paddingTop: 14,
+              borderTop: '1px solid var(--color-border)',
+              fontSize: 13,
+              lineHeight: 1.6,
+              color: 'var(--color-fg3)',
+            }}
+          >
+            スコアが一番高い枠に{' '}
+            <b style={{ color: 'var(--color-fg2)' }}>★ 最有力</b>{' '}
+            が付く。全員の○△×を見比べる
+            <b style={{ color: 'var(--color-fg2)' }}>「日程テトリス」</b>
+            は、もうしなくていい。
+          </p>
         </div>
       </main>
     </div>
