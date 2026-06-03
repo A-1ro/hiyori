@@ -2,7 +2,8 @@ import { useState, type CSSProperties } from 'react'
 import { Button, Field, Icon, Input } from '../primitives'
 import { MonthCalendar, WD } from '../MonthCalendar'
 
-const DURATIONS = [30, 60, 90, 120, 180, 240, 300, 360, 480] as const
+const HOUR_OPTS = Array.from({ length: 13 }, (_, i) => i) // 0〜12 時間
+const MIN_OPTS = [0, 10, 20, 30, 40, 50] // 10 分刻み
 const durLabel = (m: number) =>
   m < 60
     ? `${m}分`
@@ -68,6 +69,196 @@ const buildLocalISO = (ds: string, hhmm: string, durMin: number) => {
   const start = new Date(y, m - 1, d, hh, mm, 0, 0)
   const end = new Date(start.getTime() + durMin * 60_000)
   return { startAt: start.toISOString(), endAt: end.toISOString() }
+}
+
+const splitDur = (m: number) => ({ h: Math.floor(m / 60), min: m % 60 })
+// 0 分はモデルの min(1) 制約に反するため、最小 10 分にクランプする。
+const combineDur = (h: number, min: number) => Math.max(10, h * 60 + min)
+
+function DurColumn({
+  label,
+  opts,
+  active,
+  fmt,
+  onPick,
+}: {
+  label: string
+  opts: readonly number[]
+  active: number
+  fmt: (v: number) => string
+  onPick: (v: number) => void
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 60 }}>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: 'var(--color-fg3)',
+          padding: '2px 10px 6px',
+        }}
+      >
+        {label}
+      </span>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+          maxHeight: 176,
+          overflowY: 'auto',
+        }}
+      >
+        {opts.map((o) => {
+          const on = o === active
+          return (
+            <button
+              key={o}
+              type="button"
+              onClick={() => onPick(o)}
+              style={{
+                fontFamily: 'inherit',
+                fontSize: 14,
+                textAlign: 'left',
+                padding: '7px 12px',
+                border: 'none',
+                borderRadius: 'var(--radius-xs)',
+                cursor: 'pointer',
+                background: on ? 'var(--color-ink-soft)' : 'transparent',
+                color: 'var(--color-fg1)',
+                fontWeight: on ? 600 : 400,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {fmt(o)}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 時間・分を別々に選ぶ所要時間ピッカー。最終値は分単位（number）。
+ * 時間は 0〜12、分は 10 分刻み。open / onToggle / onClose は
+ * 親が単一オープン制御＋バックドロップを保持するために受け取る。
+ */
+function DurationPicker({
+  value,
+  onChange,
+  open,
+  onToggle,
+  onClose,
+  variant,
+  prefix,
+  highlight = false,
+}: {
+  value: number
+  onChange: (m: number) => void
+  open: boolean
+  onToggle: () => void
+  onClose: () => void
+  variant: 'field' | 'pill'
+  prefix?: string
+  highlight?: boolean
+}) {
+  const { h, min } = splitDur(value)
+
+  return (
+    <div style={{ position: 'relative', zIndex: open ? 20 : undefined }}>
+      {variant === 'field' ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            fontFamily: 'inherit',
+            fontSize: 15,
+            color: 'var(--color-fg1)',
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border-strong)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '12px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            cursor: 'pointer',
+          }}
+        >
+          <span>{durLabel(value)}</span>
+          <Icon name="chevron-down" size={18} color="var(--color-fg4)" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onToggle}
+          title="所要時間を変更"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            fontFamily: 'inherit',
+            cursor: 'pointer',
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: highlight ? 'var(--color-blurple-ink)' : 'var(--color-fg2)',
+            background: highlight ? 'var(--color-blurple-soft)' : 'var(--color-surface)',
+            border: open
+              ? '1px solid var(--color-blurple-ink)'
+              : highlight
+                ? '1px solid var(--color-blurple-border)'
+                : '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-pill)',
+            padding: '4px 8px 4px 11px',
+            fontVariantNumeric: 'tabular-nums',
+            transition: 'border-color 130ms var(--ease-out)',
+          }}
+        >
+          {prefix}
+          <span style={{ opacity: 0.55 }}>{durLabel(value)}</span>
+          <Icon name="chevron-down" size={13} color="currentColor" />
+        </button>
+      )}
+      {open && (
+        <>
+          <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 15 }} />
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 4px)',
+              left: 0,
+              zIndex: 21,
+              display: 'flex',
+              gap: 4,
+              background: 'var(--color-surface)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--color-border)',
+              boxShadow: 'var(--shadow-md)',
+              padding: 6,
+            }}
+          >
+            <DurColumn
+              label="時間"
+              opts={HOUR_OPTS}
+              active={h}
+              fmt={(v) => String(v)}
+              onPick={(v) => onChange(combineDur(v, min))}
+            />
+            <div style={{ width: 1, background: 'var(--color-border)', margin: '4px 0' }} />
+            <DurColumn
+              label="分"
+              opts={MIN_OPTS}
+              active={min}
+              fmt={pad2}
+              onPick={(v) => onChange(combineDur(h, v))}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  )
 }
 
 export interface ComposerInitial {
@@ -268,73 +459,17 @@ export function EventComposer({
           <Input value={memo} onChange={setMemo} placeholder="場所や持ち物など" />
         </Field>
 
-        <div style={{ position: 'relative', width: 180 }}>
+        <div style={{ width: 200 }}>
           <Field label="所要時間" hint="各枠の初期値（枠ごとに変更できます）">
-            <button
-              type="button"
-              onClick={() => setDurOpen((o) => !o)}
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                fontFamily: 'inherit',
-                fontSize: 15,
-                color: 'var(--color-fg1)',
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border-strong)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '12px 14px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-              }}
-            >
-              <span>{durLabel(dur)}</span>
-              <Icon name="chevron-down" size={18} color="var(--color-fg4)" />
-            </button>
+            <DurationPicker
+              variant="field"
+              value={dur}
+              onChange={setDur}
+              open={durOpen}
+              onToggle={() => setDurOpen((o) => !o)}
+              onClose={() => setDurOpen(false)}
+            />
           </Field>
-          {durOpen && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 'calc(100% - 18px)',
-                left: 0,
-                right: 0,
-                zIndex: 10,
-                background: 'var(--color-surface)',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-border)',
-                boxShadow: 'var(--shadow-md)',
-                padding: 6,
-              }}
-            >
-              {DURATIONS.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => {
-                    setDur(d)
-                    setDurOpen(false)
-                  }}
-                  style={{
-                    width: '100%',
-                    textAlign: 'left',
-                    fontFamily: 'inherit',
-                    fontSize: 15,
-                    padding: '10px 12px',
-                    border: 'none',
-                    borderRadius: 'var(--radius-xs)',
-                    cursor: 'pointer',
-                    background: d === dur ? 'var(--color-ink-soft)' : 'transparent',
-                    color: 'var(--color-fg1)',
-                    fontWeight: d === dur ? 600 : 400,
-                  }}
-                >
-                  {durLabel(d)}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         <Field
@@ -512,12 +647,6 @@ export function EventComposer({
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {openDurSlot && (
-                <div
-                  onClick={() => setOpenDurSlot(null)}
-                  style={{ position: 'fixed', inset: 0, zIndex: 15 }}
-                />
-              )}
               {dates.map((ds) => {
                 const f = fmtDate(ds)
                 return (
@@ -577,93 +706,17 @@ export function EventComposer({
                           const isOpen = openDurSlot === k
                           const custom = slotDur[k] != null && slotDur[k] !== dur
                           return (
-                            <div
+                            <DurationPicker
                               key={t}
-                              style={{
-                                position: 'relative',
-                                zIndex: isOpen ? 20 : 'auto',
-                              }}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => setOpenDurSlot(isOpen ? null : k)}
-                                title="所要時間を変更"
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 5,
-                                  fontFamily: 'inherit',
-                                  cursor: 'pointer',
-                                  fontSize: 12.5,
-                                  fontWeight: 600,
-                                  color: custom
-                                    ? 'var(--color-blurple-ink)'
-                                    : 'var(--color-fg2)',
-                                  background: custom
-                                    ? 'var(--color-blurple-soft)'
-                                    : 'var(--color-surface)',
-                                  border: isOpen
-                                    ? '1px solid var(--color-blurple-ink)'
-                                    : custom
-                                      ? '1px solid var(--color-blurple-border)'
-                                      : '1px solid var(--color-border)',
-                                  borderRadius: 'var(--radius-pill)',
-                                  padding: '4px 8px 4px 11px',
-                                  fontVariantNumeric: 'tabular-nums',
-                                  transition: 'border-color 130ms var(--ease-out)',
-                                }}
-                              >
-                                {t}
-                                <span style={{ opacity: 0.55 }}>{durLabel(d)}</span>
-                                <Icon name="chevron-down" size={13} color="currentColor" />
-                              </button>
-                              {isOpen && (
-                                <div
-                                  style={{
-                                    position: 'absolute',
-                                    top: 'calc(100% + 4px)',
-                                    left: 0,
-                                    zIndex: 21,
-                                    background: 'var(--color-surface)',
-                                    borderRadius: 'var(--radius-sm)',
-                                    border: '1px solid var(--color-border)',
-                                    boxShadow: 'var(--shadow-md)',
-                                    padding: 5,
-                                    minWidth: 100,
-                                  }}
-                                >
-                                  {DURATIONS.map((opt) => (
-                                    <button
-                                      key={opt}
-                                      type="button"
-                                      onClick={() => {
-                                        setSlotDuration(ds, t, opt)
-                                        setOpenDurSlot(null)
-                                      }}
-                                      style={{
-                                        width: '100%',
-                                        textAlign: 'left',
-                                        fontFamily: 'inherit',
-                                        fontSize: 13.5,
-                                        padding: '7px 10px',
-                                        border: 'none',
-                                        borderRadius: 'var(--radius-xs)',
-                                        cursor: 'pointer',
-                                        background:
-                                          opt === d
-                                            ? 'var(--color-ink-soft)'
-                                            : 'transparent',
-                                        color: 'var(--color-fg1)',
-                                        fontWeight: opt === d ? 600 : 400,
-                                        fontVariantNumeric: 'tabular-nums',
-                                      }}
-                                    >
-                                      {durLabel(opt)}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                              variant="pill"
+                              prefix={t}
+                              highlight={custom}
+                              value={d}
+                              onChange={(m) => setSlotDuration(ds, t, m)}
+                              open={isOpen}
+                              onToggle={() => setOpenDurSlot(isOpen ? null : k)}
+                              onClose={() => setOpenDurSlot(null)}
+                            />
                           )
                         })
                       )}
