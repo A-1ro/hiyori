@@ -26,7 +26,7 @@ import { decisionFields, decisionTableName } from '../models/decision'
 import { eventFields, eventTableName } from '../models/event'
 import { participantFields, participantTableName } from '../models/participant'
 import { voteFields, voteTableName } from '../models/vote'
-import { audit_logs, calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions } from '../../drizzle/schema'
+import { calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions } from '../../drizzle/schema'
 import { userTableName, userFields } from '../models/user'
 import { sessionTableName, sessionFields } from '../models/session'
 import { setSessionCookie, clearSessionCookie, getSessionToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, isSecureRequest, SESSION_TTL_SECONDS } from './auth/cookies'
@@ -171,9 +171,9 @@ const buildApp = (env: Env) => {
   const Vote = app.model(voteTableName, voteFields)
   const Decision = app.model(decisionTableName, decisionFields)
   const CalendarSubscription = app.model(calendarSubscriptionTableName, calendarSubscriptionFields)
-  app.model(auditLogTableName, auditLogFields)
+  const AuditLog = app.model(auditLogTableName, auditLogFields)
   const User = app.model(userTableName, userFields)
-  app.model(sessionTableName, sessionFields)
+  const Session = app.model(sessionTableName, sessionFields)
 
   // M2: /api/* に同一オリジンのみ許可する CORS チェック
   app.use('/api/*', cors({
@@ -366,7 +366,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       const token = getSessionToken(c)
       if (token) {
         const tokenHash = await hashToken(token)
-        await app.db.delete(sessions).where(eq(sessions.tokenHash, tokenHash))
+        await Session.delete({ tokenHash })
       }
       clearSessionCookie(c)
       return c.json({ ok: true })
@@ -1199,12 +1199,10 @@ window.__vite_plugin_react_preamble_installed__ = true
         const commandName = body.data?.name
         const subName = body.data?.options?.[0]?.name
 
-        await app.db.insert(audit_logs).values({
-          id: crypto.randomUUID(),
-          actorDiscordId: actorId,
+        await AuditLog.create({
+          actorDiscordId: actorId ?? undefined,
           action: 'discord.command.received',
           payload: { name: commandName, sub: subName, channelId },
-          createdAt: new Date(),
         })
 
         if (commandName === 'hiyori' && subName === 'new') {
@@ -1241,12 +1239,10 @@ window.__vite_plugin_react_preamble_installed__ = true
         })
       }
       if (body.type === 3) {
-        await app.db.insert(audit_logs).values({
-          id: crypto.randomUUID(),
-          actorDiscordId: body.member?.user?.id ?? null,
+        await AuditLog.create({
+          actorDiscordId: body.member?.user?.id ?? undefined,
           action: 'discord.interaction.received',
           payload: { type: 3, custom_id: body.data?.custom_id },
-          createdAt: new Date(),
         })
         return c.json({ type: 6 })
       }
