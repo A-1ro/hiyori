@@ -31,9 +31,6 @@
         "useKeyWithClickEvents": "warn",
         "noStaticElementInteractions": "warn",
         "noLabelWithoutControl": "warn"
-      },
-      "correctness": {
-        "useHookAtTopLevel": "warn"
       }
     }
   },
