@@ -36,7 +36,9 @@ export function buildAnnouncementEmbed(args: {
   workerHost: string
 }): { embed: object; components: object[] } {
   const { event, workerHost } = args
-  const eventUrl = `https://${workerHost}/events/${event.id}`
+  // 候補日設定後の告知メッセージは、埋め込みタイトルのリンクも回答ボタンも
+  // 回答ページ（/events/:id/vote）を指すようにする。
+  const voteUrl = `https://${workerHost}/events/${event.id}/vote`
   const baseDescription = event.description?.trim()
   const description = baseDescription
     ? `${escapeMarkdown(baseDescription)}\n\n以下のリンクから候補日に回答できます。`
@@ -44,7 +46,7 @@ export function buildAnnouncementEmbed(args: {
 
   const embed = {
     title: escapeMarkdown(event.title),
-    url: eventUrl,
+    url: voteUrl,
     color: 0x5865f2,
     description,
   }
@@ -57,7 +59,7 @@ export function buildAnnouncementEmbed(args: {
           type: 2,
           style: 5,
           label: '日程を回答する',
-          url: `${eventUrl}/vote`,
+          url: voteUrl,
         },
       ],
     },
