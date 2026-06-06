@@ -81,7 +81,10 @@ export function EventVotePage() {
   const queryClient = useQueryClient()
   // 入力中の回答はこの端末の localStorage に下書き保存する（サーバー＝集計には送らない）。
   const draftKey = id ? `hiyori:vote-draft:${id}` : null
-  const hydratedRef = useRef(false)
+  // どのイベント id まで votes を初期化済みか。SPA 内で別イベントの vote ページに
+  // 切り替わったとき（コンポーネントは再利用され id だけ変わる）に再初期化するため、
+  // boolean ではなく id を保持する。
+  const hydratedForId = useRef<string | null>(null)
   const [asGuest, setAsGuest] = useState(false)
   const [guestName, setGuestName] = useState('')
   const [registerError, setRegisterError] = useState<string | undefined>()
@@ -107,10 +110,12 @@ export function EventVotePage() {
     enabled: !!id && !!sessionUser,
   })
 
-  // 初期化（1回だけ）。復元の優先順位は「ローカル下書き ＞ サーバー保存済み」。
+  // 初期化（id ごとに1回）。復元の優先順位は「ローカル下書き ＞ サーバー保存済み」。
   // サーバーへ未送信の入力中の値が、再フェッチで巻き戻らないようにするため。
+  // id が変わった場合は前イベントの votes を持ち越さないよう必ず再初期化する。
   useEffect(() => {
-    if (hydratedRef.current || myLoading) return
+    if (!id || myLoading) return
+    if (hydratedForId.current === id) return
     let draft: Record<string, VoteChoice> | null = null
     if (draftKey) {
       try {
@@ -128,13 +133,18 @@ export function EventVotePage() {
         initial[v.candidateId] = v.choice as VoteChoice
       }
       setVotes(initial)
+    } else {
+      // 下書きもサーバー票も無いイベントに切り替わったら、前イベントの票をクリア
+      setVotes({})
     }
-    hydratedRef.current = true
-  }, [myData, myLoading, draftKey])
+    hydratedForId.current = id
+  }, [id, myData, myLoading, draftKey])
 
   // 下書きの自動保存（端末ローカルのみ。サーバーには送らない）。
+  // 現在の id の初期化が完了するまでは書かない（別イベントの候補 ID を
+  // 取り違えて保存しないようにするため）。
   useEffect(() => {
-    if (!hydratedRef.current || !draftKey) return
+    if (!draftKey || hydratedForId.current !== id) return
     try {
       if (Object.keys(votes).length > 0) {
         localStorage.setItem(draftKey, JSON.stringify(votes))
@@ -144,7 +154,7 @@ export function EventVotePage() {
     } catch {
       // localStorage 不可（プライベートブラウズ等）の場合は黙って諦める
     }
-  }, [votes, draftKey])
+  }, [votes, draftKey, id])
 
   const registerMutation = useMutation({
     mutationFn: (kind: 'guest' | 'discord') => {
