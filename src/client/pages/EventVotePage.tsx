@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useParams, Link } from 'react-router'
+import { useParams, useNavigate, Link } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchEvent,
@@ -77,6 +77,7 @@ function groupByDay(candidates: CandidateResponse[]): DayGroup[] {
 
 export function EventVotePage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [asGuest, setAsGuest] = useState(false)
   const [guestName, setGuestName] = useState('')
@@ -161,6 +162,11 @@ export function EventVotePage() {
       if (context?.previous !== undefined) {
         queryClient.setQueryData(['myVotes', id], context.previous)
       }
+    },
+    onSuccess: () => {
+      // 回答完了後はみんなの回答（集計）ページへ遷移する
+      queryClient.invalidateQueries({ queryKey: ['tally', id] })
+      navigate(`/events/${id}/tally`)
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['myVotes', id] })
