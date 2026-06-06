@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -79,6 +79,12 @@ export function EventVotePage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  // 入力中の回答はこの端末の localStorage に下書き保存する（サーバー＝集計には送らない）。
+  const draftKey = id ? `hiyori:vote-draft:${id}` : null
+  // どのイベント id まで votes を初期化済みか。SPA 内で別イベントの vote ページに
+  // 切り替わったとき（コンポーネントは再利用され id だけ変わる）に再初期化するため、
+  // boolean ではなく id を保持する。
+  const hydratedForId = useRef<string | null>(null)
   const [asGuest, setAsGuest] = useState(false)
   const [guestName, setGuestName] = useState('')
   const [registerError, setRegisterError] = useState<string | undefined>()
@@ -104,15 +110,51 @@ export function EventVotePage() {
     enabled: !!id && !!sessionUser,
   })
 
+  // 初期化（id ごとに1回）。復元の優先順位は「ローカル下書き ＞ サーバー保存済み」。
+  // サーバーへ未送信の入力中の値が、再フェッチで巻き戻らないようにするため。
+  // id が変わった場合は前イベントの votes を持ち越さないよう必ず再初期化する。
   useEffect(() => {
-    if (myData && myData.votes.length > 0) {
+    if (!id || myLoading) return
+    if (hydratedForId.current === id) return
+    let draft: Record<string, VoteChoice> | null = null
+    if (draftKey) {
+      try {
+        const raw = localStorage.getItem(draftKey)
+        if (raw) draft = JSON.parse(raw) as Record<string, VoteChoice>
+      } catch {
+        draft = null
+      }
+    }
+    if (draft && Object.keys(draft).length > 0) {
+      setVotes(draft)
+    } else if (myData && myData.votes.length > 0) {
       const initial: Record<string, VoteChoice> = {}
       for (const v of myData.votes) {
         initial[v.candidateId] = v.choice as VoteChoice
       }
       setVotes(initial)
+    } else {
+      // 下書きもサーバー票も無いイベントに切り替わったら、前イベントの票をクリア
+      setVotes({})
     }
-  }, [myData])
+    hydratedForId.current = id
+  }, [id, myData, myLoading, draftKey])
+
+  // 下書きの自動保存（端末ローカルのみ。サーバーには送らない）。
+  // 現在の id の初期化が完了するまでは書かない（別イベントの候補 ID を
+  // 取り違えて保存しないようにするため）。
+  useEffect(() => {
+    if (!draftKey || hydratedForId.current !== id) return
+    try {
+      if (Object.keys(votes).length > 0) {
+        localStorage.setItem(draftKey, JSON.stringify(votes))
+      } else {
+        localStorage.removeItem(draftKey)
+      }
+    } catch {
+      // localStorage 不可（プライベートブラウズ等）の場合は黙って諦める
+    }
+  }, [votes, draftKey, id])
 
   const registerMutation = useMutation({
     mutationFn: (kind: 'guest' | 'discord') => {
@@ -164,6 +206,14 @@ export function EventVotePage() {
       }
     },
     onSuccess: () => {
+      // サーバーへ送信できたのでローカル下書きは破棄する
+      if (draftKey) {
+        try {
+          localStorage.removeItem(draftKey)
+        } catch {
+          // no-op
+        }
+      }
       // 回答完了後はみんなの回答（集計）ページへ遷移する
       queryClient.invalidateQueries({ queryKey: ['tally', id] })
       navigate(`/events/${id}/tally`)
@@ -260,9 +310,14 @@ export function EventVotePage() {
         >
           {event.title}
         </h2>
-        <p style={{ margin: '0 0 24px', fontSize: 14.5, color: 'var(--color-fg2)' }}>
+        <p style={{ margin: '0 0 10px', fontSize: 14.5, color: 'var(--color-fg2)' }}>
           参加できる<b style={{ color: 'var(--color-fg1)' }}>時間帯</b>に{' '}
           <b style={{ color: 'var(--color-fg1)' }}>○ △ ×</b> で答えてください。
+        </p>
+        <p style={{ margin: '0 0 24px', fontSize: 12.5, color: 'var(--color-fg3)', lineHeight: 1.6 }}>
+          入力内容はこの端末に自動保存されます。
+          <b style={{ color: 'var(--color-fg2)' }}>「回答を送信」</b>
+          するまで、みんなの回答には反映されません。
         </p>
 
         {/* identity */}
