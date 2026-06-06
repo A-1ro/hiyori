@@ -128,6 +128,13 @@ export function EventTallyPage() {
     return { slots, days, bestId: best?.id ?? null }
   }, [tallyData])
 
+  // 編集中=現在の選択と、サーバ側に保存されている確定セットが違うか
+  const isDirty = useMemo(() => {
+    if (sel.size !== confirmedSet.size) return true
+    for (const x of sel) if (!confirmedSet.has(x)) return true
+    return false
+  }, [sel, confirmedSet])
+
   if (tallyLoading) {
     return (
       <div>
@@ -183,13 +190,6 @@ export function EventTallyPage() {
       target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
     }
   }
-
-  // 編集中=現在の選択と、サーバ側に保存されている確定セットが違うか
-  const isDirty = useMemo(() => {
-    if (sel.size !== confirmedSet.size) return true
-    for (const x of sel) if (!confirmedSet.has(x)) return true
-    return false
-  }, [sel, confirmedSet])
 
   const sep = (s: SlotCol): string =>
     s.isDayBoundary && s !== slots[0] ? '1px solid var(--color-border)' : 'none'
