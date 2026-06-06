@@ -583,7 +583,10 @@ export function MyPage() {
             marginTop: 32,
             paddingTop: 24,
             borderTop: '1px solid var(--separator)',
-            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 14,
           }}
         >
           <a
@@ -602,6 +605,17 @@ export function MyPage() {
             <DiscordMark size={14} color="var(--color-blurple)" />
             {DISCORD_BOT_INVITE_LABEL}
           </a>
+          <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+            <Link to="/help" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+              使い方
+            </Link>
+            <Link to="/terms" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+              利用規約
+            </Link>
+            <Link to="/privacy" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+              プライバシーポリシー
+            </Link>
+          </div>
         </div>
       </main>
     </div>
