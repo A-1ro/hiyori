@@ -9,6 +9,7 @@ import { EventTallyPage } from './pages/EventTallyPage'
 import { MyPage } from './pages/MyPage'
 import { TermsPage } from './pages/TermsPage'
 import { PrivacyPage } from './pages/PrivacyPage'
+import { HelpPage } from './pages/HelpPage'
 
 function HomeRoute() {
   const { data, isLoading } = useSession()
@@ -24,6 +25,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<HomeRoute />} />
       <Route path="/me" element={<MyPage />} />
+      <Route path="/help" element={<HelpPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/events/new" element={<EventCreatePage />} />
