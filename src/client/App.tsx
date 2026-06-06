@@ -6,12 +6,16 @@ import { EventDetailPage } from './pages/EventDetailPage'
 import { EventVotePage } from './pages/EventVotePage'
 import { EventTallyPage } from './pages/EventTallyPage'
 import { MyPage } from './pages/MyPage'
+import { TermsPage } from './pages/TermsPage'
+import { PrivacyPage } from './pages/PrivacyPage'
 
 export function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingScreen />} />
       <Route path="/me" element={<MyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/events/new" element={<EventCreatePage />} />
       <Route path="/events/:id" element={<EventDetailPage />} />
       <Route path="/events/:id/edit" element={<EventEditPage />} />

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { AppHeader } from '../components/AppHeader'
 import { MiniMatrix } from '../components/MiniMatrix'
 import { Badge, Button, DiscordMark, Icon } from '../components/primitives'
@@ -138,6 +138,24 @@ export function LandingScreen() {
             は、もうしなくていい。
           </p>
         </div>
+
+        <footer
+          style={{
+            marginTop: 40,
+            display: 'flex',
+            justifyContent: 'center',
+            gap: 18,
+            fontSize: 13,
+            color: 'var(--color-fg3)',
+          }}
+        >
+          <Link to="/terms" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+            利用規約
+          </Link>
+          <Link to="/privacy" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+            プライバシーポリシー
+          </Link>
+        </footer>
       </main>
     </div>
   )
