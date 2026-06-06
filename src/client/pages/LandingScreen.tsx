@@ -149,6 +149,9 @@ export function LandingScreen() {
             color: 'var(--color-fg3)',
           }}
         >
+          <Link to="/help" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+            使い方
+          </Link>
           <Link to="/terms" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
             利用規約
           </Link>
