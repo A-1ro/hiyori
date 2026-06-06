@@ -75,7 +75,7 @@ export function TermsPage() {
         </p>
 
         <Section title="第1条（適用）">
-          本規約は、ユーザーと本サービスの運営者（入口英一郎。以下「運営者」）との間の、本サービスの
+          本規約は、ユーザーと本サービスの運営者（以下「運営者」）との間の、本サービスの
           利用に関わる一切の関係に適用されます。運営者が本サービス上で別途定める個別規定やガイドラインは、
           本規約の一部を構成するものとします。
         </Section>
@@ -215,16 +215,19 @@ export function TermsPage() {
         <Section title="お問い合わせ">
           本規約または本サービスに関するお問い合わせは、下記までご連絡ください。
           <div style={{ marginTop: 8 }}>
-            運営者: 入口英一郎
+            運営者: Hiyori 運営者
             <br />
             連絡先:{' '}
             <a
-              href="mailto:eiichiro_iriguchi@a-1ro.dev"
+              href="mailto:contact@a-1ro.dev"
               style={{ color: 'var(--color-blurple-ink)' }}
             >
-              eiichiro_iriguchi@a-1ro.dev
+              contact@a-1ro.dev
             </a>
           </div>
+          <p style={{ marginTop: 10, fontSize: 13, color: 'var(--color-fg3)' }}>
+            運営者の氏名および住所は、法令に基づき、本人の求めに応じて遅滞なく開示します。
+          </p>
         </Section>
 
         <p

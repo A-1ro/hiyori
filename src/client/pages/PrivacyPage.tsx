@@ -70,8 +70,8 @@ export function PrivacyPage() {
 
         <p style={{ marginTop: 24, fontSize: 15, lineHeight: 1.8, color: 'var(--color-fg2)' }}>
           本プライバシーポリシー（以下「本ポリシー」）は、Hiyori（以下「本サービス」）における、利用者
-          （以下「ユーザー」）の情報の取り扱いについて定めるものです。本サービスの運営者（入口英一郎。
-          以下「運営者」）は、本サービスの提供に必要な範囲で、以下のとおり情報を取得・利用します。
+          （以下「ユーザー」）の情報の取り扱いについて定めるものです。本サービスの運営者（以下「運営者」）は、
+          本サービスの提供に必要な範囲で、以下のとおり情報を取得・利用します。
         </p>
 
         <Section title="1. 取得する情報">
@@ -186,16 +186,19 @@ export function PrivacyPage() {
         <Section title="10. お問い合わせ">
           本ポリシーまたは本サービスにおける情報の取り扱いに関するお問い合わせは、下記までご連絡ください。
           <div style={{ marginTop: 8 }}>
-            運営者: 入口英一郎
+            運営者: Hiyori 運営者
             <br />
             連絡先:{' '}
             <a
-              href="mailto:eiichiro_iriguchi@a-1ro.dev"
+              href="mailto:contact@a-1ro.dev"
               style={{ color: 'var(--color-blurple-ink)' }}
             >
-              eiichiro_iriguchi@a-1ro.dev
+              contact@a-1ro.dev
             </a>
           </div>
+          <p style={{ marginTop: 10, fontSize: 13, color: 'var(--color-fg3)' }}>
+            運営者の氏名および住所は、法令に基づき、本人の求めに応じて遅滞なく開示します。
+          </p>
         </Section>
 
         <p
