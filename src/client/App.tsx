@@ -1,4 +1,5 @@
-import { Routes, Route } from 'react-router'
+import { Routes, Route, Navigate } from 'react-router'
+import { useSession } from './auth/useSession'
 import { LandingScreen } from './pages/LandingScreen'
 import { EventCreatePage } from './pages/EventCreatePage'
 import { EventEditPage } from './pages/EventEditPage'
@@ -9,10 +10,19 @@ import { MyPage } from './pages/MyPage'
 import { TermsPage } from './pages/TermsPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 
+function HomeRoute() {
+  const { data, isLoading } = useSession()
+  // セッション確認中はちらつき防止のため何も描画しない（CSR なので元々 JS ロード待ちの空白に統合される）
+  if (isLoading) return null
+  // ログイン済みならランディングではなくマイページへ
+  if (data?.user) return <Navigate to="/me" replace />
+  return <LandingScreen />
+}
+
 export function App() {
   return (
     <Routes>
-      <Route path="/" element={<LandingScreen />} />
+      <Route path="/" element={<HomeRoute />} />
       <Route path="/me" element={<MyPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
