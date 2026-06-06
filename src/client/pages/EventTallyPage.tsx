@@ -69,6 +69,7 @@ export function EventTallyPage() {
   })
 
   const myParticipantId = myData?.participant?.id ?? null
+  const hasVoted = (myData?.votes.length ?? 0) > 0
 
   const { data: permissionsData } = useQuery({
     queryKey: ['permissions', id],
@@ -258,17 +259,30 @@ export function EventTallyPage() {
               <span style={{ color: 'var(--color-fg4)', fontWeight: 500 }}>（複数選択可）</span>
             </>
           )}
-          {bestId && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Icon name="sparkles" size={14} />}
-              onClick={scrollToBest}
-              style={{ marginLeft: 'auto' }}
-            >
-              最有力を見つける
-            </Button>
-          )}
+          <div
+            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 7 }}
+          >
+            {bestId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<Icon name="sparkles" size={14} />}
+                onClick={scrollToBest}
+              >
+                最有力を見つける
+              </Button>
+            )}
+            {event.status === 'open' && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Icon name="check-circle" size={14} />}
+                onClick={() => navigate(`/events/${id}/vote`)}
+              >
+                {hasVoted ? '回答を編集' : '回答する'}
+              </Button>
+            )}
+          </div>
         </div>
 
         {slots.length === 0 ? (
