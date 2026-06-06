@@ -272,14 +272,16 @@ export function EventTallyPage() {
                 最有力を見つける
               </Button>
             )}
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<Icon name="check-circle" size={14} />}
-              onClick={() => navigate(`/events/${id}/vote`)}
-            >
-              {hasVoted ? '回答を編集' : '回答する'}
-            </Button>
+            {event.status === 'open' && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Icon name="check-circle" size={14} />}
+                onClick={() => navigate(`/events/${id}/vote`)}
+              >
+                {hasVoted ? '回答を編集' : '回答する'}
+              </Button>
+            )}
           </div>
         </div>
 
