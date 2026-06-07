@@ -4,6 +4,7 @@ import { setCookie, getCookie, deleteCookie } from 'hono/cookie'
 export const SESSION_COOKIE_NAME = 'hiyori_session'
 export const OAUTH_STATE_COOKIE_NAME = 'hiyori_oauth_state'
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+export const CLI_SESSION_TTL_SECONDS = 90 * 24 * 60 * 60
 export const OAUTH_STATE_TTL_SECONDS = 600
 export const OAUTH_STATE_PATH = '/api/auth/discord'
 
@@ -57,4 +58,12 @@ export async function hashToken(token: string): Promise<string> {
   const encoded = new TextEncoder().encode(token)
   const buf = await crypto.subtle.digest('SHA-256', encoded)
   return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+export function getBearerToken(c: Context): string | undefined {
+  const auth = c.req.header('Authorization')
+  if (!auth) return undefined
+  const m = auth.match(/^Bearer\s+(.+)$/i)
+  if (!m) return undefined
+  return m[1]!.trim() || undefined
 }

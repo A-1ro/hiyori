@@ -1,7 +1,7 @@
 import type { Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { eq, and, gt } from 'drizzle-orm'
-import { getSessionToken, hashToken } from './cookies'
+import { getSessionToken, getBearerToken, hashToken } from './cookies'
 
 export type SessionUser = {
   userId: string
@@ -11,6 +11,7 @@ export type SessionUser = {
   avatar: string | null
   displayName: string
   sessionId: string
+  kind: string
 }
 
 export async function loadSession(
@@ -19,7 +20,7 @@ export async function loadSession(
   sessions: any,
   users: any,
 ): Promise<SessionUser | null> {
-  const token = getSessionToken(c)
+  const token = getSessionToken(c) ?? getBearerToken(c)
   if (!token) return null
   const tokenHash = await hashToken(token)
   const now = new Date()
@@ -31,6 +32,7 @@ export async function loadSession(
       username: users.username,
       globalName: users.globalName,
       avatar: users.avatar,
+      kind: sessions.kind,
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
@@ -49,6 +51,7 @@ export async function loadSession(
     globalName: row.globalName,
     avatar: row.avatar,
     displayName: row.globalName ?? row.username,
+    kind: row.kind,
   }
 }
 

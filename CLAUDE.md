@@ -71,7 +71,7 @@ The current `app.get('*')` catch-all returns the SSR HTML shell for **any** unma
 Discord OAuth2 + session cookie auth is implemented in `src/server/auth/`.
 
 - **`cookies.ts`**: Cookie constants (`hiyori_session`, `hiyori_oauth_state`), `generateSessionToken`, `hashToken` (SHA-256), `setSessionCookie` / `clearSessionCookie`, `setStateCookie` / `consumeStateCookie`.
-- **`session.ts`**: `loadSession(c, app, sessions, users)` — looks up session by token hash, checks expiry, returns `SessionUser | null`. `requireSession` — throws `HTTPException(401)` if no valid session.
+- **`session.ts`**: `loadSession(c, app, sessions, users)` — looks up session by token hash, checks expiry, returns `SessionUser | null` (now includes `kind`: `web` / `cli`). Reads the token from the `hiyori_session` cookie **or** an `Authorization: Bearer <token>` header (cookie takes precedence). `requireSession` — throws `HTTPException(401)` if no valid session.
 - **`discord.ts`**: `buildAuthorizeUrl`, `exchangeCodeForToken`, `fetchDiscordMe`.
 
 OAuth routes: `GET /api/auth/discord` (redirect), `GET /api/auth/discord/callback`, `POST /api/auth/logout`, `GET /api/auth/me`.
@@ -80,7 +80,20 @@ State anti-CSRF: state is stored as raw value in the `hiyori_oauth_state` cookie
 
 Session cookie: `hiyori_session`, HttpOnly, Secure, SameSite=Lax, Path=/, 30-day TTL. Only `tokenHash` (SHA-256) is stored in D1; the raw token never touches the DB.
 
-Test helper: `loginAs(discordUserId)` in `src/server/__tests__/test-helpers.ts` inserts a user+session directly into D1 and returns a `hiyori_session=<token>` string for use as a `Cookie` header.
+Test helper: `loginAs(discordUserId)` in `src/server/__tests__/test-helpers.ts` inserts a user+session directly into D1 and returns a `hiyori_session=<token>` string for use as a `Cookie` header. `loginAsBearer(discordUserId)` does the same with `kind:'cli'` and returns a `Bearer <token>` string for the `Authorization` header.
+
+### CLI 認証基盤（M1, デバイスコード + Bearer）
+
+非ブラウザクライアント（`hiyori` CLI, #36）向けに **RFC 8628 ベースのデバイスコードフロー**をサーバー側に実装（#35）。CLI 本体は別 Issue。
+
+- **モデル `cliAuthRequest.ts`**（テーブル `cli_auth_requests`）: ハンドシェイクの保留状態。`deviceCodeHash`（`.serverOnly()`, SHA-256）/ `userCode`（人間可読 `XXXX-XXXX`, `src/server/auth/cli-device.ts` で紛らわしい文字を除いた 32 文字集合からリジェクションサンプリング生成, ~1.1e12）/ `status`（`pending` / `approved` / `denied` / `completed` / `expired`）/ `userId`（承認時バインド）/ `clientName` / `hostname` / `pollIntervalSec` / `lastPolledAt` / `expiresAt`（10 分 TTL）。
+- **ルート**（すべて `index.tsx` のチェーン式内）:
+  - `POST /api/auth/cli/start` — `CliAuthRequest` を作成。raw `deviceCode` は**このレスポンスだけ**で返し DB はハッシュのみ。`verificationUriComplete`（`/cli?code=<userCode>`）を返す。
+  - `GET /cli` — ブラウザ承認ページ（Hono JSX サーバーレンダリング）。未ログインは既存 Discord OAuth へ 302（`returnTo` 維持）。`clientName` / `hostname` はエスケープ表示。承認/拒否は same-origin JSON fetch。
+  - `POST /api/auth/cli/approve` / `deny` — `requireSession` 必須。承認は `status='approved'` + `userId` バインドのみ（**ここでは Session を発行しない**）。
+  - `POST /api/auth/cli/poll` — `deviceCode` で照合。初回 `approved` 観測時に **CAS**（`UPDATE ... WHERE id AND status='approved'`, 影響行 1 のときだけ）で `kind:'cli'` の `Session`（TTL `CLI_SESSION_TTL_SECONDS`=90 日）を発行し生トークンを一度だけ返して `completed` に消費。`pending` / `denied` / `expired` / `expired_or_used` / `slow_down`（`lastPolledAt` ベース）を返す。
+- **セキュリティ**: 生 deviceCode / 生 session token は DB・ログ・AuditLog に残さない（AuditLog payload は `requestId` ベース）。`start` / `approve` / `deny` は `CF-Connecting-IP` キーの **Rate Limiting binding `CLI_AUTH_RATELIMIT`**（`wrangler.jsonc` の `ratelimits`, 10 req / 60s）で総当たり・DoS を抑止。`approve` / `deny` は `Origin` 検証（CSRF defense-in-depth）。期限切れ行は **cron（`triggers.crons`）→ `scheduled` → `cleanupExpiredCliAuthRequests`** で定期削除。
+- AuditLog アクション: `cli.auth.start` / `cli.auth.approve` / `cli.auth.deny` / `cli.auth.token.issued`。
 
 ### Discord チャンネル連携（cross-tenant 投稿防止）
 
