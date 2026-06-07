@@ -143,21 +143,33 @@ export function LandingScreen() {
           style={{
             marginTop: 40,
             display: 'flex',
-            justifyContent: 'center',
-            gap: 18,
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 12,
             fontSize: 13,
             color: 'var(--color-fg3)',
           }}
         >
-          <Link to="/help" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-            使い方
-          </Link>
-          <Link to="/terms" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-            利用規約
-          </Link>
-          <Link to="/privacy" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-            プライバシーポリシー
-          </Link>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 18 }}>
+            <Link to="/help" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+              使い方
+            </Link>
+            <Link to="/terms" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+              利用規約
+            </Link>
+            <Link to="/privacy" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+              プライバシーポリシー
+            </Link>
+          </div>
+          <a
+            href="https://buymeacoffee.com/a1ro"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Buy Me a Coffee で開発支援する"
+            style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}
+          >
+            ☕ よろしければ開発支援をお願いします
+          </a>
         </footer>
       </main>
     </div>
