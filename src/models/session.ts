@@ -8,4 +8,5 @@ export const sessionFields = {
   createdAt: t.timestamp().default(() => new Date()).readOnly(),
   lastUsedAt: t.timestamp().default(() => new Date()),
   expiresAt: t.timestamp(),
+  kind: t.string().default('web'),
 }

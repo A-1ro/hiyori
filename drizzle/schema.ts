@@ -86,4 +86,19 @@ export const sessions = sqliteTable('sessions', {
   createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
   lastUsedAt: integer('lastUsedAt', { mode: 'timestamp_ms' }).notNull(),
   expiresAt: integer('expiresAt', { mode: 'timestamp_ms' }).notNull(),
+  kind: text('kind').notNull().default("web"),
+})
+
+export const cli_auth_requests = sqliteTable('cli_auth_requests', {
+  id: text('id').primaryKey().notNull(),
+  deviceCodeHash: text('deviceCodeHash').notNull(),
+  userCode: text('userCode').notNull(),
+  status: text('status').notNull().default("pending"),
+  userId: text('userId'),
+  clientName: text('clientName'),
+  hostname: text('hostname'),
+  pollIntervalSec: integer('pollIntervalSec').notNull().default(5),
+  lastPolledAt: integer('lastPolledAt', { mode: 'timestamp_ms' }),
+  expiresAt: integer('expiresAt', { mode: 'timestamp_ms' }).notNull(),
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
 })

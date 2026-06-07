@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
 
 import { applyDecisions, cancelAllDecisions } from './services/decision'
+import { cleanupExpiredCliAuthRequests } from './services/cli-cleanup'
 import { eventToVEvent, wrapInVCalendar } from './ics/serialize'
 import { notifyDecisionsChanged, announceEventCreated } from './discord/notifier'
 import { verifyDiscordSignature } from './discord/verify'
@@ -29,9 +30,11 @@ import { voteFields, voteTableName } from '../models/vote'
 import { calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions } from '../../drizzle/schema'
 import { userTableName, userFields } from '../models/user'
 import { sessionTableName, sessionFields } from '../models/session'
-import { setSessionCookie, clearSessionCookie, getSessionToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, isSecureRequest, SESSION_TTL_SECONDS } from './auth/cookies'
+import { setSessionCookie, clearSessionCookie, getSessionToken, getBearerToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, isSecureRequest, SESSION_TTL_SECONDS, CLI_SESSION_TTL_SECONDS } from './auth/cookies'
 import { loadSession, requireSession } from './auth/session'
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/discord'
+import { generateDeviceCode, generateUserCode, normalizeUserCode } from './auth/cli-device'
+import { cli_auth_requests } from '../../drizzle/schema'
 
 export interface Env {
   DB: D1Database
@@ -45,6 +48,7 @@ export interface Env {
   // /hiyori new スラッシュコマンド由来の channel ID を Hiyori が HMAC 署名するための秘密鍵。
   // POST/PATCH /api/events で discordChannelToken の検証に使う。未設定なら Discord 連携不可。
   DISCORD_CHANNEL_TOKEN_SECRET?: string
+  CLI_AUTH_RATELIMIT?: RateLimit
 }
 
 const displayNameSchema = z.string().min(1).max(80).refine(
@@ -363,7 +367,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       return c.redirect(safeR, 302)
     })
     .post('/api/auth/logout', async (c) => {
-      const token = getSessionToken(c)
+      const token = getSessionToken(c) ?? getBearerToken(c)
       if (token) {
         const tokenHash = await hashToken(token)
         await Session.delete({ tokenHash })
@@ -385,6 +389,373 @@ window.__vite_plugin_react_preamble_installed__ = true
         },
       })
     })
+    .post(
+      '/api/auth/cli/start',
+      zValidator('json', z.object({ clientName: z.string().max(120).optional(), hostname: z.string().max(255).optional() }), (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        const ip = c.req.header('CF-Connecting-IP')
+        if (ip && c.env.CLI_AUTH_RATELIMIT) {
+          const { success } = await c.env.CLI_AUTH_RATELIMIT.limit({ key: `cli-start:${ip}` })
+          if (!success) return c.json({ error: 'Too many requests' }, 429)
+        }
+        const body = c.req.valid('json')
+        const origin = new URL(c.req.url).origin
+        const deviceCode = generateDeviceCode()
+        const deviceCodeHash = await hashToken(deviceCode)
+        const now = new Date()
+        const expiresAt = new Date(now.getTime() + 600 * 1000)
+
+        let userCode = ''
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const candidate = generateUserCode()
+          const normalized = normalizeUserCode(candidate)
+          const nowCheck = new Date()
+          const existing = await app.db
+            .select()
+            .from(cli_auth_requests)
+            .where(
+              eq(cli_auth_requests.userCode, normalized),
+            )
+            .limit(1)
+          const active = existing.filter(
+            (r) => (r.status === 'pending' || r.status === 'approved') && r.expiresAt > nowCheck,
+          )
+          if (active.length === 0) {
+            userCode = normalized
+            break
+          }
+        }
+        if (!userCode) {
+          userCode = normalizeUserCode(generateUserCode())
+        }
+
+        const requestId = crypto.randomUUID()
+        await app.db.insert(cli_auth_requests).values({
+          id: requestId,
+          deviceCodeHash,
+          userCode,
+          status: 'pending',
+          userId: null,
+          clientName: body.clientName ?? null,
+          hostname: body.hostname ?? null,
+          pollIntervalSec: 5,
+          lastPolledAt: null,
+          expiresAt,
+          createdAt: now,
+        })
+
+        await AuditLog.create({
+          action: 'cli.auth.start',
+          actorDiscordId: undefined,
+          payload: { requestId, clientName: body.clientName, hostname: body.hostname },
+        })
+
+        return c.json({
+          deviceCode,
+          userCode,
+          verificationUri: `${origin}/cli`,
+          verificationUriComplete: `${origin}/cli?code=${userCode}`,
+          interval: 5,
+          expiresIn: 600,
+        }, 201)
+      },
+    )
+    .get('/cli', async (c) => {
+      const code = c.req.query('code')
+      const s = await loadSession(c, app, sessions, users)
+      if (!s) {
+        const returnTo = '/cli' + (code ? `?code=${encodeURIComponent(code)}` : '')
+        return c.redirect(`/api/auth/discord?returnTo=${encodeURIComponent(returnTo)}`, 302)
+      }
+
+      if (!code) {
+        return c.html(
+          <html lang="ja">
+            <head><meta charset="utf-8" /><title>Hiyori CLI 認証</title></head>
+            <body><p>コードが指定されていません。CLIの案内に従って再度お試しください。</p></body>
+          </html>
+        )
+      }
+
+      const normalized = normalizeUserCode(code)
+      const now = new Date()
+      const rows = await app.db
+        .select()
+        .from(cli_auth_requests)
+        .where(eq(cli_auth_requests.userCode, normalized))
+        .limit(1)
+      const row = rows.find((r) => r.status === 'pending' && r.expiresAt > now)
+
+      if (!row) {
+        return c.html(
+          <html lang="ja">
+            <head><meta charset="utf-8" /><title>Hiyori CLI 認証</title></head>
+            <body><p>コードが無効または期限切れです。CLIから再度お試しください。</p></body>
+          </html>
+        )
+      }
+
+      const clientName = row.clientName ?? ''
+      const hostname = row.hostname ?? ''
+      const displayName = s.displayName
+
+      return c.html(
+        <html lang="ja">
+          <head>
+            <meta charset="utf-8" />
+            <title>Hiyori CLI 認証</title>
+          </head>
+          <body>
+            <h1>CLI ログイン承認</h1>
+            <p>ユーザー: {displayName}</p>
+            {clientName && <p>クライアント: {clientName}</p>}
+            {hostname && <p>ホスト: {hostname}</p>}
+            <p>コード: {normalized}</p>
+            <button type="button" id="btn-approve">承認</button>
+            <button type="button" id="btn-deny">拒否</button>
+            <p id="msg"></p>
+            <script dangerouslySetInnerHTML={{ __html: `
+              document.getElementById('btn-approve').addEventListener('click', function() {
+                fetch('/api/auth/cli/approve', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'same-origin',
+                  body: JSON.stringify({ userCode: ${JSON.stringify(normalized)} })
+                }).then(function(r) {
+                  if (r.ok) {
+                    document.getElementById('msg').textContent = '承認しました。CLIに戻ってください。';
+                    document.getElementById('btn-approve').disabled = true;
+                    document.getElementById('btn-deny').disabled = true;
+                  } else {
+                    r.json().then(function(d) {
+                      document.getElementById('msg').textContent = 'エラー: ' + (d.error || r.status);
+                    });
+                  }
+                });
+              });
+              document.getElementById('btn-deny').addEventListener('click', function() {
+                fetch('/api/auth/cli/deny', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'same-origin',
+                  body: JSON.stringify({ userCode: ${JSON.stringify(normalized)} })
+                }).then(function(r) {
+                  if (r.ok) {
+                    document.getElementById('msg').textContent = '拒否しました。';
+                    document.getElementById('btn-approve').disabled = true;
+                    document.getElementById('btn-deny').disabled = true;
+                  } else {
+                    r.json().then(function(d) {
+                      document.getElementById('msg').textContent = 'エラー: ' + (d.error || r.status);
+                    });
+                  }
+                });
+              });
+            ` }} />
+          </body>
+        </html>
+      )
+    })
+    .post(
+      '/api/auth/cli/approve',
+      zValidator('json', z.object({ userCode: z.string().min(1).max(20) }), (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        const ip = c.req.header('CF-Connecting-IP')
+        if (ip && c.env.CLI_AUTH_RATELIMIT) {
+          const { success } = await c.env.CLI_AUTH_RATELIMIT.limit({ key: `cli-approve:${ip}` })
+          if (!success) return c.json({ error: 'Too many requests' }, 429)
+        }
+        const reqOrigin = c.req.header('Origin')
+        if (reqOrigin && reqOrigin !== new URL(c.req.url).origin) {
+          return c.json({ error: 'Forbidden origin' }, 403)
+        }
+        const session = await requireSession(c, app, sessions, users)
+        const body = c.req.valid('json')
+        const normalized = normalizeUserCode(body.userCode)
+        const now = new Date()
+        const rows = await app.db
+          .select()
+          .from(cli_auth_requests)
+          .where(eq(cli_auth_requests.userCode, normalized))
+          .limit(1)
+        const row = rows.find((r) => r.status === 'pending' && r.expiresAt > now)
+        if (!row) return c.json({ error: 'Not Found' }, 404)
+
+        await app.db
+          .update(cli_auth_requests)
+          .set({ status: 'approved', userId: session.userId })
+          .where(eq(cli_auth_requests.id, row.id))
+
+        await AuditLog.create({
+          action: 'cli.auth.approve',
+          actorDiscordId: session.discordUserId,
+          payload: { requestId: row.id, userId: session.userId },
+        })
+
+        return c.json({ ok: true })
+      },
+    )
+    .post(
+      '/api/auth/cli/deny',
+      zValidator('json', z.object({ userCode: z.string().min(1).max(20) }), (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        const ip = c.req.header('CF-Connecting-IP')
+        if (ip && c.env.CLI_AUTH_RATELIMIT) {
+          const { success } = await c.env.CLI_AUTH_RATELIMIT.limit({ key: `cli-deny:${ip}` })
+          if (!success) return c.json({ error: 'Too many requests' }, 429)
+        }
+        const reqOrigin = c.req.header('Origin')
+        if (reqOrigin && reqOrigin !== new URL(c.req.url).origin) {
+          return c.json({ error: 'Forbidden origin' }, 403)
+        }
+        const session = await requireSession(c, app, sessions, users)
+        const body = c.req.valid('json')
+        const normalized = normalizeUserCode(body.userCode)
+        const now = new Date()
+        const rows = await app.db
+          .select()
+          .from(cli_auth_requests)
+          .where(eq(cli_auth_requests.userCode, normalized))
+          .limit(1)
+        const row = rows.find((r) => r.status === 'pending' && r.expiresAt > now)
+        if (!row) return c.json({ error: 'Not Found' }, 404)
+
+        await app.db
+          .update(cli_auth_requests)
+          .set({ status: 'denied' })
+          .where(eq(cli_auth_requests.id, row.id))
+
+        await AuditLog.create({
+          action: 'cli.auth.deny',
+          actorDiscordId: session.discordUserId,
+          payload: { requestId: row.id },
+        })
+
+        return c.json({ ok: true })
+      },
+    )
+    .post(
+      '/api/auth/cli/poll',
+      zValidator('json', z.object({ deviceCode: z.string().min(1).max(128) }), (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        const body = c.req.valid('json')
+        const deviceCodeHash = await hashToken(body.deviceCode)
+        const now = new Date()
+
+        const rows = await app.db
+          .select()
+          .from(cli_auth_requests)
+          .where(eq(cli_auth_requests.deviceCodeHash, deviceCodeHash))
+          .limit(1)
+
+        if (rows.length === 0) return c.json({ error: 'Not Found' }, 404)
+        const row = rows[0]!
+
+        if (row.status === 'completed') {
+          await app.db
+            .update(cli_auth_requests)
+            .set({ lastPolledAt: now })
+            .where(eq(cli_auth_requests.id, row.id))
+          return c.json({ status: 'expired_or_used' })
+        }
+
+        if (row.lastPolledAt && now.getTime() - row.lastPolledAt.getTime() < row.pollIntervalSec * 1000) {
+          await app.db
+            .update(cli_auth_requests)
+            .set({ lastPolledAt: now })
+            .where(eq(cli_auth_requests.id, row.id))
+          return c.json({ status: 'slow_down', interval: row.pollIntervalSec }, 429)
+        }
+
+        if (row.expiresAt < now && row.status !== 'completed' && row.status !== 'approved') {
+          await app.db
+            .update(cli_auth_requests)
+            .set({ status: 'expired', lastPolledAt: now })
+            .where(eq(cli_auth_requests.id, row.id))
+          return c.json({ status: 'expired' })
+        }
+
+        if (row.status === 'pending') {
+          await app.db
+            .update(cli_auth_requests)
+            .set({ lastPolledAt: now })
+            .where(eq(cli_auth_requests.id, row.id))
+          return c.json({ status: 'pending' })
+        }
+
+        if (row.status === 'denied') {
+          await app.db
+            .update(cli_auth_requests)
+            .set({ lastPolledAt: now })
+            .where(eq(cli_auth_requests.id, row.id))
+          return c.json({ status: 'denied' })
+        }
+
+        if (row.status === 'expired') {
+          await app.db
+            .update(cli_auth_requests)
+            .set({ lastPolledAt: now })
+            .where(eq(cli_auth_requests.id, row.id))
+          return c.json({ status: 'expired' })
+        }
+
+        if (row.status === 'approved') {
+          const sessionToken = generateSessionToken()
+          const tokenHash = await hashToken(sessionToken)
+          const sessionId = crypto.randomUUID()
+          const sessionExpiresAt = new Date(now.getTime() + CLI_SESSION_TTL_SECONDS * 1000)
+
+          const claim = await app.db
+            .update(cli_auth_requests)
+            .set({ status: 'completed', lastPolledAt: now })
+            .where(and(eq(cli_auth_requests.id, row.id), eq(cli_auth_requests.status, 'approved')))
+
+          if ((claim.meta?.changes ?? 0) === 0) {
+            return c.json({ status: 'expired_or_used' })
+          }
+
+          await app.db.insert(sessions).values({
+            id: sessionId,
+            userId: row.userId!,
+            tokenHash,
+            kind: 'cli',
+            createdAt: now,
+            lastUsedAt: now,
+            expiresAt: sessionExpiresAt,
+          })
+
+          await AuditLog.create({
+            action: 'cli.auth.token.issued',
+            actorDiscordId: undefined,
+            payload: { requestId: row.id, sessionId, userId: row.userId },
+          })
+
+          return c.json({
+            status: 'approved',
+            token: sessionToken,
+            expiresAt: sessionExpiresAt.toISOString(),
+          })
+        }
+
+        return c.json({ status: 'pending' })
+      },
+    )
     .post(
       '/api/events',
       zValidator('json', createEventBody, (result, c) => {
@@ -1100,7 +1471,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       const body = wrapInVCalendar(vevents)
 
       const safeTitle = eventRow.title
-        .replace(/[^A-Za-z0-9_\-]/g, '_')
+        .replace(/[^A-Za-z0-9_-]/g, '_')
         .replace(/_+/g, '_')
         .replace(/^_+|_+$/g, '')
         .substring(0, 100)
@@ -1271,5 +1642,8 @@ export type AppType = ReturnType<typeof buildApp>
 export default {
   async fetch(req, env, ctx) {
     return buildApp(env).fetch(req, env, ctx)
+  },
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(cleanupExpiredCliAuthRequests(env.DB, new Date()))
   },
 } satisfies ExportedHandler<Env>
