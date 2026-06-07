@@ -469,6 +469,153 @@ function ProfileCard({ user }: { user: SessionUser }) {
   )
 }
 
+// 招待カードは端末ローカルで「閉じた」状態を記憶し、二度目以降は出さない。
+// Bot 招待済みかはサーバー側で判定できない（OAuth スコープは identify 中心で
+// guilds を取らず、マルチサーバー運用のため guild 一覧でも確定できない）ので、
+// dismiss フラグで「もう要らない人には出さない」とだけ割り切る。
+const BOT_INVITE_DISMISS_KEY = 'hiyori:botInviteDismissed'
+
+function readBotInviteDismissed(): boolean {
+  try {
+    return localStorage.getItem(BOT_INVITE_DISMISS_KEY) === '1'
+  } catch {
+    // localStorage 不可（プライベートブラウズ等）なら未読扱いで表示する
+    return false
+  }
+}
+
+function BotInviteCard() {
+  const [dismissed, setDismissed] = useState(readBotInviteDismissed)
+  if (dismissed) return null
+
+  const dismiss = () => {
+    try {
+      localStorage.setItem(BOT_INVITE_DISMISS_KEY, '1')
+    } catch {
+      // 保存できなくても UI 上は閉じる（次回また出るだけで害はない）
+    }
+    setDismissed(true)
+  }
+
+  return (
+    <section
+      style={{
+        position: 'relative',
+        marginTop: 24,
+        padding: '20px 22px',
+        background: 'var(--color-blurple-soft)',
+        border: '1px solid var(--color-blurple-border)',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="閉じる"
+        style={{
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 28,
+          height: 28,
+          padding: 0,
+          background: 'transparent',
+          border: 'none',
+          borderRadius: 'var(--radius-pill)',
+          cursor: 'pointer',
+          color: 'var(--color-fg3)',
+        }}
+      >
+        <Icon name="x" size={16} color="currentColor" />
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 28 }}>
+        <DiscordMark size={16} color="var(--color-blurple)" />
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 15,
+            fontWeight: 700,
+            color: 'var(--color-blurple-ink)',
+          }}
+        >
+          Discord から直接、日程調整をつくる
+        </h2>
+      </div>
+
+      <p
+        style={{
+          margin: '10px 0 0',
+          fontSize: 13.5,
+          lineHeight: 1.7,
+          color: 'var(--color-fg2)',
+        }}
+      >
+        Hiyori Bot をサーバーに招待すると、
+        <code
+          style={{
+            padding: '1px 6px',
+            borderRadius: 'var(--radius-xs)',
+            background: 'var(--color-surface)',
+            fontFamily: 'monospace',
+            fontSize: 12.5,
+            color: 'var(--color-blurple-ink)',
+          }}
+        >
+          /hiyori new
+        </code>{' '}
+        で Discord から直接イベントを立てて、確定時にチャンネルへ通知できます。
+        <strong>Web だけでも全機能が使えます</strong>ので、必要な人だけどうぞ。
+      </p>
+
+      <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--color-fg3)' }}>
+        ※ 招待にはそのサーバーの管理者権限が必要です。
+      </p>
+
+      <div
+        style={{
+          marginTop: 16,
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 14,
+        }}
+      >
+        <a
+          href={DISCORD_BOT_INVITE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '11px 18px',
+            background: 'var(--color-blurple)',
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 600,
+            borderRadius: 'var(--radius-sm)',
+            textDecoration: 'none',
+            boxShadow: '0 1px 2px rgba(88,101,242,.4)',
+          }}
+        >
+          <DiscordMark size={15} color="#fff" />
+          {DISCORD_BOT_INVITE_LABEL}
+        </a>
+        <Link
+          to="/help"
+          style={{ fontSize: 13, color: 'var(--color-blurple-ink)', textDecoration: 'none' }}
+        >
+          使い方を見る
+        </Link>
+      </div>
+    </section>
+  )
+}
+
 export function MyPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -545,6 +692,8 @@ export function MyPage() {
       <AppHeader />
       <main style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px 80px' }}>
         <ProfileCard user={user} />
+
+        <BotInviteCard />
 
         {eventsLoading ? (
           <p style={{ marginTop: 28, fontSize: 13, color: 'var(--color-fg3)' }}>
