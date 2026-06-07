@@ -719,6 +719,10 @@ window.__vite_plugin_react_preamble_installed__ = true
           return c.json({ error: 'Deadline passed' }, 403)
         }
 
+        if (eventRow.status !== 'open') {
+          return c.json({ error: 'Event is not open' }, 403)
+        }
+
         const body = c.req.valid('json')
         const participantRow = await resolveParticipantByAnyAuth(c, eventId)
 

@@ -287,6 +287,57 @@ describe('PUT /api/events/:id/votes', () => {
     )
     expect(voteRes.status).toBe(400)
   })
+
+  it('12: 確定済み（closed）イベント → 403（締切なしでも）', async () => {
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
+    const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
+    const eventId = created.event.id
+    const candidateId = created.candidates[0]!.id
+
+    const regRes = await post(`/api/events/${eventId}/participants`, {
+      kind: 'guest',
+      displayName: 'Voter',
+    })
+    expect(regRes.status).toBe(201)
+    const setCookie = extractSetCookie(regRes)!
+    const cookieHeader = cookieHeaderFromSetCookie(setCookie)
+
+    const db = (env as { DB: D1Database }).DB
+    await db.prepare('UPDATE events SET status = ? WHERE id = ?').bind('closed', eventId).run()
+
+    const voteRes = await put(
+      `/api/events/${eventId}/votes`,
+      { votes: [{ candidateId, choice: 'yes' }] },
+      { Cookie: cookieHeader },
+    )
+    expect(voteRes.status).toBe(403)
+    expect(await voteRes.json()).toMatchObject({ error: 'Event is not open' })
+  })
+
+  it('13: 中止（cancelled）イベント → 403', async () => {
+    const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
+    const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
+    const eventId = created.event.id
+    const candidateId = created.candidates[0]!.id
+
+    const regRes = await post(`/api/events/${eventId}/participants`, {
+      kind: 'guest',
+      displayName: 'Voter',
+    })
+    expect(regRes.status).toBe(201)
+    const setCookie = extractSetCookie(regRes)!
+    const cookieHeader = cookieHeaderFromSetCookie(setCookie)
+
+    const db = (env as { DB: D1Database }).DB
+    await db.prepare('UPDATE events SET status = ? WHERE id = ?').bind('cancelled', eventId).run()
+
+    const voteRes = await put(
+      `/api/events/${eventId}/votes`,
+      { votes: [{ candidateId, choice: 'yes' }] },
+      { Cookie: cookieHeader },
+    )
+    expect(voteRes.status).toBe(403)
+  })
 })
 
 describe('GET /api/events/:id/votes/me', () => {
