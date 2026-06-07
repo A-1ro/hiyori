@@ -22,6 +22,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 For local D1, run `wrangler d1 create hiyori` once and paste the returned `database_id` into `wrangler.jsonc`. Secrets (Discord bot token, OAuth client secret, etc.) go through `wrangler secret put`, not `vars`.
 
+**`ENVIRONMENT` (`production` by default, overridden to `development` locally).** `wrangler.jsonc`'s `vars.ENVIRONMENT` is `"production"` — the deployed value. A gitignored `.dev.vars` at the repo root sets `ENVIRONMENT=development`; `.dev.vars` values override same-named `vars` during `wrangler dev` / `pnpm dev` (miniflare reads it) and are ignored by `wrangler deploy`. So `env.ENVIRONMENT` is `development` locally and `production` in prod with no per-deploy flags. **A fresh clone needs its own `.dev.vars`** (it's also where the Discord secrets live) — without `ENVIRONMENT=development` in it, local dev runs in production mode and the React Refresh preamble (gated on `env.ENVIRONMENT !== 'production'`, see below) is not injected, so the page renders blank.
+
 ## Architecture
 
 ### Single-Worker hybrid SSR + CSR
