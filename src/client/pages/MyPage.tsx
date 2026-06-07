@@ -567,8 +567,9 @@ function BotInviteCard() {
         >
           /hiyori new
         </code>{' '}
-        で Discord から直接イベントを立てて、確定時にチャンネルへ通知できます。
-        <strong>Web だけでも全機能が使えます</strong>ので、必要な人だけどうぞ。
+        で Discord から直接イベントを立てて、確定時にチャンネルへ自動通知できます。
+        Discord への通知が不要なら、
+        <strong>Web だけでも日程調整・確定・カレンダー配信まで使えます</strong>。
       </p>
 
       <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--color-fg3)' }}>
