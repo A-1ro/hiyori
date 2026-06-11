@@ -139,7 +139,7 @@ docs/requirements.md       Product decisions, data model rationale, open questio
 - 認証は `hiyori login`（RFC 8628 デバイスコードフロー）→ `kind:'cli'` セッショントークンを `~/.config/hiyori/credentials.json`（mode 600, apiUrl ごとに有効・期限切れは無効）に保存し、各リクエストに `Authorization: Bearer` で送る。
 - 接続先は `--api-url` / `HIYORI_API_URL` / `hiyori config set api-url` で上書き可（優先順位はこの順 → config → デフォルト）。
 - テストは `cli/vitest.config.ts`（**node 環境**。ルートの workers pool とは別。ルート `vitest.config.ts` は `test.include: ['src/**/*.test.ts']` で CLI テストを除外）。CI は `pnpm -C cli typecheck` / `pnpm -C cli test` を別ステップで実行。
-- **実装範囲**: M3（スキャフォールド + login/logout/whoami/config + 読み取り系 event list/show・tally・busy・ics + 書き込み系 event create/edit/rm・candidate add/rm・vote・confirm/unconfirm・sub list/add/rm/regen、全 `--json`）まで実装。M4（npm 配布・README）は後続。CLI 作成イベントは Discord チャンネル未連携、ゲスト投票は CLI 非対応。
+- **実装範囲**: M2〜M4（スキャフォールド + login/logout/whoami/config + 読み取り系 + 書き込み系、全 `--json`、配布メタデータ整備・README）まで完了。**npm 実公開は未実施**（公開パッケージ名・本番 API URL・ライセンスの確定待ち、`private: true` 維持）。CLI 作成イベントは Discord チャンネル未連携、ゲスト投票は CLI 非対応。
 
 ## Versioning notes
 
