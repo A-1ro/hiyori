@@ -106,6 +106,115 @@ pnpm dev
 - **`.ics` ダウンロード** — `GET /api/events/:id/decision.ics`（確定済みイベントの単発配信）
 - **Webcal 購読** — ユーザー別購読 URL を発行し、`GET /feeds/:filename` で ICS フィードを配信。Apple Calendar に一度購読すれば以降の確定が自動反映される
 
+## CLI
+
+Hiyori の **端末クライアント** (`hiyori` コマンド)。読み取り系（イベント一覧・詳細、投票集計、忙しい時間帯、`.ics` ダウンロード）と書き込み系（イベント作成・編集・削除、候補枠追加・削除、投票、確定・確定取消、Webcal 購読管理）をすべて端末から操作できます。すべてのコマンドが `--json` オプションで JSON 出力に対応しており、スクリプト・プログラムからの利用も可能です。
+
+### インストール
+
+npm 実公開後（将来）：
+
+```bash
+npx hiyori login
+```
+
+**現在はローカルビルド経由**（実公開前）：
+
+```bash
+cd /path/to/hiyori
+pnpm -C cli build
+node cli/dist/index.js login
+```
+
+### ログイン
+
+```bash
+# デバイスコードフローでブラウザ承認
+hiyori login
+
+# 認証状態を確認
+hiyori whoami
+
+# ログアウト
+hiyori logout
+```
+
+RFC 8628 デバイスコード認証フローにより、ブラウザで Discord OAuth ログインを行い、セッショントークンを `~/.config/hiyori/credentials.json`（mode 600）に保存します。
+
+### セルフホスト時の接続先設定
+
+API 接続先の優先順位（高い順）：
+
+1. `--api-url <url>` フラグ
+2. `HIYORI_API_URL` 環境変数
+3. `hiyori config set api-url <url>` コマンドで保存した設定
+4. デフォルト値（`https://hiyori.example.workers.dev`）
+
+セルフホストして Worker を自分の URL にデプロイした場合、以下のいずれかで接続先を指定します：
+
+```bash
+# フラグで指定（1 回限り）
+hiyori --api-url https://my-hiyori.workers.dev event list
+
+# 環境変数で指定（セッション中）
+export HIYORI_API_URL=https://my-hiyori.workers.dev
+
+# 設定ファイルに保存（永続的）
+hiyori config set api-url https://my-hiyori.workers.dev
+```
+
+### 主要コマンド例
+
+**読み取り系：**
+
+```bash
+# イベント一覧を JSON で取得
+hiyori event list --json
+
+# イベント詳細を表示
+hiyori event show <event-id>
+
+# 投票集計を表示
+hiyori tally <event-id>
+
+# 忙しい時間帯を表示（複数参加者が× を投じた時間）
+hiyori busy <event-id>
+
+# 確定済みイベントを .ics として保存
+hiyori ics <event-id> -o event.ics
+```
+
+**書き込み系：**
+
+```bash
+# イベント作成（必須フラグが揃っていれば対話をスキップ。--yes でも対話スキップを明示できる）
+hiyori event create \
+  --title "チーム定例" \
+  --description "月 1 回の全体定例会" \
+  --duration 60 \
+  --candidate 2026-07-01T19:00:00Z \
+  --candidate 2026-07-08T19:00:00Z \
+  --candidate 2026-07-15T19:00:00Z \
+  --yes
+
+# 投票
+hiyori vote <event-id> --vote <candidate-id>=yes --vote <candidate-id2>=maybe
+
+# イベント確定（候補 ID は複数指定可）
+hiyori confirm <event-id> <candidate-id> [candidate-id...]
+
+# Webcal 購読を追加（自分の確定イベント全体の購読。イベント単位ではない）
+hiyori sub add
+```
+
+### 制約
+
+**重要：以下 2 点の制約があります。**
+
+1. **CLI で作成したイベントは Discord チャンネル未連携** — CLI の `event create` で作成したイベントは Discord チャンネルに通知されません。Discord への確定通知が必要な場合は、Discord 上で `/hiyori new` スラッシュコマンドを実行してイベントを作成してください。
+
+2. **ゲスト投票は CLI 非対応** — CLI 操作にはすべて Discord OAuth ログインが必須です。表示名のみで投票するゲスト投票は Web UI のみで利用可能です。
+
 ## ディレクトリ構成
 
 ```
