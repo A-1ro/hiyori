@@ -34,6 +34,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: CLI Typecheck
+        run: pnpm -C cli typecheck
+
+      - name: CLI Test
+        run: pnpm -C cli test
+
       - name: Test
         run: pnpm test
 

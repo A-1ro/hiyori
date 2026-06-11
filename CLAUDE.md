@@ -122,8 +122,24 @@ drizzle/
 ├── schema.ts              nanoka-generated, do not edit by hand
 └── migrations/            drizzle-kit-generated SQL
 
+cli/                       hiyori CLI（エンドユーザー向け端末クライアント, #36）
+├── src/index.ts           commander エントリ + サブコマンド登録
+├── src/api.ts             hc<AppType> ラッパ（型のみ共有 + Bearer 注入）
+├── src/config.ts          ~/.config/hiyori（config.json + credentials.json mode 600）
+└── src/commands/          login/logout/whoami/config + 読み取り系（M2 まで実装）
+
 docs/requirements.md       Product decisions, data model rationale, open questions
 ```
+
+### CLI パッケージ（`cli/`, pnpm workspace）
+
+エンドユーザー向け CLI（`hiyori` コマンド, Epic #34 / #36）。**pnpm workspace** のメンバー（ルート `pnpm-workspace.yaml` の `packages: ['.', 'cli']`）。Worker 向け Vite ビルドとは別系統で **tsup**（node platform, esm, shebang）でバンドルする。
+
+- 型共有は `import type { AppType } from '../src/server/index'`（**型のみ**。`verbatimModuleSyntax` + tsup `dts:false` でサーバーコードはバンドルに混入しない）。`hc<AppType>(apiUrl, { headers })` で #35 の CLI 認証・読み取り API を型安全に叩く。
+- 認証は `hiyori login`（RFC 8628 デバイスコードフロー）→ `kind:'cli'` セッショントークンを `~/.config/hiyori/credentials.json`（mode 600, apiUrl ごとに有効・期限切れは無効）に保存し、各リクエストに `Authorization: Bearer` で送る。
+- 接続先は `--api-url` / `HIYORI_API_URL` / `hiyori config set api-url` で上書き可（優先順位はこの順 → config → デフォルト）。
+- テストは `cli/vitest.config.ts`（**node 環境**。ルートの workers pool とは別。ルート `vitest.config.ts` は `test.include: ['src/**/*.test.ts']` で CLI テストを除外）。CI は `pnpm -C cli typecheck` / `pnpm -C cli test` を別ステップで実行。
+- **実装範囲**: M2（スキャフォールド + login/logout/whoami/config + 読み取り系 event list/show・tally・busy・ics、全 `--json`）まで。M3（書き込み系）/ M4（npm 配布・README）は後続。CLI 作成イベントは Discord チャンネル未連携、ゲスト投票は CLI 非対応。
 
 ## Versioning notes
 
