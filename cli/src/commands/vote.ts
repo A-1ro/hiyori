@@ -95,7 +95,7 @@ export function voteCommand(): Command {
 
           const nameResult = await clack.text({
             message: '表示名（Discord 表示名）',
-            validate: (v) => (v.trim() ? undefined : '表示名は必須です'),
+            validate: (v) => (v?.trim() ? undefined : '表示名は必須です'),
           })
           if (clack.isCancel(nameResult)) {
             clack.cancel('キャンセルされました')

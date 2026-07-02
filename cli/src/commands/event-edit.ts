@@ -104,7 +104,7 @@ export function eventEditCommand(): Command {
           message: 'デフォルト所要時間（分）',
           initialValue: String(current.defaultDurationMinutes),
           validate: (v) => {
-            const n = parseInt(v, 10)
+            const n = parseInt(v ?? '', 10)
             if (Number.isNaN(n) || n < 1 || n > 1440) return '1〜1440 の数値を入力してください'
             return undefined
           },

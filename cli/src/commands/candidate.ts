@@ -39,7 +39,7 @@ function candidateAddCommand(): Command {
 
         const startResult = await clack.text({
           message: '開始時刻 (ISO 8601)',
-          validate: (v) => (v.trim() ? undefined : '開始時刻は必須です'),
+          validate: (v) => (v?.trim() ? undefined : '開始時刻は必須です'),
         })
         if (clack.isCancel(startResult)) {
           clack.cancel('キャンセルされました')
