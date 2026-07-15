@@ -11,12 +11,14 @@ interface Subscription {
 }
 
 interface SubscriptionsResponse {
-  subscriptions: (Subscription & { webcalUrl: string })[]
+  // 一覧 API は URL を復元できない（サーバーは tokenHash のみ保存）ため常に null
+  subscriptions: (Subscription & { webcalUrl: string | null })[]
 }
 
 interface SubscriptionWithUrl {
   subscription: Subscription
-  webcalUrl: string
+  // 新規発行 (201) / 再生成では生 URL、既に購読済み (200) の add では null
+  webcalUrl: string | null
 }
 
 function shortId(id: string): string {
@@ -60,7 +62,7 @@ function subListCommand(): Command {
         data.subscriptions.map((s) => [
           shortId(s.id),
           s.scope,
-          s.webcalUrl,
+          s.webcalUrl ?? '(発行時のみ表示)',
           s.lastAccessedAt ?? '-',
         ]),
       )
@@ -94,9 +96,14 @@ function subAddCommand(): Command {
         return
       }
 
-      console.log(`カレンダーサブスクリプションを追加しました`)
-      console.log(`WebcalURL: ${data.webcalUrl}`)
-      console.log(`ID:        ${data.subscription.id}`)
+      if (data.webcalUrl) {
+        console.log(`カレンダーサブスクリプションを追加しました`)
+        console.log(`WebcalURL: ${data.webcalUrl}`)
+        console.log(`ID:        ${data.subscription.id}`)
+      } else {
+        console.log('すでに購読済みです。URL を取り直すには hiyori sub regen を実行してください')
+        console.log(`ID:        ${data.subscription.id}`)
+      }
     })
 }
 

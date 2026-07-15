@@ -211,11 +211,11 @@ nanoka の Model DSL で定義する想定。
 - **Participant**: id, eventId, kind (`discord` / `guest`), discordUserId (nullable, kind=discord 時のみ), displayName (必須、ゲストでも名前なしの匿名は不可), guestToken (serverOnly, nullable, kind=guest 時のみ)
 - **Vote**: id, candidateId, participantId, choice (`yes` / `maybe` / `no`), comment（**投票は必ず Participant に紐付き、匿名 Vote は許可しない**）
 - **Decision**: id, eventId, candidateId, decidedAt, icsUid (RFC 5545 の UID), discordMessageId
-- **CalendarSubscription**: id, ownerDiscordId, token (serverOnly, 高エントロピー), scope (`user-all` / `server:{guildId}`), createdAt, lastAccessedAt
+- **CalendarSubscription**: id, ownerDiscordId, tokenHash (serverOnly, SHA-256), scope (`user-all` / `server:{guildId}`), createdAt, lastAccessedAt — 生 token（高エントロピー 64 hex）は発行 / 再生成レスポンスで 1 回だけ返し、DB には SHA-256 hash のみ保存する（Session と同一パターン、#25）
 - **AuditLog**: id, actorDiscordId, action, payload, createdAt
 
 - `Decision.icsUid` は ICS の `UID` フィールドに使い、同一イベントの再配布で重複登録を防ぐ
-- `CalendarSubscription.token` は URL に埋め込まれるため、URL を知る者が全予定を読める前提でローテーション可能にする
+- `CalendarSubscription` の生 token は URL に埋め込まれるため、URL を知る者が全予定を読める前提でローテーション可能にする。照合はリクエスト URL の token を SHA-256 化して `tokenHash` と比較する
 - トークン類は `.serverOnly()` を付与し、API 出力に絶対に漏らさない
 
 ---

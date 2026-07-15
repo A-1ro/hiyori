@@ -238,7 +238,8 @@ export interface SubscriptionResponse {
 
 export async function createSubscription() {
   const res = await api.api.subscriptions.$post({})
-  return handleResponse<{ subscription: SubscriptionResponse; webcalUrl: string }>(res)
+  // webcalUrl は新規発行時 (201) のみ。既存購読がある場合 (200) は DB に hash しか無いため null
+  return handleResponse<{ subscription: SubscriptionResponse; webcalUrl: string | null }>(res)
 }
 
 export async function deleteSubscription(id: string) {
@@ -273,7 +274,8 @@ export async function fetchMyBusy(excludeEventId?: string): Promise<MyBusyRespon
 }
 
 export interface MySubscription extends SubscriptionResponse {
-  webcalUrl: string
+  // 一覧 API は URL を復元できない（tokenHash のみ保存）ため常に null
+  webcalUrl: string | null
 }
 
 export async function fetchMySubscriptions(): Promise<{ subscriptions: MySubscription[] }> {

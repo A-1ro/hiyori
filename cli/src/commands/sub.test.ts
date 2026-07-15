@@ -177,13 +177,15 @@ describe('sub add コマンド', () => {
     vi.restoreAllMocks()
   })
 
-  it('status 200（既存サブスクリプション）でも成功', async () => {
+  it('status 200（既存サブスクリプション, webcalUrl: null）でも成功', async () => {
     await writeCredentials({ token: 'test-token', expiresAt: '2999-01-01T00:00:00.000Z', apiUrl: 'https://test.example.com' })
 
+    // サーバーは tokenHash のみ保存するため、既存購読の POST は webcalUrl: null を返す（#25）
+    const existingSub = { ...mockSubWithUrl, webcalUrl: null }
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.includes('/api/subscriptions') && !url.includes('/regenerate') && init?.method === 'POST') {
-        return new Response(JSON.stringify(mockSubWithUrl), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify(existingSub), { status: 200, headers: { 'Content-Type': 'application/json' } })
       }
       return new Response('Not found', { status: 404 })
     })
@@ -198,7 +200,8 @@ describe('sub add コマンド', () => {
     await program.parseAsync(['sub', 'add'], { from: 'user' })
 
     expect(process.exitCode).toBeUndefined()
-    expect(output.some((l) => l.includes('webcal://'))).toBe(true)
+    expect(output.some((l) => l.includes('すでに購読済み'))).toBe(true)
+    expect(output.some((l) => l.includes('webcal://'))).toBe(false)
     vi.restoreAllMocks()
   })
 })

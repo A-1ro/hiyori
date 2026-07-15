@@ -174,12 +174,15 @@ function EventSection({
 
 function SubscriptionCard({
   subscription,
+  issuedUrl,
   onDeleted,
   onRegenerated,
 }: {
   subscription: MySubscription
+  // 発行・再生成の直後だけ表示できる生 URL（サーバーは hash しか保存しない）
+  issuedUrl: string | null
   onDeleted: () => void
-  onRegenerated: () => void
+  onRegenerated: (webcalUrl: string) => void
 }) {
   const [copied, setCopied] = useState(false)
   const deleteMut = useMutation({
@@ -188,12 +191,15 @@ function SubscriptionCard({
   })
   const regenerateMut = useMutation({
     mutationFn: () => regenerateSubscription(subscription.id),
-    onSuccess: onRegenerated,
+    onSuccess: (data) => onRegenerated(data.webcalUrl),
   })
 
+  const webcalUrl = issuedUrl ?? subscription.webcalUrl
+
   const handleCopy = async () => {
+    if (!webcalUrl) return
     try {
-      await navigator.clipboard.writeText(subscription.webcalUrl)
+      await navigator.clipboard.writeText(webcalUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 1600)
     } catch {
@@ -251,14 +257,15 @@ function SubscriptionCard({
             whiteSpace: 'nowrap',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           }}
-          title={subscription.webcalUrl}
+          title={webcalUrl ?? undefined}
         >
-          {subscription.webcalUrl}
+          {webcalUrl ?? '購読 URL は発行・再生成した直後のみ表示されます'}
         </span>
         <Button
           variant={copied ? 'secondary' : 'primary'}
           size="sm"
           onClick={handleCopy}
+          disabled={!webcalUrl}
           icon={
             <Icon
               name={copied ? 'check' : 'copy'}
@@ -274,7 +281,10 @@ function SubscriptionCard({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => (window.location.href = subscription.webcalUrl)}
+          disabled={!webcalUrl}
+          onClick={() => {
+            if (webcalUrl) window.location.href = webcalUrl
+          }}
           icon={<Icon name="calendar" size={14} />}
         >
           Calendar を開く
@@ -310,6 +320,8 @@ function SubscriptionCard({
 function SubscriptionsSection() {
   const qc = useQueryClient()
   const [error, setError] = useState<string | undefined>()
+  // 発行・再生成の直後だけ生 URL を保持する（サーバーは hash のみ保存で再表示不可）
+  const [issuedUrl, setIssuedUrl] = useState<string | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['mySubscriptions'],
     queryFn: fetchMySubscriptions,
@@ -317,7 +329,10 @@ function SubscriptionsSection() {
 
   const createMut = useMutation({
     mutationFn: createSubscription,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['mySubscriptions'] }),
+    onSuccess: (data) => {
+      setIssuedUrl(data.webcalUrl)
+      qc.invalidateQueries({ queryKey: ['mySubscriptions'] })
+    },
     onError: (e) => {
       setError(e instanceof ApiError ? e.message : '購読の作成に失敗しました')
     },
@@ -391,8 +406,15 @@ function SubscriptionsSection() {
       ) : (
         <SubscriptionCard
           subscription={sub}
-          onDeleted={() => qc.invalidateQueries({ queryKey: ['mySubscriptions'] })}
-          onRegenerated={() => qc.invalidateQueries({ queryKey: ['mySubscriptions'] })}
+          issuedUrl={issuedUrl}
+          onDeleted={() => {
+            setIssuedUrl(null)
+            qc.invalidateQueries({ queryKey: ['mySubscriptions'] })
+          }}
+          onRegenerated={(webcalUrl) => {
+            setIssuedUrl(webcalUrl)
+            qc.invalidateQueries({ queryKey: ['mySubscriptions'] })
+          }}
         />
       )}
       {error && (
