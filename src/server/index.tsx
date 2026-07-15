@@ -13,6 +13,7 @@ import { zValidator } from '@hono/zod-validator'
 
 import { applyDecisions, cancelAllDecisions } from './services/decision'
 import { cleanupExpiredCliAuthRequests } from './services/cli-cleanup'
+import { cleanupExpiredEvents, parseRetentionDays } from './services/event-cleanup'
 import { eventToVEvent, wrapInVCalendar } from './ics/serialize'
 import { notifyDecisionsChanged, announceEventCreated } from './discord/notifier'
 import { verifyDiscordSignature } from './discord/verify'
@@ -49,7 +50,13 @@ export interface Env {
   // POST/PATCH /api/events で discordChannelToken の検証に使う。未設定なら Discord 連携不可。
   DISCORD_CHANNEL_TOKEN_SECRET?: string
   CLI_AUTH_RATELIMIT?: RateLimit
+  // F-12 (#24): 完了済み (closed / cancelled) イベントを最終活動から N 日で自動削除する
+  // 保持日数。未設定（デフォルト）・空・非数値・0 以下はすべて「自動削除しない」。
+  EVENT_RETENTION_DAYS?: string
 }
+
+// 完了済みイベント TTL 削除用の日次 cron（wrangler.jsonc の triggers.crons と一致させる）
+export const EVENT_CLEANUP_CRON = '0 3 * * *'
 
 const displayNameSchema = z.string().min(1).max(80).refine(
   (s) => s.trim().length > 0,
@@ -1643,7 +1650,14 @@ export default {
   async fetch(req, env, ctx) {
     return buildApp(env).fetch(req, env, ctx)
   },
-  async scheduled(_event, env, ctx) {
+  async scheduled(event, env, ctx) {
     ctx.waitUntil(cleanupExpiredCliAuthRequests(env.DB, new Date()))
+    // F-12 (#24): 日次 cron のみ・EVENT_RETENTION_DAYS が正の整数のときだけ実行
+    if (event.cron === EVENT_CLEANUP_CRON) {
+      const retentionDays = parseRetentionDays(env.EVENT_RETENTION_DAYS)
+      if (retentionDays !== null) {
+        ctx.waitUntil(cleanupExpiredEvents(env.DB, retentionDays, new Date()))
+      }
+    }
   },
 } satisfies ExportedHandler<Env>
