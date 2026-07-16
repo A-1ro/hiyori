@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
-import { cleanupExpiredEvents, parseRetentionDays } from '../services/event-cleanup'
+import {
+  cleanupExpiredEvents,
+  parseRetentionDays,
+  MAX_EVENTS_PER_RUN,
+} from '../services/event-cleanup'
 
 async function applyMigrations() {
   const migrations = inject('d1Migrations')
@@ -73,6 +77,58 @@ async function count(table: string, where: string, ...binds: unknown[]): Promise
   return row?.n ?? 0
 }
 
+interface AuditPayload {
+  retentionDays: number
+  deletedCount: number
+  sampleIds: string[]
+}
+
+async function auditPayloads(): Promise<AuditPayload[]> {
+  const rows = await db()
+    .prepare(`SELECT payload FROM audit_logs WHERE action = 'event.retention.deleted'`)
+    .all<{ payload: string }>()
+  return (rows.results ?? []).map((r) => JSON.parse(r.payload) as AuditPayload)
+}
+
+/**
+ * 候補 SELECT の直後（DELETE バッチの前）に onAfterSelect を差し込む D1 ラッパ。
+ * 「削除リスト取得後にイベントが再オープンされる」競合の再現用。
+ */
+function raceDb(onAfterSelect: () => Promise<void>): D1Database {
+  const real = db()
+  const wrapStatement = (stmt: D1PreparedStatement): D1PreparedStatement =>
+    new Proxy(stmt, {
+      get(target, prop) {
+        if (prop === 'bind') {
+          return (...args: unknown[]) =>
+            wrapStatement((target.bind as (...a: unknown[]) => D1PreparedStatement)(...args))
+        }
+        if (prop === 'all') {
+          return async () => {
+            const res = await target.all()
+            await onAfterSelect()
+            return res
+          }
+        }
+        const v = (target as unknown as Record<PropertyKey, unknown>)[prop]
+        return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v
+      },
+    })
+  return new Proxy(real, {
+    get(target, prop) {
+      if (prop === 'prepare') {
+        // SELECT（候補列挙）だけラップし、batch に渡る文は素の statement のままにする
+        return (sql: string) => {
+          const stmt = target.prepare(sql)
+          return /^\s*SELECT/i.test(sql) ? wrapStatement(stmt) : stmt
+        }
+      }
+      const v = (target as unknown as Record<PropertyKey, unknown>)[prop]
+      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v
+    },
+  }) as D1Database
+}
+
 describe('parseRetentionDays', () => {
   it('未設定・空・非数値・0 以下は null（自動削除しない）', () => {
     expect(parseRetentionDays(undefined)).toBeNull()
@@ -105,7 +161,7 @@ describe('cleanupExpiredEvents', () => {
     const children = await insertChildren(eventId, { decidedAt: old })
 
     const result = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
-    expect(result.deletedEventIds).toEqual([eventId])
+    expect(result.deletedCount).toBe(1)
 
     expect(await count('events', 'id = ?', eventId)).toBe(0)
     expect(await count('decisions', 'id = ?', children.decisionId)).toBe(0)
@@ -119,7 +175,7 @@ describe('cleanupExpiredEvents', () => {
     const eventId = await insertEvent({ status: 'open', createdAt: veryOld })
 
     const result = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
-    expect(result.deletedEventIds).toEqual([])
+    expect(result.deletedCount).toBe(0)
     expect(await count('events', 'id = ?', eventId)).toBe(1)
   })
 
@@ -129,7 +185,7 @@ describe('cleanupExpiredEvents', () => {
     await insertChildren(eventId, { decidedAt: recent })
 
     const result = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
-    expect(result.deletedEventIds).toEqual([])
+    expect(result.deletedCount).toBe(0)
     expect(await count('events', 'id = ?', eventId)).toBe(1)
   })
 
@@ -142,7 +198,7 @@ describe('cleanupExpiredEvents', () => {
     await insertChildren(eventId, { decidedAt: recent })
 
     const result = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
-    expect(result.deletedEventIds).toEqual([])
+    expect(result.deletedCount).toBe(0)
     expect(await count('events', 'id = ?', eventId)).toBe(1)
   })
 
@@ -153,7 +209,7 @@ describe('cleanupExpiredEvents', () => {
     await insertChildren(eventId, { decidedAt: veryOld, cancelledAt: recent })
 
     const result = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
-    expect(result.deletedEventIds).toEqual([])
+    expect(result.deletedCount).toBe(0)
     expect(await count('events', 'id = ?', eventId)).toBe(1)
   })
 
@@ -162,11 +218,11 @@ describe('cleanupExpiredEvents', () => {
     const eventId = await insertEvent({ status: 'cancelled', createdAt: old })
 
     const result = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
-    expect(result.deletedEventIds).toEqual([eventId])
+    expect(result.deletedCount).toBe(1)
     expect(await count('events', 'id = ?', eventId)).toBe(0)
   })
 
-  it('E7: 削除操作を AuditLog に記録する（対象なしなら記録しない）', async () => {
+  it('E7: 削除操作を AuditLog に記録する（対象なしなら記録しない・payload はサンプル方式）', async () => {
     // 対象なし → AuditLog 追加なし
     await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
     expect(await count('audit_logs', `action = 'event.retention.deleted'`)).toBe(0)
@@ -175,18 +231,13 @@ describe('cleanupExpiredEvents', () => {
     const eventId = await insertEvent({ status: 'closed', createdAt: old })
 
     await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
-    const log = await db()
-      .prepare(`SELECT payload FROM audit_logs WHERE action = 'event.retention.deleted'`)
-      .first<{ payload: string }>()
-    expect(log).toBeTruthy()
-    const payload = JSON.parse(log!.payload) as {
-      retentionDays: number
-      deletedCount: number
-      deletedEventIds: string[]
-    }
-    expect(payload.retentionDays).toBe(RETENTION_DAYS)
-    expect(payload.deletedCount).toBe(1)
-    expect(payload.deletedEventIds).toEqual([eventId])
+    const payloads = await auditPayloads()
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].retentionDays).toBe(RETENTION_DAYS)
+    expect(payloads[0].deletedCount).toBe(1)
+    expect(payloads[0].sampleIds).toEqual([eventId])
+    // 全 ID の列挙はやめた（サンプルのみ）
+    expect(payloads[0]).not.toHaveProperty('deletedEventIds')
   })
 
   it('E8: 対象と対象外が混在しても対象だけを削除する', async () => {
@@ -198,7 +249,7 @@ describe('cleanupExpiredEvents', () => {
     const otherChildren = await insertChildren(fresh, { decidedAt: recent })
 
     const result = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
-    expect(result.deletedEventIds).toEqual([expired])
+    expect(result.deletedCount).toBe(1)
 
     expect(await count('events', 'id = ?', expired)).toBe(0)
     expect(await count('events', 'id = ?', active)).toBe(1)
@@ -206,5 +257,65 @@ describe('cleanupExpiredEvents', () => {
     // 対象外イベントの子は残る
     expect(await count('decisions', 'id = ?', otherChildren.decisionId)).toBe(1)
     expect(await count('votes', 'id = ?', otherChildren.voteId)).toBe(1)
+  })
+
+  it('E9: 競合ガード — 削除リスト取得後に open へ戻されたイベントは消さない', async () => {
+    const old = NOW.getTime() - (RETENTION_DAYS + 1) * DAY
+    const reopened = await insertEvent({ status: 'closed', createdAt: old - DAY })
+    const reopenedChildren = await insertChildren(reopened, { decidedAt: old })
+    const stillExpired = await insertEvent({ status: 'closed', createdAt: old })
+
+    // 候補 SELECT の直後（DELETE の前）に applyDecisions 相当の再オープンを差し込む
+    const racy = raceDb(async () => {
+      await db().prepare(`UPDATE events SET status = 'open' WHERE id = ?`).bind(reopened).run()
+    })
+    const result = await cleanupExpiredEvents(racy, RETENTION_DAYS, NOW)
+
+    // 再オープンされたイベントとその子はまるごと残る
+    expect(await count('events', 'id = ?', reopened)).toBe(1)
+    expect(await count('decisions', 'id = ?', reopenedChildren.decisionId)).toBe(1)
+    expect(await count('candidates', 'id = ?', reopenedChildren.candidateId)).toBe(1)
+    expect(await count('participants', 'id = ?', reopenedChildren.participantId)).toBe(1)
+    expect(await count('votes', 'id = ?', reopenedChildren.voteId)).toBe(1)
+    // もう一方（条件を満たしたまま）だけが消える
+    expect(result.deletedCount).toBe(1)
+    expect(await count('events', 'id = ?', stillExpired)).toBe(0)
+    // 監査ログの件数・サンプルも実際に消えたものと一致する
+    const payloads = await auditPayloads()
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].deletedCount).toBe(1)
+    expect(payloads[0].sampleIds).toEqual([stillExpired])
+  })
+
+  it('E10: 1 回の実行では MAX_EVENTS_PER_RUN 件までに留め、残りは次回に持ち越す', async () => {
+    const old = NOW.getTime() - (RETENTION_DAYS + 1) * DAY
+    const extra = 5
+    const total = MAX_EVENTS_PER_RUN + extra
+    const stmt = db().prepare(
+      `INSERT INTO events (id, organizerDiscordId, title, defaultDurationMinutes, status, timezone, createdAt)
+       VALUES (?, '12345678901234567', 'bulk', 60, 'closed', 'UTC', ?)`,
+    )
+    // createdAt をずらして「古い順に消える」ことも確かめる
+    await db().batch(
+      Array.from({ length: total }, (_, i) => stmt.bind(crypto.randomUUID(), old - (total - i) * 1000)),
+    )
+
+    const first = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
+    expect(first.deletedCount).toBe(MAX_EVENTS_PER_RUN)
+    expect(await count('events', `status = 'closed'`)).toBe(extra)
+    // 残ったのは最終活動が新しい方（古い順に削除された）
+    expect(await count('events', 'createdAt >= ?', old - extra * 1000)).toBe(extra)
+
+    // 監査ログの deletedCount 合計は 1 回目の削除件数と一致（チャンクごとに記録）
+    const payloads = await auditPayloads()
+    expect(payloads.reduce((sum, p) => sum + p.deletedCount, 0)).toBe(MAX_EVENTS_PER_RUN)
+    for (const p of payloads) {
+      expect(p.sampleIds.length).toBeLessThanOrEqual(10)
+    }
+
+    // 持ち越し分は次回の実行で消える
+    const second = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
+    expect(second.deletedCount).toBe(extra)
+    expect(await count('events', `status = 'closed'`)).toBe(0)
   })
 })
