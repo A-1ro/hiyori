@@ -110,6 +110,7 @@ Discord と連携可能な日程調整 Web ツール。
 | セキュリティ | OAuth トークンは KV / D1 暗号化保存。Webhook URL は Secrets で管理 |
 | プライバシー | 回答者の Discord ID は最小限のみ保持。退会時はカスケード削除 |
 | 監査性 | 確定操作 / 通知送信は監査ログに残す |
+| データ保持 | デフォルトは永久保持。`EVENT_RETENTION_DAYS`（正の整数、未設定なら無効）を設定すると、完了済み（`closed` / `cancelled`）イベントを最終活動（確定 / 取消、無ければ作成）から N 日経過後に Cron Trigger（毎日 3:00 UTC）で物理削除する。votes / participants / candidates / decisions も同時に削除し、削除操作は AuditLog（`event.retention.deleted`）に記録する（F-12 #24） |
 | コスト | 個人運用想定。CF Workers 無料枠内での運用を目標 |
 
 ---
@@ -267,6 +268,7 @@ Apple は Calendar 用の OAuth API を公開していないため、**標準フ
 - ビルド: `vite build`（クライアント）→ `vite build --ssr`（サーバー）→ `wrangler deploy`。アセットは Workers `assets` で同一 Worker から配信
 - 型共有: バックエンドの `AppType` を `export type` し、フロント側で `hc<AppType>(...)` から RPC クライアントを生成。`tsconfig` は `strict: true`
 - シークレット: `wrangler secret put` で Discord/Google のクライアントシークレット等を管理
+- データ保持 (F-12 #24): セルフホスト運用者は `wrangler.jsonc` の `vars.EVENT_RETENTION_DAYS` に正の整数（日数）を設定すると、完了済みイベントの TTL 自動削除が有効になる。未設定（デフォルト）・0 以下・非数値は無効（永久保持）。cron は `triggers.crons` の `0 3 * * *`（毎時の cron は CLI 認証の期限切れ掃除用）
 - テスト: Vitest（ユニット）、React Testing Library（コンポーネント）、Playwright（E2E の主要フロー）
 - CI: GitHub Actions で typecheck / test / `wrangler deploy`
 

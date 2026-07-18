@@ -18,6 +18,9 @@
 	],
 	"vars": {
 		"ENVIRONMENT": "production"
+		// F-12 (#24): 完了済み (closed / cancelled) イベントを最終活動から N 日で自動削除したい
+		// セルフホスト運用者は "EVENT_RETENTION_DAYS": "90" のように正の整数を設定する。
+		// 未設定（デフォルト）は自動削除しない（永久保持）。
 	},
 	"observability": {
 		"enabled": true
@@ -26,6 +29,7 @@
 		{ "name": "CLI_AUTH_RATELIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
 	],
 	"triggers": {
-		"crons": ["0 * * * *"]
+		// 毎時: CLI 認証リクエストの期限切れ掃除 / 毎日 3:00 UTC: 完了済みイベントの TTL 削除 (F-12 #24)
+		"crons": ["0 * * * *", "0 3 * * *"]
 	}
 }

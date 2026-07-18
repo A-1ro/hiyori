@@ -87,6 +87,7 @@ pnpm dev
 | `DISCORD_BOT_TOKEN` | secret | Bot トークン（チャンネル通知・コマンド登録に使用） |
 | `DISCORD_PUBLIC_KEY` | secret | Interactions の署名検証用 公開鍵 |
 | `DISCORD_CHANNEL_TOKEN_SECRET` | secret | チャンネル連携トークン（HMAC-SHA256）の署名鍵。**未設定だと Discord 連携は無効化**（トークン提示時に 503） |
+| `EVENT_RETENTION_DAYS` | var | 完了済み（`closed` / `cancelled`）イベントを最終活動から N 日経過後に日次 cron で自動削除する保持日数（正の整数）。**未設定（デフォルト）は自動削除しない = 永久保持** |
 
 > `pnpm discord:register` は `DISCORD_APP_ID`（= `DISCORD_CLIENT_ID` と同値）と `DISCORD_BOT_TOKEN`、任意で `DISCORD_GUILD_ID`（ギルド限定登録）を `.dev.vars` から読む。
 
