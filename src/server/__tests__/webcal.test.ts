@@ -60,6 +60,9 @@ async function createEventAndDecide() {
 describe('Webcal feed', () => {
   beforeEach(async () => {
     await applyMigrations()
+    // ストレージはファイル内で共有されるため、前のテストの購読が残っていると
+    // POST /api/subscriptions が既存扱い（webcalUrl: null）になる。毎回まっさらにする。
+    await (env as { DB: D1Database }).DB.prepare('DELETE FROM calendar_subscriptions').run()
     organizerCookie = await loginAs(ORGANIZER_ID)
   })
 
@@ -153,17 +156,22 @@ describe('Webcal feed', () => {
     expect(feedRes.status).toBe(404)
   })
 
-  it('W8: 同じユーザーの POST × 2 → 1 件のみ・2 回目は 200 で同一 id', async () => {
+  it('W8: 同じユーザーの POST × 2 → 1 件のみ・2 回目は 200 で同一 id + webcalUrl は null', async () => {
     const res1 = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
     expect(res1.status).toBe(201)
     const body1 = (await res1.json()) as { subscription: { id: string }; webcalUrl: string }
 
     const res2 = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
     expect(res2.status).toBe(200)
-    const body2 = (await res2.json()) as { subscription: { id: string }; webcalUrl: string }
+    const body2 = (await res2.json()) as { subscription: { id: string }; webcalUrl: string | null }
 
     expect(body2.subscription.id).toBe(body1.subscription.id)
-    expect(body2.webcalUrl).toBe(body1.webcalUrl)
+    // DB には hash しか無いので既存 URL は再表示できない（暗黙ローテーションもしない）
+    expect(body2.webcalUrl).toBeNull()
+
+    // 初回発行の URL は 2 回目の POST 後も有効なまま
+    const feedRes = await SELF.fetch(body1.webcalUrl.replace('webcal://', 'http://'))
+    expect(feedRes.status).toBe(200)
 
     // DB 上も 1 件のみ
     const db = (env as { DB: D1Database }).DB
@@ -179,10 +187,10 @@ describe('Webcal feed', () => {
     const idOld = crypto.randomUUID()
     const idNew = crypto.randomUUID()
     await db.prepare(
-      `INSERT INTO calendar_subscriptions (id, ownerDiscordId, token, scope, createdAt) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO calendar_subscriptions (id, ownerDiscordId, tokenHash, scope, createdAt) VALUES (?, ?, ?, ?, ?)`
     ).bind(idOld, ORGANIZER_ID, 'a'.repeat(64), 'user-all', now - 1000).run()
     await db.prepare(
-      `INSERT INTO calendar_subscriptions (id, ownerDiscordId, token, scope, createdAt) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO calendar_subscriptions (id, ownerDiscordId, tokenHash, scope, createdAt) VALUES (?, ?, ?, ?, ?)`
     ).bind(idNew, ORGANIZER_ID, 'b'.repeat(64), 'user-all', now).run()
 
     const res = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
@@ -215,5 +223,44 @@ describe('Webcal feed', () => {
     // 新 token で GET → 200
     const newRes = await SELF.fetch(newHttpUrl)
     expect(newRes.status).toBe(200)
+  })
+
+  it('W10: DB には SHA-256 hash のみ保存され、生 token は保存されない', async () => {
+    const res = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as { webcalUrl: string }
+    const rawToken = body.webcalUrl.match(/\/feeds\/([0-9a-f]{64})\.ics$/)![1]!
+
+    const db = (env as { DB: D1Database }).DB
+    const row = await db.prepare(
+      `SELECT tokenHash FROM calendar_subscriptions WHERE ownerDiscordId = ?`
+    ).bind(ORGANIZER_ID).first<{ tokenHash: string }>()
+    expect(row).toBeTruthy()
+    expect(row!.tokenHash).not.toBe(rawToken)
+
+    // tokenHash = SHA-256(rawToken) であること
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rawToken))
+    const expected = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+    expect(row!.tokenHash).toBe(expected)
+  })
+
+  it('W11: 生 token で /feeds → 200、改変 token → 404', async () => {
+    const res = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+    const body = (await res.json()) as { webcalUrl: string }
+    const rawToken = body.webcalUrl.match(/\/feeds\/([0-9a-f]{64})\.ics$/)![1]!
+
+    const okRes = await SELF.fetch(`${BASE}/feeds/${rawToken}.ics`)
+    expect(okRes.status).toBe(200)
+
+    // 1 文字だけ改変した token → 404
+    const tampered = (rawToken[0] === 'a' ? 'b' : 'a') + rawToken.slice(1)
+    const ngRes = await SELF.fetch(`${BASE}/feeds/${tampered}.ics`)
+    expect(ngRes.status).toBe(404)
+
+    // hash 値そのものを token として使っても 404（hash では引けない）
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rawToken))
+    const hashHex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+    const hashRes = await SELF.fetch(`${BASE}/feeds/${hashHex}.ics`)
+    expect(hashRes.status).toBe(404)
   })
 })

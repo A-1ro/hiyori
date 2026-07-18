@@ -1373,7 +1373,6 @@ window.__vite_plugin_react_preamble_installed__ = true
       for (let i = 1; i < rows.length; i++) {
         await CalendarSubscription.delete(rows[i]!.id)
       }
-      const host = new URL(c.req.url).host
       return c.json({
         subscriptions: kept.map((row) => ({
           id: row.id,
@@ -1381,7 +1380,8 @@ window.__vite_plugin_react_preamble_installed__ = true
           scope: row.scope,
           createdAt: row.createdAt.toISOString(),
           lastAccessedAt: row.lastAccessedAt ? row.lastAccessedAt.toISOString() : null,
-          webcalUrl: buildWebcalUrl(host, row.token),
+          // DB には tokenHash しか無いので URL は復元できない（発行 / 再生成時のみ返る）
+          webcalUrl: null as string | null,
         })),
       })
     })
@@ -1398,14 +1398,16 @@ window.__vite_plugin_react_preamble_installed__ = true
         for (let i = 1; i < existing.length; i++) {
           await CalendarSubscription.delete(existing[i]!.id)
         }
-        const webcalUrl = buildWebcalUrl(host, keep.token)
-        return c.json({ subscription: CalendarSubscription.toResponse(keep), webcalUrl }, 200)
+        // DB には tokenHash しか無く既存 URL は復元不可。暗黙のローテーションは
+        // カレンダー側の既存購読を黙って壊すため行わない（再生成は明示操作のみ）。
+        return c.json({ subscription: CalendarSubscription.toResponse(keep), webcalUrl: null as string | null }, 200)
       }
       const token = generateSubscriptionToken()
+      const tokenHash = await hashToken(token)
       const id = crypto.randomUUID()
       const createdAt = new Date()
       await app.db.insert(calendar_subscriptions).values({
-        id, ownerDiscordId: session.discordUserId, token, scope: 'user-all', createdAt,
+        id, ownerDiscordId: session.discordUserId, tokenHash, scope: 'user-all', createdAt,
       })
       const row = await CalendarSubscription.findOne(id)
       if (!row) throw new HTTPException(500, { message: 'Subscription creation failed' })
@@ -1430,7 +1432,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         return c.json({ error: 'Not Found' }, 404)
       }
       const newToken = generateSubscriptionToken()
-      await CalendarSubscription.update(id, { token: newToken })
+      await CalendarSubscription.update(id, { tokenHash: await hashToken(newToken) })
       const updated = await CalendarSubscription.findOne(id)
       if (!updated) throw new HTTPException(500, { message: 'Regenerate failed' })
       const webcalUrl = buildWebcalUrl(new URL(c.req.url).host, newToken)
@@ -1489,7 +1491,9 @@ window.__vite_plugin_react_preamble_installed__ = true
       if (!match) return c.json({ error: 'Not Found' }, 404)
       const token = match[1]!
 
-      const subs = await CalendarSubscription.findMany({ where: { token }, limit: 1 })
+      // URL の生 token を hash 化して DB の tokenHash と照合（平文は保存していない）
+      const tokenHash = await hashToken(token)
+      const subs = await CalendarSubscription.findMany({ where: { tokenHash }, limit: 1 })
       if (subs.length === 0) return c.json({ error: 'Not Found' }, 404)
       const sub = subs[0]!
 

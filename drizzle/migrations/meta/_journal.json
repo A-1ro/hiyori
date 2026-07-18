@@ -64,6 +64,13 @@
       "when": 1780808097804,
       "tag": "0008_cli_auth_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1784121269220,
+      "tag": "0009_absurd_cannonball",
+      "breakpoints": true
     }
   ]
 }

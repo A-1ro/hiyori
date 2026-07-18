@@ -55,7 +55,7 @@ export const decisions = sqliteTable('decisions', {
 export const calendar_subscriptions = sqliteTable('calendar_subscriptions', {
   id: text('id').primaryKey().notNull(),
   ownerDiscordId: text('ownerDiscordId').notNull(),
-  token: text('token').notNull(),
+  tokenHash: text('tokenHash').notNull(),
   scope: text('scope').notNull().default("user-all"),
   createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
   lastAccessedAt: integer('lastAccessedAt', { mode: 'timestamp_ms' }),

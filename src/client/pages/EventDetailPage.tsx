@@ -105,7 +105,12 @@ export function EventDetailPage() {
     setSubError(undefined)
     try {
       const { webcalUrl } = await createSubscription()
-      setSubModalUrl(webcalUrl)
+      if (webcalUrl) {
+        setSubModalUrl(webcalUrl)
+      } else {
+        // 既に購読済み（サーバーは hash しか保存せず既存 URL は再表示できない）
+        setSubError('すでに購読済みです。購読 URL の再生成はマイページから行えます')
+      }
     } catch (e) {
       setSubError(
         e instanceof ApiError && e.status === 401
