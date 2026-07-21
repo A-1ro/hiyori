@@ -85,6 +85,33 @@ export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: React
       <div style={{ display: 'flex', alignItems: 'center', gap, minWidth: 0 }}>
         {right}
         <FeedbackButton />
+        <a
+          href="https://buymeacoffee.com/a1ro"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Buy Me a Coffee で開発支援する"
+          title="開発支援（Buy Me a Coffee）"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            background: 'transparent',
+            border: '1px solid var(--color-border-strong)',
+            cursor: 'pointer',
+            padding: isNarrow ? '5px 7px' : '5px 10px',
+            borderRadius: 'var(--radius-pill)',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            fontWeight: 600,
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+            textDecoration: 'none',
+            color: 'var(--color-fg2)',
+          }}
+        >
+          <Icon name="coffee" size={15} />
+          {!isNarrow && '開発支援'}
+        </a>
         {user ? (
           <>
             {isNarrow ? (
