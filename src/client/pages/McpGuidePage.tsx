@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '../components/AppHeader'
 import { Icon } from '../components/primitives'
@@ -321,7 +321,11 @@ export function McpGuidePage() {
                 CLI（<Code>hiyori</Code> コマンド）— 端末から操作する
               </div>
               <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--color-fg2)' }}>
-                エンジニア向け。スクリプトやターミナルから明示的にコマンドを叩きたい人はこちら。
+                エンジニア向け。スクリプトやターミナルから明示的にコマンドを叩きたい人はこちら。{' '}
+                <Link to="/help/cli" style={{ color: 'var(--color-blurple-ink)', fontWeight: 600 }}>
+                  CLI（コマンドライン）ガイド
+                </Link>
+                {' '}を参照してください。
               </div>
             </div>
           </div>

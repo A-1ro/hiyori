@@ -783,6 +783,9 @@ export function MyPage() {
             <Link to="/help" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
               使い方
             </Link>
+            <Link to="/help/cli" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+              CLI
+            </Link>
             {mcpStatus?.enabled && (
               <Link to="/help/mcp" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
                 AI 連携

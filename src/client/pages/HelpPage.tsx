@@ -289,6 +289,29 @@ export function HelpPage() {
           </div>
         </Section>
 
+        <Section title="ターミナルから使う（CLI）">
+          <p style={{ margin: '0 0 12px' }}>
+            <Code>hiyori</Code> コマンドで、ターミナルから直接 Hiyori を操作できます（自動化・スクリプト・パワーユーザー向け）。
+            インストール・初期設定・コマンド一覧は専用ガイドにまとめています。
+          </p>
+          <Link
+            to="/help/cli"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 14,
+              fontWeight: 600,
+              color: 'var(--color-blurple-ink)',
+              textDecoration: 'none',
+            }}
+          >
+            <Icon name="chevron-right" size={16} color="var(--color-blurple)" />
+            CLI（コマンドライン）ガイドを見る
+            <Icon name="arrow-right" size={15} />
+          </Link>
+        </Section>
+
         {mcpStatus?.enabled && (
           <Section title="AI アシスタントと連携する">
             <p style={{ margin: '0 0 12px' }}>
