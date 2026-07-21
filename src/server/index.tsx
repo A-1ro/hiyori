@@ -37,7 +37,8 @@ import { loadSession, requireSession } from './auth/session'
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/discord'
 import { generateDeviceCode, generateUserCode, normalizeUserCode } from './auth/cli-device'
 import { cli_auth_requests } from '../../drizzle/schema'
-import { handleMcpRequest, isMcpEnabled, MCP_ROUTE } from './mcp/handler'
+import { tryLegacyBearerMcp, isMcpEnabled, MCP_ROUTE } from './mcp/handler'
+import { getOAuthProvider } from './mcp/provider'
 
 export interface Env {
   DB: D1Database
@@ -65,6 +66,10 @@ export interface Env {
   MCP_OBJECT: DurableObjectNamespace
   // MCP 濫用対策の Rate Limit binding（key = discordUserId）。未設定ならスキップ。
   MCP_RATELIMIT?: RateLimit
+  // 案 A（OAuth 2.1）のグラント / トークン保管用 KV。MCP_ENABLED 有効時のみ使用。
+  OAUTH_KV: KVNamespace
+  // workers-oauth-provider が defaultHandler / apiHandler 呼び出し前に注入する OAuthHelpers。
+  OAUTH_PROVIDER?: import('@cloudflare/workers-oauth-provider').OAuthHelpers
 }
 
 // 完了済みイベント TTL 削除用の日次 cron（wrangler.jsonc の triggers.crons と一致させる）
@@ -1795,15 +1800,27 @@ export { HiyoriMcpAgent } from './mcp/agent'
 
 export default {
   async fetch(req, env, ctx) {
-    // MCP: /mcp は（GET/POST 問わず）常に handleMcpRequest へ渡す。
-    // フラグ off のときは handleMcpRequest 先頭で 404 を返す（= /mcp を完全に不可視にする）。
-    // ここでフラグ判定して分岐を素通りさせると、GET /mcp が SSR キャッチオールに落ちて
-    // 200 HTML を返してしまうため、パス判定は必ず isMcpEnabled の外で行う。
     const url = new URL(req.url)
-    if (url.pathname === MCP_ROUTE || url.pathname.startsWith(`${MCP_ROUTE}/`)) {
-      return handleMcpRequest(req, env, ctx)
+    const isMcpPath =
+      url.pathname === MCP_ROUTE || url.pathname.startsWith(`${MCP_ROUTE}/`)
+
+    // MCP フラグ off: /mcp は（GET/POST 問わず）常に 404（= 完全に不可視）。それ以外は既存挙動のまま。
+    // ここでフラグ判定して分岐を素通りさせると GET /mcp が SSR キャッチオールに落ちて 200 HTML を
+    // 返してしまうため、パス判定は必ずフラグ判定の外で行う。
+    if (!isMcpEnabled(env)) {
+      if (isMcpPath) return new Response('Not Found', { status: 404 })
+      return buildApp(env).fetch(req, env, ctx)
     }
-    return buildApp(env).fetch(req, env, ctx)
+
+    // MCP フラグ on（Phase 2）: 案 A（OAuth）を被せつつ、案 B（既存 Hiyori セッション Bearer）も
+    // /mcp で引き続き受け付ける（Phase 1 互換・CLI/パワーユーザー経路）。セッション Bearer なら
+    // tryLegacyBearerMcp が処理し、それ以外（OAuth アクセストークン / 未提示）は null を返すので
+    // workers-oauth-provider に委譲する（/oauth/*・/token・/register・ディスカバリ・/mcp 検証も担う）。
+    if (isMcpPath) {
+      const legacy = await tryLegacyBearerMcp(req, env, ctx)
+      if (legacy) return legacy
+    }
+    return getOAuthProvider().fetch(req, env, ctx)
   },
   async scheduled(event, env, ctx) {
     ctx.waitUntil(cleanupExpiredCliAuthRequests(env.DB, new Date()))

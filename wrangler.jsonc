@@ -29,6 +29,11 @@
 	"observability": {
 		"enabled": true
 	},
+	// 案 A（OAuth 2.1・MCP Phase 2）のグラント / トークン保管用 KV。MCP_ENABLED 有効時のみ使用。
+	// Free プラン枠内（100k reads/日・1k writes/日・1GB）。本番フラグ ON はレビュー後に別途承認。
+	"kv_namespaces": [
+		{ "binding": "OAUTH_KV", "id": "07eeb7f525df48efa451db8983f09926" }
+	],
 	// McpAgent（Agents SDK）用 Durable Object。SQLite バックエンド = Free プラン枠内（追加課金なし）。
 	"durable_objects": {
 		"bindings": [

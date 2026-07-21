@@ -71,6 +71,7 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
   // ---- ツール登録 ---------------------------------------------------------
 
   async init(): Promise<void> {
+    // Phase 0/1: whoami + コア 8 ツール
     this.registerWhoami()
     this.registerListEvents()
     this.registerGetEvent()
@@ -80,6 +81,17 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
     this.registerGetMyVotes()
     this.registerConfirm()
     this.registerGetIcs()
+    // Phase 2: 残りツール（フル同等）
+    this.registerEditEvent()
+    this.registerDeleteEvent()
+    this.registerAddCandidate()
+    this.registerRemoveCandidate()
+    this.registerUnconfirm()
+    this.registerMyBusy()
+    this.registerListSubscriptions()
+    this.registerAddSubscription()
+    this.registerRemoveSubscription()
+    this.registerRegenSubscription()
   }
 
   // --- 認証 / プロフィール ---
@@ -344,6 +356,277 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
           'POST',
           `/api/events/${encodeURIComponent(eventId)}/decision`,
           { candidateIds },
+        )
+        if (!res.ok) return apiError(res)
+        return textResult(res.data)
+      },
+    )
+  }
+
+  private registerEditEvent() {
+    this.server.registerTool(
+      'hiyori_edit_event',
+      {
+        description:
+          'イベントの基本情報（タイトル・説明・締切・所要時間・タイムゾーン）を編集する。主催者のみ。締切を解除するには deadline に null を渡す。',
+        inputSchema: {
+          eventId: z.string().min(1).describe('イベント ID'),
+          title: z.string().min(1).max(200).optional().describe('イベント名'),
+          description: z.string().max(2000).optional().describe('説明'),
+          deadline: z
+            .string()
+            .datetime()
+            .nullable()
+            .optional()
+            .describe('投票締切（ISO8601）。null で締切なしに解除'),
+          defaultDurationMinutes: z
+            .number()
+            .int()
+            .min(1)
+            .max(60 * 24)
+            .optional()
+            .describe('各候補のデフォルト所要（分）'),
+          timezone: z.string().max(64).optional().describe('表示タイムゾーン（IANA）'),
+        },
+        annotations: {
+          title: 'Edit event',
+          readOnlyHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+      },
+      async ({ eventId, ...patch }) => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call('PATCH', `/api/events/${encodeURIComponent(eventId)}`, patch)
+        if (!res.ok) return apiError(res)
+        return textResult(res.data)
+      },
+    )
+  }
+
+  private registerDeleteEvent() {
+    this.server.registerTool(
+      'hiyori_delete_event',
+      {
+        description:
+          'イベントを完全に削除する（候補・投票・参加者・確定も一括削除）。主催者のみ。取り消せない破壊的操作。',
+        inputSchema: { eventId: z.string().min(1).describe('削除するイベント ID') },
+        annotations: {
+          title: 'Delete event',
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ eventId }) => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call('DELETE', `/api/events/${encodeURIComponent(eventId)}`)
+        if (!res.ok) return apiError(res)
+        return textResult({ ok: true, eventId })
+      },
+    )
+  }
+
+  private registerAddCandidate() {
+    this.server.registerTool(
+      'hiyori_add_candidate',
+      {
+        description:
+          '既存イベントに候補日時（スロット）を 1 件追加する。主催者のみ。endAt 省略時はイベントの既定所要から算出する。',
+        inputSchema: {
+          eventId: z.string().min(1).describe('イベント ID'),
+          startAt: z.string().datetime().describe('候補開始（ISO8601）'),
+          endAt: z.string().datetime().optional().describe('候補終了（ISO8601, 省略可）'),
+        },
+        annotations: {
+          title: 'Add candidate',
+          readOnlyHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+      },
+      async ({ eventId, startAt, endAt }) => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call(
+          'POST',
+          `/api/events/${encodeURIComponent(eventId)}/candidates`,
+          endAt ? { startAt, endAt } : { startAt },
+        )
+        if (!res.ok) return apiError(res)
+        return textResult(res.data)
+      },
+    )
+  }
+
+  private registerRemoveCandidate() {
+    this.server.registerTool(
+      'hiyori_remove_candidate',
+      {
+        description:
+          '候補日時（スロット）を 1 件削除する（その候補への投票も削除）。主催者のみ。取り消せない破壊的操作。',
+        inputSchema: {
+          eventId: z.string().min(1).describe('イベント ID'),
+          candidateId: z.string().min(1).describe('削除する候補 ID'),
+        },
+        annotations: {
+          title: 'Remove candidate',
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ eventId, candidateId }) => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call(
+          'DELETE',
+          `/api/events/${encodeURIComponent(eventId)}/candidates/${encodeURIComponent(candidateId)}`,
+        )
+        if (!res.ok) return apiError(res)
+        return textResult({ ok: true, eventId, candidateId })
+      },
+    )
+  }
+
+  private registerUnconfirm() {
+    this.server.registerTool(
+      'hiyori_unconfirm',
+      {
+        description:
+          '確定済みの開催日をすべて取り消す（未確定状態に戻す）。主催者のみ。.ics 配布は無効になる。',
+        inputSchema: { eventId: z.string().min(1).describe('イベント ID') },
+        annotations: {
+          title: 'Unconfirm date',
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ eventId }) => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call(
+          'DELETE',
+          `/api/events/${encodeURIComponent(eventId)}/decision`,
+        )
+        if (!res.ok) return apiError(res)
+        return textResult(res.data)
+      },
+    )
+  }
+
+  private registerMyBusy() {
+    this.server.registerTool(
+      'hiyori_my_busy',
+      {
+        description:
+          'あなたが参加中で確定済みの予定（開始日時の一覧）を返す。他イベントの日程調整で「埋まっている日」を避けるのに使う。',
+        inputSchema: {},
+        annotations: { title: 'My busy times', readOnlyHint: true, openWorldHint: false },
+      },
+      async () => {
+        const guard = this.scopeGuard('hiyori:read')
+        if (guard) return guard
+        const res = await this.call('GET', '/api/me/busy')
+        if (!res.ok) return apiError(res)
+        return textResult(res.data)
+      },
+    )
+  }
+
+  private registerListSubscriptions() {
+    this.server.registerTool(
+      'hiyori_list_subscriptions',
+      {
+        description:
+          'あなたのカレンダー購読（webcal 配信）の一覧を返す。URL はセキュリティ上、発行 / 再生成時にのみ表示される。',
+        inputSchema: {},
+        annotations: { title: 'List subscriptions', readOnlyHint: true, openWorldHint: false },
+      },
+      async () => {
+        const guard = this.scopeGuard('hiyori:read')
+        if (guard) return guard
+        const res = await this.call('GET', '/api/me/subscriptions')
+        if (!res.ok) return apiError(res)
+        return textResult(res.data)
+      },
+    )
+  }
+
+  private registerAddSubscription() {
+    this.server.registerTool(
+      'hiyori_add_subscription',
+      {
+        description:
+          'あなたの確定予定をまとめて配信するカレンダー購読（webcal URL）を発行する。Apple カレンダー等に登録できる。',
+        inputSchema: {},
+        annotations: {
+          title: 'Add subscription',
+          readOnlyHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+      },
+      async () => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call('POST', '/api/subscriptions')
+        if (!res.ok) return apiError(res)
+        return textResult(res.data)
+      },
+    )
+  }
+
+  private registerRemoveSubscription() {
+    this.server.registerTool(
+      'hiyori_remove_subscription',
+      {
+        description:
+          'カレンダー購読を削除する（本人の購読のみ）。既存の webcal URL は無効になる。取り消せない破壊的操作。',
+        inputSchema: { subscriptionId: z.string().min(1).describe('購読 ID') },
+        annotations: {
+          title: 'Remove subscription',
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ subscriptionId }) => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call(
+          'DELETE',
+          `/api/subscriptions/${encodeURIComponent(subscriptionId)}`,
+        )
+        if (!res.ok) return apiError(res)
+        return textResult({ ok: true, subscriptionId })
+      },
+    )
+  }
+
+  private registerRegenSubscription() {
+    this.server.registerTool(
+      'hiyori_regen_subscription',
+      {
+        description:
+          'カレンダー購読のトークンを再生成する（本人の購読のみ）。旧 URL は無効になり、新しい webcal URL を返す。',
+        inputSchema: { subscriptionId: z.string().min(1).describe('購読 ID') },
+        annotations: {
+          title: 'Regenerate subscription',
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ subscriptionId }) => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call(
+          'POST',
+          `/api/subscriptions/${encodeURIComponent(subscriptionId)}/regenerate`,
         )
         if (!res.ok) return apiError(res)
         return textResult(res.data)

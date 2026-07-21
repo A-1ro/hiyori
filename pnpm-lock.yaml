@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@cloudflare/workers-oauth-provider':
+        specifier: ^0.8.2
+        version: 0.8.2
       '@hono/zod-validator':
         specifier: ^0.8.0
         version: 0.8.0(hono@4.12.27)(zod@4.4.3)
@@ -413,6 +416,9 @@ packages:
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
+
+  '@cloudflare/workers-oauth-provider@0.8.2':
+    resolution: {integrity: sha512-Pho5qWDl4qj1STI5QYMQfPmJBBkxyrFpXyDl9BrtYOfWHxThabEzdi9p3ezS2cUkbjA0E6L5ki/kq2pcbRUtlg==}
 
   '@cloudflare/workers-types@4.20260627.1':
     resolution: {integrity: sha512-QhVvier1eW9Ydw96N/Ez79i5CSGy7h39JucrUejQmAWQw9qBdlB1aOTjaD93EGYrV0t9U81YWetI3LcaxxILNw==}
@@ -3463,6 +3469,8 @@ snapshots:
 
   '@cloudflare/workerd-windows-64@1.20260625.1':
     optional: true
+
+  '@cloudflare/workers-oauth-provider@0.8.2': {}
 
   '@cloudflare/workers-types@4.20260627.1': {}
 
