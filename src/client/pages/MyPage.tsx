@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppHeader } from '../components/AppHeader'
 import { Avatar, Badge, Button, DiscordMark, Icon } from '../components/primitives'
 import { loginUrl, useLogout, useSession, type SessionUser } from '../auth/useSession'
+import { useMcpStatus } from '../auth/useMcpStatus'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 import {
   ApiError,
@@ -643,6 +644,7 @@ export function MyPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { data: sessionData, isLoading: sessionLoading } = useSession()
+  const { data: mcpStatus } = useMcpStatus()
   const user = sessionData?.user ?? null
 
   const { data: myEvents, isLoading: eventsLoading } = useQuery({
@@ -781,6 +783,11 @@ export function MyPage() {
             <Link to="/help" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
               使い方
             </Link>
+            {mcpStatus?.enabled && (
+              <Link to="/help/mcp" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+                AI 連携
+              </Link>
+            )}
             <Link to="/terms" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
               利用規約
             </Link>

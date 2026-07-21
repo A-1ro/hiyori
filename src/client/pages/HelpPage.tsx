@@ -1,7 +1,9 @@
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '../components/AppHeader'
+import { Icon } from '../components/primitives'
 import { FeedbackButton } from '../components/FeedbackButton'
+import { useMcpStatus } from '../auth/useMcpStatus'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -99,6 +101,7 @@ function Note({ children }: { children: ReactNode }) {
 
 export function HelpPage() {
   const navigate = useNavigate()
+  const { data: mcpStatus } = useMcpStatus()
   return (
     <div>
       <AppHeader back={{ onClick: () => navigate(-1) }} />
@@ -285,6 +288,31 @@ export function HelpPage() {
             ))}
           </div>
         </Section>
+
+        {mcpStatus?.enabled && (
+          <Section title="AI アシスタントと連携する">
+            <p style={{ margin: '0 0 12px' }}>
+              Claude などの AI アシスタントを Hiyori につなぐと、チャットで話しかけるだけで日程調整を任せられます。
+              接続手順・使えるツール・許可範囲は専用ガイドにまとめています。
+            </p>
+            <Link
+              to="/help/mcp"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--color-blurple-ink)',
+                textDecoration: 'none',
+              }}
+            >
+              <Icon name="sparkles" size={16} color="var(--color-blurple)" />
+              AI との連携（MCP 接続ガイド）を見る
+              <Icon name="arrow-right" size={15} />
+            </Link>
+          </Section>
+        )}
 
         <Section title="フィードバック・不具合報告">
           <p style={{ margin: '0 0 12px' }}>

@@ -10,6 +10,7 @@ import { MyPage } from './pages/MyPage'
 import { TermsPage } from './pages/TermsPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { HelpPage } from './pages/HelpPage'
+import { McpGuidePage } from './pages/McpGuidePage'
 
 function HomeRoute() {
   const { data, isLoading } = useSession()
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
   { path: '/', element: <HomeRoute /> },
   { path: '/me', element: <MyPage /> },
   { path: '/help', element: <HelpPage /> },
+  { path: '/help/mcp', element: <McpGuidePage /> },
   { path: '/terms', element: <TermsPage /> },
   { path: '/privacy', element: <PrivacyPage /> },
   { path: '/events/new', element: <EventCreatePage /> },

@@ -444,6 +444,10 @@ window.__vite_plugin_react_preamble_installed__ = true
         },
       })
     })
+    // MCP サーバー（AI 連携）が本番で有効かをフロントへ公開する軽量フラグ。
+    // 導線（フッターの「AI 連携」リンク）を MCP_ENABLED に追従させ、公開の瞬間に自動で現れるようにする。
+    // 秘密値は含まない・未認証で参照可（既存の /mcp 404 ゲートと同じ真偽を返すだけ）。
+    .get('/api/mcp/status', (c) => c.json({ enabled: isMcpEnabled(c.env) }))
     .post(
       '/api/auth/cli/start',
       zValidator('json', z.object({ clientName: z.string().max(120).optional(), hostname: z.string().max(255).optional() }), (result, c) => {

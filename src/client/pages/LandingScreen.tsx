@@ -3,6 +3,7 @@ import { AppHeader } from '../components/AppHeader'
 import { MiniMatrix } from '../components/MiniMatrix'
 import { Badge, Button, DiscordMark, Icon } from '../components/primitives'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
+import { useMcpStatus } from '../auth/useMcpStatus'
 
 function loginHref(returnTo: string): string {
   return `/api/auth/discord?returnTo=${encodeURIComponent(returnTo)}`
@@ -10,6 +11,7 @@ function loginHref(returnTo: string): string {
 
 export function LandingScreen() {
   const navigate = useNavigate()
+  const { data: mcpStatus } = useMcpStatus()
   return (
     <div>
       <AppHeader />
@@ -154,6 +156,11 @@ export function LandingScreen() {
             <Link to="/help" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
               使い方
             </Link>
+            {mcpStatus?.enabled && (
+              <Link to="/help/mcp" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
+                AI 連携
+              </Link>
+            )}
             <Link to="/terms" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
               利用規約
             </Link>
