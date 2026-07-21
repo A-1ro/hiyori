@@ -291,7 +291,7 @@ export function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' | 'link'
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     maxLength={120}
-                    placeholder={user ? `${user.displayName}（未入力ならこの名前）` : '匿名でもOK'}
+                    placeholder={user ? 'ひより（未入力ならDiscordの表示名）' : 'ひより（任意・匿名でもOK）'}
                     style={fieldInputStyle}
                   />
                 </div>
