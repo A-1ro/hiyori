@@ -29,6 +29,16 @@
 	"observability": {
 		"enabled": true
 	},
+	// 案 A（OAuth 2.1・MCP Phase 2）のグラント / トークン保管用 KV。MCP_ENABLED 有効時のみ使用。
+	// Free プラン枠内（100k reads/日・1k writes/日・1GB）。本番フラグ ON はレビュー後に別途承認。
+	//
+	// ★セルフホスト時は自分の KV id に差し替えること（D1 の database_id と同じ運用）。
+	//   `wrangler kv namespace create OAUTH_KV` を実行し、返ってきた id を下の "id" に貼る。
+	//   下の id は本家インスタンス専用なので、別アカウントではこのままだと `wrangler deploy` が失敗する
+	//   （MCP_ENABLED=false でも wrangler は binding の id を検証するため）。
+	"kv_namespaces": [
+		{ "binding": "OAUTH_KV", "id": "07eeb7f525df48efa451db8983f09926" }
+	],
 	// McpAgent（Agents SDK）用 Durable Object。SQLite バックエンド = Free プラン枠内（追加課金なし）。
 	"durable_objects": {
 		"bindings": [
