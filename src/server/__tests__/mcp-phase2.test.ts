@@ -307,6 +307,132 @@ describe('MCP Phase 2: OAuth フロー（authorize→consent→token→/mcp）',
   })
 })
 
+// Codex P2-1 の回帰: 無効スコープ typo でフル権限に化けない / 省略時は最小権限（read）に倒す。
+describe('MCP Phase 2: スコープ要求の解決（権限過剰付与の防止）', () => {
+  function authorizeQuery(clientId: string, scopeParam: string | null): string {
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: clientId,
+      redirect_uri: REDIRECT_URI,
+      state: 'st-scope',
+      code_challenge: 'x'.repeat(43),
+      code_challenge_method: 'S256',
+    })
+    if (scopeParam !== null) params.set('scope', scopeParam)
+    return params.toString()
+  }
+
+  it('無効スコープのみ要求（typo）は GET authorize で invalid_scope 拒否（フル権限に化けない）', async () => {
+    await withMcpEnabled(async () => {
+      const cookie = await loginAs('scope-typo-get')
+      const clientId = await registerClient()
+      const query = authorizeQuery(clientId, 'hiyori:wirte') // typo
+      const res = await SELF.fetch(`${BASE}/oauth/authorize?${query}`, {
+        headers: { cookie },
+        redirect: 'manual',
+      })
+      expect(res.status).toBe(302)
+      const loc = new URL(res.headers.get('location')!)
+      // クライアントの redirect_uri へ invalid_scope で戻る（同意画面を出さない）
+      expect(loc.origin + loc.pathname).toBe(REDIRECT_URI)
+      expect(loc.searchParams.get('error')).toBe('invalid_scope')
+      expect(loc.searchParams.get('code')).toBeNull()
+    })
+  })
+
+  it('無効スコープのみ要求は POST approve でも invalid_scope 拒否（承認しても化けない）', async () => {
+    await withMcpEnabled(async () => {
+      const cookie = await loginAs('scope-typo-post')
+      const clientId = await registerClient()
+      const query = authorizeQuery(clientId, 'hiyori:wirte')
+      const form = new URLSearchParams()
+      form.set('oauth_req', query)
+      form.set('action', 'approve')
+      // 攻撃者がフォームで read/write を送っても、無効要求なので付与されない
+      form.append('scope', 'hiyori:read')
+      form.append('scope', 'hiyori:write')
+      const res = await SELF.fetch(`${BASE}/oauth/authorize`, {
+        method: 'POST',
+        headers: { cookie, origin: BASE, 'content-type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+        redirect: 'manual',
+      })
+      expect(res.status).toBe(302)
+      const loc = new URL(res.headers.get('location')!)
+      expect(loc.searchParams.get('error')).toBe('invalid_scope')
+      expect(loc.searchParams.get('code')).toBeNull()
+    })
+  })
+
+  it('scope 省略時は最小権限（read のみ）— フォームで write を足しても付与されない', async () => {
+    await withMcpEnabled(async () => {
+      const cookie = await loginAs('scope-omitted')
+      const clientId = await registerClient()
+
+      // scope パラメータを付けずに PKCE 込みで認可を完走させる
+      const verifier = base64UrlEncode(crypto.getRandomValues(new Uint8Array(48)))
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
+      const challenge = base64UrlEncode(new Uint8Array(digest))
+      const query = new URLSearchParams({
+        response_type: 'code',
+        client_id: clientId,
+        redirect_uri: REDIRECT_URI,
+        state: 'st-omit',
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+      }).toString()
+
+      // 同意画面は 200（invalid にはならない）
+      const consent = await SELF.fetch(`${BASE}/oauth/authorize?${query}`, { headers: { cookie } })
+      expect(consent.status).toBe(200)
+
+      const form = new URLSearchParams()
+      form.set('oauth_req', query)
+      form.set('action', 'approve')
+      // 攻撃者が write を足しても、省略時の提示は read のみなので付与されない
+      form.append('scope', 'hiyori:read')
+      form.append('scope', 'hiyori:write')
+      const approve = await SELF.fetch(`${BASE}/oauth/authorize`, {
+        method: 'POST',
+        headers: { cookie, origin: BASE, 'content-type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+        redirect: 'manual',
+      })
+      expect(approve.status).toBe(302)
+      const code = new URL(approve.headers.get('location')!).searchParams.get('code')!
+      expect(code).toBeTruthy()
+
+      const tokenRes = await SELF.fetch(`${BASE}/oauth/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: REDIRECT_URI,
+          client_id: clientId,
+          code_verifier: verifier,
+        }).toString(),
+      })
+      expect(tokenRes.status).toBe(200)
+      const accessToken = ((await tokenRes.json()) as { access_token: string }).access_token
+
+      const client = new McpTestClient(`Bearer ${accessToken}`)
+      await client.initialize()
+      // read は通る
+      const list = await client.callTool('hiyori_list_events')
+      expect(list.isError).toBe(false)
+      // write は拒否（= 省略時に write が付与されていない）
+      const created = await client.callTool('hiyori_create_event', {
+        title: 'should-be-blocked',
+        defaultDurationMinutes: 60,
+        candidates: [{ startAt: '2026-08-01T09:00:00.000Z' }],
+      })
+      expect(created.isError).toBe(true)
+      expect(created.text).toContain('scope')
+    })
+  })
+})
+
 describe('MCP Phase 2: 残りツール（案 B Bearer 経路で権限確認）', () => {
   it('tools/list に Phase 2 の全 19 ツールが並ぶ', async () => {
     await withMcpEnabled(async () => {

@@ -84,10 +84,19 @@ async function mintMcpSession(env: Env, userId: string): Promise<string> {
   return rawToken
 }
 
-function requestedScopes(oauthScope: string[]): McpScope[] {
-  // クライアント要求とサーバー対応の積。空要求（scope 未指定）は read/write 両方を提示。
-  const requested = oauthScope.filter((s): s is McpScope => (MCP_SCOPES as string[]).includes(s))
-  return requested.length > 0 ? requested : [...MCP_SCOPES]
+// スコープ要求の解決結果。invalid = 「指定はあるが有効スコープが 1 つも無い」＝ invalid_scope で拒否。
+type ScopeResolution = { ok: true; scopes: McpScope[] } | { ok: false }
+
+function resolveRequestedScopes(oauthScope: string[]): ScopeResolution {
+  // scope 省略（空配列）→ 最小権限の既定として read のみを提示する。
+  // 理由: 「無効スコープ typo → 両方フォールバック」で書き込み権限が化ける事故（Codex P2-1）を防ぐため、
+  //   デフォルトは安全側（read）に倒す。write が要るクライアントは scope=hiyori:write を明示要求する。
+  if (oauthScope.length === 0) return { ok: true, scopes: ['hiyori:read'] }
+  // クライアント要求 ∩ サーバー対応。
+  const valid = oauthScope.filter((s): s is McpScope => (MCP_SCOPES as string[]).includes(s))
+  // 指定はあるが有効スコープが 0 件（例: typo の hiyori:wirte のみ）→ フル権限に落とさず invalid_scope 拒否。
+  if (valid.length === 0) return { ok: false }
+  return { ok: true, scopes: valid }
 }
 
 function scopeLabel(scope: McpScope): string {
@@ -155,9 +164,11 @@ function redirectToLogin(url: URL): Response {
   return new Response(null, { status: 302, headers: { location: loginUrl } })
 }
 
-function denyRedirect(redirectUri: string, state: string): Response {
+// 認可失敗をクライアントの redirect_uri へ OAuth エラーとして戻す（access_denied / invalid_scope 等）。
+// redirect_uri はこの時点で lookupClient 済み = 検証済みなので、error を付けて戻すのが RFC 6749 §4.1.2.1 の作法。
+function errorRedirect(redirectUri: string, state: string, error: string): Response {
   const u = new URL(redirectUri)
-  u.searchParams.set('error', 'access_denied')
+  u.searchParams.set('error', error)
   if (state) u.searchParams.set('state', state)
   return new Response(null, { status: 302, headers: { location: u.toString() } })
 }
@@ -177,12 +188,15 @@ async function handleAuthorizeGet(request: Request, env: Env, url: URL): Promise
   const client = await provider.lookupClient(oauthReq.clientId)
   if (!client) return new Response('Unknown client', { status: 400 })
 
+  // スコープ検証はログイン強制の前に行う（無効要求のためにログインさせない）。
+  const resolved = resolveRequestedScopes(oauthReq.scope)
+  if (!resolved.ok) return errorRedirect(oauthReq.redirectUri, oauthReq.state, 'invalid_scope')
+
   const user = await getWebUser(request, env)
   if (!user) return redirectToLogin(url)
 
-  const scopes = requestedScopes(oauthReq.scope)
   // 元のクエリ文字列をそのまま持ち回り、POST 時に再パースして完全性を担保する。
-  return renderConsent(client, user, scopes, url.search.replace(/^\?/, ''))
+  return renderConsent(client, user, resolved.scopes, url.search.replace(/^\?/, ''))
 }
 
 // POST /oauth/authorize（承認 / 拒否）
@@ -214,12 +228,16 @@ async function handleAuthorizePost(request: Request, env: Env, url: URL): Promis
   if (!user) return redirectToLogin(new URL(rebuilt.url))
 
   if (action !== 'approve') {
-    return denyRedirect(oauthReq.redirectUri, oauthReq.state)
+    return errorRedirect(oauthReq.redirectUri, oauthReq.state, 'access_denied')
   }
 
-  // 許可スコープ = 要求スコープ ∩ 選択 ∩ サーバー対応。
-  const allowed = requestedScopes(oauthReq.scope)
-  const grantedScopes = allowed.filter((s) => chosen.includes(s))
+  // 無効スコープのみの要求は承認時点でも拒否（GET と同じ判定・フル権限に落とさない）。
+  const resolved = resolveRequestedScopes(oauthReq.scope)
+  if (!resolved.ok) return errorRedirect(oauthReq.redirectUri, oauthReq.state, 'invalid_scope')
+
+  // 許可スコープ = 解決済み提示スコープ ∩ ユーザーが選択したスコープ。
+  // （提示スコープを超える chosen は無視されるので、フォーム改竄で write を足すことはできない）
+  const grantedScopes = resolved.scopes.filter((s) => chosen.includes(s))
 
   // 内部呼び出し用の kind:'mcp' 短命セッションを発行。
   const apiToken = await mintMcpSession(env, user.userId)
