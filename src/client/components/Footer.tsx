@@ -1,5 +1,6 @@
 import { Link, Outlet } from 'react-router'
 import { useMcpStatus } from '../auth/useMcpStatus'
+import { DISCORD_BOT_INVITE_URL } from '../lib/discord'
 
 const linkStyle: React.CSSProperties = {
   color: 'var(--color-fg3)',
@@ -34,6 +35,14 @@ export function Footer() {
             AI 連携
           </Link>
         )}
+        <a
+          href={DISCORD_BOT_INVITE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={linkStyle}
+        >
+          Discord Bot を招待
+        </a>
         <Link to="/terms" style={linkStyle}>
           利用規約
         </Link>
