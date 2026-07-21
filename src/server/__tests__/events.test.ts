@@ -134,6 +134,67 @@ describe('PATCH /api/events/:id', () => {
     expect(body.event.status).toBe(originalStatus)
   })
 
+  it('deadline を設定 → null で消去 → 締切なしに戻る', async () => {
+    const createRes = await post(
+      '/api/events',
+      { ...validEventBase, deadline: '2026-07-05T12:00:00.000Z' },
+      { Cookie: organizerCookie },
+    )
+    const created = (await createRes.json()) as { event: { id: string; deadline?: string } }
+    expect(created.event.deadline).toBe('2026-07-05T12:00:00.000Z')
+
+    // deadline: null を送ると締切が消える（undefined 変換で前値が残るバグの回帰防止）
+    const cleared = await patch(
+      `/api/events/${created.event.id}`,
+      { deadline: null },
+      { Cookie: organizerCookie },
+    )
+    expect(cleared.status).toBe(200)
+    const clearedBody = (await cleared.json()) as { event: { deadline?: string } }
+    expect(clearedBody.event.deadline ?? null).toBeNull()
+
+    // GET でも締切なしが永続化されている
+    const getRes = await jsonFetch(`/api/events/${created.event.id}`)
+    const getBody = (await getRes.json()) as { event: { deadline?: string | null } }
+    expect(getBody.event.deadline ?? null).toBeNull()
+  })
+
+  it('deadline あり → 別 deadline に更新できる（正常系リグレッション）', async () => {
+    const createRes = await post(
+      '/api/events',
+      { ...validEventBase, deadline: '2026-07-05T12:00:00.000Z' },
+      { Cookie: organizerCookie },
+    )
+    const created = (await createRes.json()) as { event: { id: string } }
+
+    const res = await patch(
+      `/api/events/${created.event.id}`,
+      { deadline: '2026-07-10T09:00:00.000Z' },
+      { Cookie: organizerCookie },
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { event: { deadline?: string } }
+    expect(body.event.deadline).toBe('2026-07-10T09:00:00.000Z')
+  })
+
+  it('deadline を送らない PATCH は既存の締切を維持する', async () => {
+    const createRes = await post(
+      '/api/events',
+      { ...validEventBase, deadline: '2026-07-05T12:00:00.000Z' },
+      { Cookie: organizerCookie },
+    )
+    const created = (await createRes.json()) as { event: { id: string } }
+
+    const res = await patch(
+      `/api/events/${created.event.id}`,
+      { title: 'タイトルだけ更新' },
+      { Cookie: organizerCookie },
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { event: { deadline?: string } }
+    expect(body.event.deadline).toBe('2026-07-05T12:00:00.000Z')
+  })
+
   it('organizerDiscordId を送っても無視される（patchEventBody にフィールドがない）', async () => {
     const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
     const created = (await createRes.json()) as { event: { id: string } }

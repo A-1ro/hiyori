@@ -892,10 +892,14 @@ window.__vite_plugin_react_preamble_installed__ = true
 
         const body = c.req.valid('json')
 
-        const updateData: Partial<typeof eventRow> = {}
+        // deadline は任意項目のため明示的な NULL 消去を許可する（null で締切なし）。
+        const updateData: Omit<Partial<typeof eventRow>, 'deadline'> & { deadline?: Date | null } = {}
         if (body.title !== undefined) updateData.title = body.title
         if (body.description !== undefined) updateData.description = body.description
-        if (body.deadline !== undefined) updateData.deadline = body.deadline ? new Date(body.deadline) : undefined
+        // deadline は任意項目。null / 空を送ったら「締切なし」として NULL 保存する。
+        // undefined を渡すと drizzle が SET 句から除外し前値が残る（＝締切を消せない）ため、
+        // 明示的に null を代入してカラムをクリアする。
+        if (body.deadline !== undefined) updateData.deadline = body.deadline ? new Date(body.deadline) : null
         if (body.defaultDurationMinutes !== undefined) updateData.defaultDurationMinutes = body.defaultDurationMinutes
         if (body.timezone !== undefined) updateData.timezone = body.timezone
         if (body.discordChannelToken !== undefined) {
@@ -916,7 +920,9 @@ window.__vite_plugin_react_preamble_installed__ = true
           }
         }
 
-        const updated = await Event.update(id, updateData)
+        // nanoka の生成型は optional 項目を `Date | undefined` としか表現しないが、
+        // drizzle/D1 は null を受け付けてカラムを NULL 更新できる（deadline 消去に必須）。
+        const updated = await Event.update(id, updateData as Partial<typeof eventRow>)
         if (!updated) return c.json({ error: 'Not Found' }, 404)
 
         return c.json({ event: Event.toResponse(updated) })

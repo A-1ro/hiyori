@@ -777,17 +777,45 @@ export function EventComposer({
           {advancedOpen && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18, marginTop: 16 }}>
               <Field label="回答締切（任意）" hint="この日時を過ぎると投票できなくなります">
-                <input
-                  type="datetime-local"
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
-                  style={{
-                    ...dateInputStyle,
-                    width: '100%',
-                    padding: '10px 12px',
-                    fontSize: 14,
-                  }}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="datetime-local"
+                    value={deadline}
+                    onChange={(e) => setDeadline(e.target.value)}
+                    style={{
+                      ...dateInputStyle,
+                      flex: 1,
+                      minWidth: 0,
+                      padding: '10px 12px',
+                      fontSize: 14,
+                    }}
+                  />
+                  {deadline && (
+                    <button
+                      type="button"
+                      onClick={() => setDeadline('')}
+                      title="締切をクリア"
+                      style={{
+                        flex: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontFamily: 'inherit',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        color: 'var(--color-fg2)',
+                        background: 'var(--color-surface)',
+                        border: '1px solid var(--color-border-strong)',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: '9px 12px',
+                      }}
+                    >
+                      <Icon name="plus" size={13} style={{ transform: 'rotate(45deg)' }} />
+                      クリア
+                    </button>
+                  )}
+                </div>
               </Field>
             </div>
           )}
