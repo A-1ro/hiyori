@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate, Link, useBlocker } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -242,8 +242,10 @@ export function EventVotePage() {
           // no-op
         }
       }
-      // 回答完了後はみんなの回答（集計）ページへ遷移する
+      // 回答完了後はみんなの回答（集計）ページへ遷移する。
+      // dirty は true のまま残るので、この自己遷移だけ blocker を素通りさせる。
       queryClient.invalidateQueries({ queryKey: ['tally', id] })
+      bypassBlocker.current = true
       navigate(`/events/${id}/tally`)
     },
     onSettled: () => {
@@ -282,8 +284,14 @@ export function EventVotePage() {
   }, [dirty])
 
   // 離脱ガード（E）: SPA 内遷移（ヘッダのリンク等）は useBlocker で止めて確認する。
-  // 送信成功時は楽観更新で dirty=false になってから navigate するので自分の遷移はブロックされない。
-  const blocker = useBlocker(dirty)
+  // 注意: dirty は votes と baseline（ローカル state）の差分で判定する（別経路のサーバー票
+  // 変更を未送信と誤認しないための baseline 方式）。送信成功時も baseline は更新されないため
+  // dirty は true のまま残る。したがって送信直後の自分の navigate も blocker に捕まってしまう。
+  // それを避けるため、送信起点の自己遷移だけ bypassBlocker で素通りさせる（onSuccess で立てる）。
+  const bypassBlocker = useRef(false)
+  const blocker = useBlocker(
+    useCallback(() => dirty && !bypassBlocker.current, [dirty]),
+  )
   useEffect(() => {
     if (blocker.state !== 'blocked') return
     const ok = window.confirm(
