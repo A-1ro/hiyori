@@ -1,5 +1,7 @@
 import { Link, Outlet } from 'react-router'
 import { useMcpStatus } from '../auth/useMcpStatus'
+import { DiscordMark } from './primitives'
+import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 
 const linkStyle: React.CSSProperties = {
   color: 'var(--color-fg3)',
@@ -22,6 +24,21 @@ export function Footer() {
         color: 'var(--color-fg3)',
       }}
     >
+      <a
+        href={DISCORD_BOT_INVITE_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          color: 'var(--color-blurple)',
+          textDecoration: 'none',
+        }}
+      >
+        <DiscordMark size={14} color="var(--color-blurple)" />
+        {DISCORD_BOT_INVITE_LABEL}
+      </a>
       <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 18 }}>
         <Link to="/help" style={linkStyle}>
           使い方
