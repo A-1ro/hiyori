@@ -108,32 +108,52 @@ describe('Webcal feed', () => {
   })
 
   it('W4: If-None-Match → 304', async () => {
-    // フィード本文の各 VEVENT には DTSTAMP:<現在時刻（秒精度）> が焼き込まれ、ETag は
-    // 本文の SHA-256。2 回のフェッチが秒境界をまたぐと DTSTAMP が変わって ETag もズレ、
-    // 304 にならず 200 が返る（全テスト並列時のみ間欠再現していた flake の原因）。
-    // → テスト内で Date を固定し、2 リクエストの DTSTAMP を一致させて 304 を決定的に検証する。
-    //   （Date のみ fake。setTimeout 等は実タイマーのままにして SELF.fetch を壊さない）
-    //   ※ 本番の ETag が時刻依存で揺れる件はプロダクト側の別課題として報告済み。
+    // ETag は本文（ICS）の SHA-256。DTSTAMP はイベントの安定した最終更新時刻ベースなので
+    // 内容が変わらない限り本文＝ETag は一定。フェイクタイマー無しで決定的に 304 になる。
+    await createEventAndDecide()
+
+    const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+    const subBody = (await subRes.json()) as { webcalUrl: string }
+    const httpUrl = subBody.webcalUrl.replace('webcal://', 'http://')
+
+    const res1 = await SELF.fetch(httpUrl)
+    expect(res1.status).toBe(200)
+    const etag = res1.headers.get('ETag')
+    expect(etag).toBeTruthy()
+
+    const res2 = await SELF.fetch(httpUrl, {
+      headers: { 'If-None-Match': etag! },
+    })
+    expect(res2.status).toBe(304)
+    const body2 = await res2.text()
+    expect(body2).toBe('')
+  })
+
+  it('W4b: ETag は時刻をまたいでも安定（内容不変なら同一 ETag・304）', async () => {
+    // 回帰: 以前は本文に DTSTAMP:<現在時刻・秒精度> を焼き込んでいたため、秒境界をまたぐと
+    // 内容が同じでも ETag が変わり 304 が効かなかった。安定 DTSTAMP でこれを防ぐ。
+    await createEventAndDecide()
+
+    const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+    const subBody = (await subRes.json()) as { webcalUrl: string }
+    const httpUrl = subBody.webcalUrl.replace('webcal://', 'http://')
+
+    // 1 回目
+    const res1 = await SELF.fetch(httpUrl)
+    const etag1 = res1.headers.get('ETag')
+    expect(etag1).toBeTruthy()
+
+    // サーバーの壁時計を 3 秒進めても（＝以前なら DTSTAMP が変わっていた）ETag は不変であること。
+    // Date のみ fake（setTimeout 等は実タイマー維持で SELF.fetch を壊さない）。
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date('2026-07-01T12:00:00.000Z'))
+    vi.setSystemTime(new Date(Date.now() + 3000))
     try {
-      await createEventAndDecide()
-
-      const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
-      const subBody = (await subRes.json()) as { webcalUrl: string }
-      const httpUrl = subBody.webcalUrl.replace('webcal://', 'http://')
-
-      const res1 = await SELF.fetch(httpUrl)
-      expect(res1.status).toBe(200)
-      const etag = res1.headers.get('ETag')
-      expect(etag).toBeTruthy()
-
-      const res2 = await SELF.fetch(httpUrl, {
-        headers: { 'If-None-Match': etag! },
-      })
-      expect(res2.status).toBe(304)
-      const body2 = await res2.text()
-      expect(body2).toBe('')
+      const res2 = await SELF.fetch(httpUrl)
+      const etag2 = res2.headers.get('ETag')
+      expect(etag2).toBe(etag1) // 内容不変 → ETag 一定
+      // If-None-Match で 304
+      const res3 = await SELF.fetch(httpUrl, { headers: { 'If-None-Match': etag1! } })
+      expect(res3.status).toBe(304)
     } finally {
       vi.useRealTimers()
     }

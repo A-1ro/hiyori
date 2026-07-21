@@ -49,7 +49,14 @@ export function eventToVEvent(args: {
   candidate: { startAt: Date; endAt: Date }
   now?: Date
 }): string[] {
-  const { event, decision, candidate, now = new Date() } = args
+  // DTSTAMP は iCalendar オブジェクトの「最終改訂時刻」。このフィードは確定イベントの配信なので、
+  // イベントの安定した最終更新時刻を使う: 取消済みなら cancelledAt、通常は decidedAt。
+  // 以前は new Date()（秒精度の現在時刻）を焼き込んでいたため、本文が同一でも秒ごとに DTSTAMP が
+  // 変わり、本文ハッシュ由来の ETag が揺れて If-None-Match の 304 が実質機能していなかった。
+  // 安定値にすることで、イベント内容が変わらない限り DTSTAMP も ETag も一定になる。
+  // 明示的に now が渡された場合はそれを優先（テスト等の決定的検証用）。
+  const { event, decision, candidate } = args
+  const now = args.now ?? decision.cancelledAt ?? decision.decidedAt
 
   const lines: string[] = [
     'BEGIN:VEVENT',
