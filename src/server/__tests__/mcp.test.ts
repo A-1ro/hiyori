@@ -25,6 +25,18 @@ function withMcpEnabled<T>(fn: () => Promise<T>): Promise<T> {
   })
 }
 
+// 「MCP 無効」を検証するテストは wrangler.jsonc の vars 既定に依存させず、
+// テスト内で明示的に MCP_ENABLED='false' にしてから叩く（本番公開で既定が true になっても崩れない）。
+function withMcpDisabled<T>(fn: () => Promise<T>): Promise<T> {
+  const e = env as { MCP_ENABLED?: string }
+  const original = e.MCP_ENABLED
+  e.MCP_ENABLED = 'false'
+  return fn().finally(() => {
+    if (original === undefined) delete e.MCP_ENABLED
+    else e.MCP_ENABLED = original
+  })
+}
+
 // SSE 応答本文から JSON-RPC メッセージ（data: 行）を取り出す。
 function parseSse(text: string): unknown[] {
   const out: unknown[] = []
@@ -124,24 +136,28 @@ beforeEach(async () => {
 })
 
 describe('MCP: feature flag gate', () => {
-  it('MCP_ENABLED 未設定なら /mcp は 404（機能不可視）', async () => {
-    const res = await SELF.fetch(`${BASE}/mcp`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+  it('MCP_ENABLED=false なら /mcp は 404（機能不可視）', async () => {
+    await withMcpDisabled(async () => {
+      const res = await SELF.fetch(`${BASE}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+      })
+      expect(res.status).toBe(404)
     })
-    expect(res.status).toBe(404)
   })
 
-  it('MCP_ENABLED 未設定なら GET /mcp も 404（SSR キャッチオールに落ちない）', async () => {
-    // 回帰: 以前は GET /mcp がフラグ判定を素通りして buildApp の SSR に落ち 200 HTML を返していた。
-    const res = await SELF.fetch(`${BASE}/mcp`, {
-      method: 'GET',
-      headers: { accept: 'text/html' },
+  it('MCP_ENABLED=false なら GET /mcp も 404（SSR キャッチオールに落ちない）', async () => {
+    await withMcpDisabled(async () => {
+      // 回帰: 以前は GET /mcp がフラグ判定を素通りして buildApp の SSR に落ち 200 HTML を返していた。
+      const res = await SELF.fetch(`${BASE}/mcp`, {
+        method: 'GET',
+        headers: { accept: 'text/html' },
+      })
+      expect(res.status).toBe(404)
+      // 200 HTML でないこと（SSR シェルが返っていない）
+      expect(res.headers.get('content-type') ?? '').not.toContain('text/html')
     })
-    expect(res.status).toBe(404)
-    // 200 HTML でないこと（SSR シェルが返っていない）
-    expect(res.headers.get('content-type') ?? '').not.toContain('text/html')
   })
 
   it('MCP off でも既存 API は無傷（/api/health が 200）', async () => {

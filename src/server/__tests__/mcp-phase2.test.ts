@@ -26,6 +26,18 @@ function withMcpEnabled<T>(fn: () => Promise<T>): Promise<T> {
   })
 }
 
+// 「MCP 無効」を検証するテストは wrangler.jsonc の vars 既定に依存させず、
+// テスト内で明示的に MCP_ENABLED='false' にしてから叩く（本番公開で既定が true になっても崩れない）。
+function withMcpDisabled<T>(fn: () => Promise<T>): Promise<T> {
+  const e = env as { MCP_ENABLED?: string }
+  const original = e.MCP_ENABLED
+  e.MCP_ENABLED = 'false'
+  return fn().finally(() => {
+    if (original === undefined) delete e.MCP_ENABLED
+    else e.MCP_ENABLED = original
+  })
+}
+
 // ---- MCP over Streamable HTTP の最小クライアント ----
 
 function parseSse(text: string): unknown[] {
@@ -198,12 +210,14 @@ beforeEach(async () => {
 
 describe('MCP Phase 2: OAuth ディスカバリ / ゲート', () => {
   it('MCP off なら /mcp は 404（OAuth を被せても既存挙動）', async () => {
-    const res = await SELF.fetch(`${BASE}/mcp`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+    await withMcpDisabled(async () => {
+      const res = await SELF.fetch(`${BASE}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+      })
+      expect(res.status).toBe(404)
     })
-    expect(res.status).toBe(404)
   })
 
   it('MCP on なら認可サーバーメタデータが公開される', async () => {
