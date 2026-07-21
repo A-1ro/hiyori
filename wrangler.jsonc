@@ -56,5 +56,57 @@
 	"triggers": {
 		// 毎時: CLI 認証リクエストの期限切れ掃除 / 毎日 3:00 UTC: 完了済みイベントの TTL 削除 (F-12 #24)
 		"crons": ["0 * * * *", "0 3 * * *"]
+	},
+	// ─────────────────────────────────────────────────────────────────────────
+	// e2e 検証用 named environment（research/2026-07-22-hiyori-preview-e2e-methodA.md §6.5 案(a)）。
+	// `wrangler deploy --env e2e` で別 Worker `hiyori-e2e` に上がる。--env なしの本番デプロイには一切影響しない
+	// （d1_databases / kv_namespaces / durable_objects / vars / migrations / ratelimits / triggers は非継承キーのため、
+	//   env.e2e に書いた分だけが e2e 側で使われる）。
+	//
+	// 設計上の要点:
+	// - D1 / KV は本番と【同一 ID を意図的に共有】する（リソース新設なし・0円）。破壊系 CLI（d1 execute /
+	//   migrations apply / seed）を e2e 向けのつもりで叩いても対象は本番と同じ DB である点に注意。
+	// - DO（HiyoriMcpAgent）は Worker 内で完結するため、e2e 側にも binding + migrations を定義して独立稼働させる。
+	// - cron は空配列を明示（本番 D1 を共有しているため、掃除 cron の二重発火を絶対に避ける）。
+	"env": {
+		"e2e": {
+			"name": "hiyori-e2e",
+			// 検証 URL: https://hiyori-e2e.aaa-4e2k3.workers.dev（custom domain は張らない）
+			"workers_dev": true,
+			"vars": {
+				// 本番同等の "production" を維持すること。"e2e" 等に変えると src/server/index.tsx が
+				// React Refresh preamble（/@react-refresh — デプロイ環境には存在しない）を注入し、空白画面になる。
+				"ENVIRONMENT": "production",
+				"MCP_ENABLED": "true"
+			},
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "hiyori",
+					// 本番 D1 と同一 ID（共有・新設しない）
+					"database_id": "4fb101ec-5490-452f-b7fb-a0e8ded356d2",
+					"migrations_dir": "drizzle/migrations"
+				}
+			],
+			"kv_namespaces": [
+				// 本番 OAUTH_KV と同一 ID（共有・新設しない）
+				{ "binding": "OAUTH_KV", "id": "07eeb7f525df48efa451db8983f09926" }
+			],
+			"durable_objects": {
+				"bindings": [
+					{ "name": "MCP_OBJECT", "class_name": "HiyoriMcpAgent" }
+				]
+			},
+			"migrations": [
+				{ "tag": "v1", "new_sqlite_classes": ["HiyoriMcpAgent"] }
+			],
+			"ratelimits": [
+				// 本番（1001/1002）・STG 案（1101/1102）と衝突しない別番号
+				{ "name": "CLI_AUTH_RATELIMIT", "namespace_id": "1201", "simple": { "limit": 10, "period": 60 } },
+				{ "name": "MCP_RATELIMIT", "namespace_id": "1202", "simple": { "limit": 60, "period": 60 } }
+			],
+			// 本番 D1 共有のため cron の二重発火を防ぐ（空配列を明示）
+			"triggers": { "crons": [] }
+		}
 	}
 }
