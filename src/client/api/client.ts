@@ -282,3 +282,19 @@ export async function fetchMySubscriptions(): Promise<{ subscriptions: MySubscri
   const res = await api.api.me.subscriptions.$get()
   return handleResponse(res)
 }
+
+export type FeedbackCategory = 'bug' | 'feature' | 'other'
+
+export interface FeedbackInput {
+  message: string
+  category?: FeedbackCategory
+  pageUrl?: string
+  eventId?: string
+  submitter?: string
+}
+
+// 不具合報告フォームの投稿（公開・ログイン不要）。userAgent はサーバー側で付与される。
+export async function submitFeedback(input: FeedbackInput): Promise<{ ok: boolean }> {
+  const res = await api.api.feedback.$post({ json: input })
+  return handleResponse(res)
+}

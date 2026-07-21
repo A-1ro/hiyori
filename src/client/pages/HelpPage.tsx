@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '../components/AppHeader'
+import { FeedbackButton } from '../components/FeedbackButton'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -283,6 +284,14 @@ export function HelpPage() {
               </div>
             ))}
           </div>
+        </Section>
+
+        <Section title="フィードバック・不具合報告">
+          <p style={{ margin: '0 0 12px' }}>
+            使ってみて気づいた点や不具合があれば、ぜひお知らせください。ログイン不要で送れます
+            （送信時に、見ているページの情報を一緒に添付します）。
+          </p>
+          <FeedbackButton variant="link" />
         </Section>
       </main>
     </div>

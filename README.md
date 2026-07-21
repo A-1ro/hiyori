@@ -88,8 +88,28 @@ pnpm dev
 | `DISCORD_PUBLIC_KEY` | secret | Interactions の署名検証用 公開鍵 |
 | `DISCORD_CHANNEL_TOKEN_SECRET` | secret | チャンネル連携トークン（HMAC-SHA256）の署名鍵。**未設定だと Discord 連携は無効化**（トークン提示時に 503） |
 | `EVENT_RETENTION_DAYS` | var | 完了済み（`closed` / `cancelled`）イベントを最終活動から N 日経過後に日次 cron で自動削除する保持日数（正の整数）。**未設定（デフォルト）は自動削除しない = 永久保持** |
+| `FEEDBACK_ADMIN_TOKEN` | secret | 不具合報告フォームの読み出しAPI（`GET` / `PATCH /api/feedback`）を保護する admin トークン。**未設定だと読み出しAPIは常に 403**（安全側・誤って全公開しない）。投稿フォーム（`POST /api/feedback`）は未設定でも動作し、報告は D1 に蓄積される（読み出しだけが無効） |
 
 > `pnpm discord:register` は `DISCORD_APP_ID`（= `DISCORD_CLIENT_ID` と同値）と `DISCORD_BOT_TOKEN`、任意で `DISCORD_GUILD_ID`（ギルド限定登録）を `.dev.vars` から読む。
+
+### フィードバック / 不具合報告フォーム
+
+ヘッダーのフキダシアイコン、またはヘルプ画面下部からログイン不要で送信できる。送信時に現在のページ URL・イベント ID・User-Agent・ログイン状態を自動添付する。報告は D1 の `feedback` テーブルに保存される。
+
+読み出しは admin 保護の汎用 API（特定インフラ非依存・外部連携は「外部 → この API」の一方通行）:
+
+```
+# 一覧（新しい順）。FEEDBACK_ADMIN_TOKEN 未設定なら常に 403
+GET /api/feedback?status=new&since=<ISO8601>&limit=<1..500>
+Authorization: Bearer <FEEDBACK_ADMIN_TOKEN>
+
+# ステータス更新（new / triaged / resolved）
+PATCH /api/feedback/:id   { "status": "resolved" }
+Authorization: Bearer <FEEDBACK_ADMIN_TOKEN>
+```
+
+- `since` は ISO8601 の `createdAt`。`createdAt` がそれより新しい行だけ返すので、ポーラーは受信した最新 `createdAt` を次回の `since` に使えば新着だけ取得できる。
+- `wrangler secret put FEEDBACK_ADMIN_TOKEN` で登録（ローカルは `.dev.vars`）。未設定でもフォーム投稿は動き、報告は D1 に貯まる（読み出しのみ無効）。
 
 ### Discord Bot のセットアップ
 

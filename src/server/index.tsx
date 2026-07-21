@@ -2,7 +2,7 @@
 import { d1Adapter, nanoka } from '@nanokajs/core'
 import type { RowType } from '@nanokajs/core'
 import type { BatchItem } from 'drizzle-orm/batch'
-import { eq, inArray, and, isNull, ne } from 'drizzle-orm'
+import { eq, inArray, and, isNull, ne, gt, desc } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
 import { getCookie, setCookie } from 'hono/cookie'
 import { cors } from 'hono/cors'
@@ -28,7 +28,8 @@ import { decisionFields, decisionTableName } from '../models/decision'
 import { eventFields, eventTableName } from '../models/event'
 import { participantFields, participantTableName } from '../models/participant'
 import { voteFields, voteTableName } from '../models/vote'
-import { calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions } from '../../drizzle/schema'
+import { calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions, feedback } from '../../drizzle/schema'
+import { feedbackFields, feedbackTableName } from '../models/feedback'
 import { userTableName, userFields } from '../models/user'
 import { sessionTableName, sessionFields } from '../models/session'
 import { setSessionCookie, clearSessionCookie, getSessionToken, getBearerToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, isSecureRequest, SESSION_TTL_SECONDS, CLI_SESSION_TTL_SECONDS } from './auth/cookies'
@@ -50,6 +51,9 @@ export interface Env {
   // POST/PATCH /api/events で discordChannelToken の検証に使う。未設定なら Discord 連携不可。
   DISCORD_CHANNEL_TOKEN_SECRET?: string
   CLI_AUTH_RATELIMIT?: RateLimit
+  // 不具合報告フォームの読み出しAPI（GET/PATCH /api/feedback）を保護する admin トークン。
+  // 未設定なら読み出しAPIは常に 403（安全側：誤って全公開しない）。投稿(POST)は未設定でも動く。
+  FEEDBACK_ADMIN_TOKEN?: string
   // F-12 (#24): 完了済み (closed / cancelled) イベントを最終活動から N 日で自動削除する
   // 保持日数。未設定（デフォルト）・空・非数値・0 以下はすべて「自動削除しない」。
   EVENT_RETENTION_DAYS?: string
@@ -98,6 +102,24 @@ const patchEventBody = z.object({
 const addCandidateBody = z.object({
   startAt: z.string().datetime(),
   endAt: z.string().datetime().optional(),
+})
+
+// 不具合報告フォーム（層1）。カテゴリはホワイトリスト。本文は必須＋最大長でDoS/空を弾く。
+const FEEDBACK_CATEGORIES = ['bug', 'feature', 'other'] as const
+const FEEDBACK_STATUSES = ['new', 'triaged', 'resolved'] as const
+const createFeedbackBody = z.object({
+  message: z
+    .string()
+    .min(1)
+    .max(4000)
+    .refine((s) => s.trim().length > 0, { message: 'message cannot be whitespace only' }),
+  category: z.enum(FEEDBACK_CATEGORIES).optional(),
+  pageUrl: z.string().max(2000).optional(),
+  eventId: z.string().max(100).optional(),
+  submitter: z.string().max(120).optional(),
+})
+const patchFeedbackBody = z.object({
+  status: z.enum(FEEDBACK_STATUSES),
 })
 
 const GUEST_COOKIE_PREFIX = 'hiyori_guest_'
@@ -185,6 +207,19 @@ const buildApp = (env: Env) => {
   const AuditLog = app.model(auditLogTableName, auditLogFields)
   const User = app.model(userTableName, userFields)
   const Session = app.model(sessionTableName, sessionFields)
+  const Feedback = app.model(feedbackTableName, feedbackFields)
+
+  // 読み出しAPI(GET/PATCH /api/feedback)の admin トークン照合。
+  // 未設定なら false（＝常に 403）で安全側に倒す。トークンはハッシュ同士の固定長比較で照合し、
+  // 長さ差による timing leak を避ける。
+  async function isFeedbackAdmin(c: Context<{ Bindings: Env }>): Promise<boolean> {
+    const token = c.env.FEEDBACK_ADMIN_TOKEN
+    if (!token) return false
+    const provided = getBearerToken(c)
+    if (!provided) return false
+    const [a, b] = await Promise.all([hashToken(provided), hashToken(token)])
+    return a === b
+  }
 
   // M2: /api/* に同一オリジンのみ許可する CORS チェック
   app.use('/api/*', cors({
@@ -1640,6 +1675,96 @@ window.__vite_plugin_react_preamble_installed__ = true
       }
       return c.json({ type: 6 })
     })
+    // 不具合報告フォームの投稿（公開・ログイン不要・ゲスト可）。
+    .post(
+      '/api/feedback',
+      zValidator('json', createFeedbackBody, (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        // 濫用抑止に既存の Rate Limit バインディングを流用（key 名前空間を分ける）。
+        const ip = c.req.header('CF-Connecting-IP')
+        if (ip && c.env.CLI_AUTH_RATELIMIT) {
+          const { success } = await c.env.CLI_AUTH_RATELIMIT.limit({ key: `feedback:${ip}` })
+          if (!success) return c.json({ error: 'Too many requests' }, 429)
+        }
+        const body = c.req.valid('json')
+        // User-Agent はサーバー側で付与（再現性向上）。生 IP は保存せずハッシュのみ。
+        const userAgent = c.req.header('User-Agent')?.slice(0, 500)
+        const ipHash = ip ? await hashToken(ip) : undefined
+        await Feedback.create({
+          message: body.message,
+          category: body.category,
+          pageUrl: body.pageUrl,
+          eventId: body.eventId,
+          submitter: body.submitter,
+          userAgent,
+          ipHash,
+          // status は既定 'new'、createdAt はモデル既定で付与。
+        })
+        return c.json({ ok: true }, 201)
+      },
+    )
+    // 読み出しAPI（admin トークン保護・汎用／層2ポーラーが since で新着だけ取得できる）。
+    .get('/api/feedback', async (c) => {
+      if (!(await isFeedbackAdmin(c))) return c.json({ error: 'Forbidden' }, 403)
+
+      const statusParam = c.req.query('status')
+      const sinceParam = c.req.query('since')
+      const limitRaw = Number(c.req.query('limit'))
+      const limit =
+        Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), 500) : 100
+
+      const conds = []
+      if (statusParam) conds.push(eq(feedback.status, statusParam))
+      if (sinceParam) {
+        const since = new Date(sinceParam)
+        if (Number.isNaN(since.getTime())) {
+          return c.json({ error: 'Invalid since (expected ISO datetime)' }, 400)
+        }
+        conds.push(gt(feedback.createdAt, since))
+      }
+
+      const rows = await app.db
+        .select()
+        .from(feedback)
+        .where(conds.length > 0 ? and(...conds) : undefined)
+        .orderBy(desc(feedback.createdAt))
+        .limit(limit)
+
+      return c.json({
+        feedback: rows.map((r) => ({
+          id: r.id,
+          message: r.message,
+          category: r.category ?? null,
+          pageUrl: r.pageUrl ?? null,
+          eventId: r.eventId ?? null,
+          userAgent: r.userAgent ?? null,
+          submitter: r.submitter ?? null,
+          status: r.status,
+          createdAt: r.createdAt.toISOString(),
+        })),
+      })
+    })
+    // status 更新（admin 保護・層2の既読/トリアージ管理用）。
+    .patch(
+      '/api/feedback/:id',
+      zValidator('json', patchFeedbackBody, (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        if (!(await isFeedbackAdmin(c))) return c.json({ error: 'Forbidden' }, 403)
+        const id = c.req.param('id')
+        const body = c.req.valid('json')
+        const updated = await Feedback.update(id, { status: body.status })
+        if (!updated) return c.json({ error: 'Not Found' }, 404)
+        return c.json({ ok: true, id, status: body.status })
+      },
+    )
 
   app.notFound((c) => {
     if (c.req.path.startsWith('/api/')) {

@@ -102,3 +102,16 @@ export const cli_auth_requests = sqliteTable('cli_auth_requests', {
   expiresAt: integer('expiresAt', { mode: 'timestamp_ms' }).notNull(),
   createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
 })
+
+export const feedback = sqliteTable('feedback', {
+  id: text('id').primaryKey().notNull(),
+  message: text('message').notNull(),
+  category: text('category'),
+  pageUrl: text('pageUrl'),
+  eventId: text('eventId'),
+  userAgent: text('userAgent'),
+  submitter: text('submitter'),
+  ipHash: text('ipHash'),
+  status: text('status').notNull().default("new"),
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
+})

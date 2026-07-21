@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router'
 import { Avatar, Button, DiscordMark, Icon, Logo } from './primitives'
+import { FeedbackButton } from './FeedbackButton'
 import { useSession, useLogout, loginUrl } from '../auth/useSession'
 
 export interface AppHeaderBack {
@@ -83,6 +84,7 @@ export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: React
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap, minWidth: 0 }}>
         {right}
+        <FeedbackButton />
         {user ? (
           <>
             {isNarrow ? (

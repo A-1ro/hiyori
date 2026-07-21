@@ -89,6 +89,10 @@ Discord と連携可能な日程調整 Web ツール。
 - F-09 Discord スラッシュコマンド (`/hiyori`) 対応
 - F-10 確定日の N 時間前リマインド（Cron Triggers）
 - F-11 候補日のタイムゾーン対応
+- F-13 フィードバック / 不具合報告フォーム（層1・Hiyori 単体で完結）
+  - フォーム（ログイン不要・ゲスト可）→ `POST /api/feedback` → D1 `feedback` テーブルに保存。送信時に現在ページ URL / イベント ID / User-Agent / ログイン状態を自動添付（生 IP は保存せずハッシュのみ）。既存 Rate Limit で濫用抑止、本文必須＋最大長、カテゴリはホワイトリスト。
+  - 読み出しは admin トークン（`FEEDBACK_ADMIN_TOKEN`）保護の**汎用** API `GET /api/feedback`（`?since` / `?status` / `?limit`）と `PATCH /api/feedback/:id`。未設定なら読み出しは常に 403（安全側）。
+  - **設計方針**: Hiyori のコードは特定インフラに依存しない。外部（通知・トリアージ）連携は「外部 → この読み出し API を定期ポーリング」の一方通行（層2）で外付けし、Hiyori 側には書かない。
 
 ### 5.3 将来的に検討
 - 公開 URL のアクセス制限（パスフレーズ / Discord ロール）

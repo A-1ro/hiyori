@@ -5,6 +5,7 @@ import { candidateFields, candidateTableName } from './src/models/candidate'
 import { cliAuthRequestFields, cliAuthRequestTableName } from './src/models/cliAuthRequest'
 import { decisionFields, decisionTableName } from './src/models/decision'
 import { eventFields, eventTableName } from './src/models/event'
+import { feedbackFields, feedbackTableName } from './src/models/feedback'
 import { participantFields, participantTableName } from './src/models/participant'
 import { sessionFields, sessionTableName } from './src/models/session'
 import { userFields, userTableName } from './src/models/user'
@@ -22,6 +23,7 @@ export default defineConfig({
     { name: userTableName, fields: userFields },
     { name: sessionTableName, fields: sessionFields },
     { name: cliAuthRequestTableName, fields: cliAuthRequestFields },
+    { name: feedbackTableName, fields: feedbackFields },
   ],
   output: './drizzle/schema.ts',
 })
