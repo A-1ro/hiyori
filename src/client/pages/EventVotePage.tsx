@@ -288,9 +288,20 @@ export function EventVotePage() {
   // 変更を未送信と誤認しないための baseline 方式）。送信成功時も baseline は更新されないため
   // dirty は true のまま残る。したがって送信直後の自分の navigate も blocker に捕まってしまう。
   // それを避けるため、送信起点の自己遷移だけ bypassBlocker で素通りさせる（onSuccess で立てる）。
+  // 素通りは「送信後の集計ページへの遷移」に限定する（nextLocation で判定）。こうすると
+  // 万一 navigate が中断・失敗して ref が true のまま残っても、集計ページ以外への離脱は
+  // 引き続きブロックされ、離脱ガードが無効化されっぱなしになる穴を塞げる。
   const bypassBlocker = useRef(false)
   const blocker = useBlocker(
-    useCallback(() => dirty && !bypassBlocker.current, [dirty]),
+    useCallback(
+      ({ nextLocation }) =>
+        dirty &&
+        !(
+          bypassBlocker.current &&
+          nextLocation.pathname === `/events/${id}/tally`
+        ),
+      [dirty, id],
+    ),
   )
   useEffect(() => {
     if (blocker.state !== 'blocked') return
