@@ -1795,13 +1795,13 @@ export { HiyoriMcpAgent } from './mcp/agent'
 
 export default {
   async fetch(req, env, ctx) {
-    // MCP: /mcp は McpAgent（Streamable HTTP）へ。フラグ off なら handleMcpRequest 内で 404。
-    // MCP_ENABLED が off のときは既存の Hono ルーティングに一切触れない。
-    if (isMcpEnabled(env)) {
-      const url = new URL(req.url)
-      if (url.pathname === MCP_ROUTE || url.pathname.startsWith(`${MCP_ROUTE}/`)) {
-        return handleMcpRequest(req, env, ctx)
-      }
+    // MCP: /mcp は（GET/POST 問わず）常に handleMcpRequest へ渡す。
+    // フラグ off のときは handleMcpRequest 先頭で 404 を返す（= /mcp を完全に不可視にする）。
+    // ここでフラグ判定して分岐を素通りさせると、GET /mcp が SSR キャッチオールに落ちて
+    // 200 HTML を返してしまうため、パス判定は必ず isMcpEnabled の外で行う。
+    const url = new URL(req.url)
+    if (url.pathname === MCP_ROUTE || url.pathname.startsWith(`${MCP_ROUTE}/`)) {
+      return handleMcpRequest(req, env, ctx)
     }
     return buildApp(env).fetch(req, env, ctx)
   },

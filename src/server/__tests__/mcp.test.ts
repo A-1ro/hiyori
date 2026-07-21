@@ -133,6 +133,17 @@ describe('MCP: feature flag gate', () => {
     expect(res.status).toBe(404)
   })
 
+  it('MCP_ENABLED 未設定なら GET /mcp も 404（SSR キャッチオールに落ちない）', async () => {
+    // 回帰: 以前は GET /mcp がフラグ判定を素通りして buildApp の SSR に落ち 200 HTML を返していた。
+    const res = await SELF.fetch(`${BASE}/mcp`, {
+      method: 'GET',
+      headers: { accept: 'text/html' },
+    })
+    expect(res.status).toBe(404)
+    // 200 HTML でないこと（SSR シェルが返っていない）
+    expect(res.headers.get('content-type') ?? '').not.toContain('text/html')
+  })
+
   it('MCP off でも既存 API は無傷（/api/health が 200）', async () => {
     const res = await SELF.fetch(`${BASE}/api/health`)
     expect(res.status).toBe(200)
