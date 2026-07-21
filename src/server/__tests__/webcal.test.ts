@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
 import { loginAs } from './test-helpers'
@@ -108,23 +108,35 @@ describe('Webcal feed', () => {
   })
 
   it('W4: If-None-Match → 304', async () => {
-    await createEventAndDecide()
+    // フィード本文の各 VEVENT には DTSTAMP:<現在時刻（秒精度）> が焼き込まれ、ETag は
+    // 本文の SHA-256。2 回のフェッチが秒境界をまたぐと DTSTAMP が変わって ETag もズレ、
+    // 304 にならず 200 が返る（全テスト並列時のみ間欠再現していた flake の原因）。
+    // → テスト内で Date を固定し、2 リクエストの DTSTAMP を一致させて 304 を決定的に検証する。
+    //   （Date のみ fake。setTimeout 等は実タイマーのままにして SELF.fetch を壊さない）
+    //   ※ 本番の ETag が時刻依存で揺れる件はプロダクト側の別課題として報告済み。
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-01T12:00:00.000Z'))
+    try {
+      await createEventAndDecide()
 
-    const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
-    const subBody = (await subRes.json()) as { webcalUrl: string }
-    const httpUrl = subBody.webcalUrl.replace('webcal://', 'http://')
+      const subRes = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+      const subBody = (await subRes.json()) as { webcalUrl: string }
+      const httpUrl = subBody.webcalUrl.replace('webcal://', 'http://')
 
-    const res1 = await SELF.fetch(httpUrl)
-    expect(res1.status).toBe(200)
-    const etag = res1.headers.get('ETag')
-    expect(etag).toBeTruthy()
+      const res1 = await SELF.fetch(httpUrl)
+      expect(res1.status).toBe(200)
+      const etag = res1.headers.get('ETag')
+      expect(etag).toBeTruthy()
 
-    const res2 = await SELF.fetch(httpUrl, {
-      headers: { 'If-None-Match': etag! },
-    })
-    expect(res2.status).toBe(304)
-    const body2 = await res2.text()
-    expect(body2).toBe('')
+      const res2 = await SELF.fetch(httpUrl, {
+        headers: { 'If-None-Match': etag! },
+      })
+      expect(res2.status).toBe(304)
+      const body2 = await res2.text()
+      expect(body2).toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('W5: 不正 token → 404', async () => {
