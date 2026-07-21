@@ -48,7 +48,7 @@
     "open": "^11.0.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260627.1",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "@types/node": "^25.9.2",
     "tsup": "^8.0.0",
     "typescript": "^6.0.3",
