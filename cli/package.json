@@ -1,23 +1,45 @@
 {
   "name": "hiyori-cli",
-  "description": "Hiyori CLI — Discord 連携の日程調整ツールを端末から操作",
-  "keywords": ["hiyori", "scheduling", "discord", "cli"],
-  "private": true,
+  "version": "0.1.0",
+  "description": "Hiyori CLI — operate the Discord-integrated scheduling tool Hiyori from your terminal",
+  "keywords": [
+    "hiyori",
+    "scheduling",
+    "date-coordination",
+    "discord",
+    "calendar",
+    "ics",
+    "cli"
+  ],
   "type": "module",
-  "version": "0.0.0",
+  "license": "MIT",
+  "author": "A-1ro",
+  "homepage": "https://github.com/A-1ro/hiyori/tree/main/cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/A-1ro/hiyori.git",
+    "directory": "cli"
+  },
+  "bugs": {
+    "url": "https://github.com/A-1ro/hiyori/issues"
+  },
   "bin": {
     "hiyori": "./dist/index.js"
   },
   "engines": {
     "node": ">=22.12"
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "prepublishOnly": "pnpm build"
+    "prepack": "pnpm build"
   },
   "dependencies": {
     "@clack/prompts": "^1.6.0",

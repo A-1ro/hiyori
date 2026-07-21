@@ -1,4 +1,7 @@
 import { Command } from 'commander'
+// package.json から version を取り込む（--version と package.json のズレを防ぐ）。
+// tsup がビルド時にインライン化するので実行時のファイル読み取りは発生しない。
+import pkg from '../package.json' with { type: 'json' }
 import { loginCommand } from './commands/login.js'
 import { logoutCommand } from './commands/logout.js'
 import { whoamiCommand } from './commands/whoami.js'
@@ -21,7 +24,7 @@ const program = new Command()
 program
   .name('hiyori')
   .description('Hiyori CLI')
-  .version('0.0.0')
+  .version(pkg.version)
   .option('--api-url <url>', 'API URL')
   .option('--json', 'Output as JSON')
 
