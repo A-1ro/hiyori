@@ -338,6 +338,26 @@ export function EventVotePage() {
     })
   }
 
+  // 手動リセット（安全弁）: ローカル下書きを破棄して最新のサーバー票で画面を作り直す。
+  // baseline も現在サーバーに更新するので dirty=false に戻る。どんな不整合状態でも
+  // 1タップで「破棄→最新」に抜けられる。※「自分の未送信を送る」は送信ボタン側。
+  const resetToServer = () => {
+    const currentServer: VoteMap = {}
+    for (const v of myData?.votes ?? []) {
+      currentServer[v.candidateId] = v.choice as VoteChoice
+    }
+    if (draftKey) {
+      try {
+        localStorage.removeItem(draftKey)
+      } catch {
+        // no-op
+      }
+    }
+    setVotes(currentServer)
+    setBaseline(currentServer)
+    setExternalNotice(false)
+  }
+
   const handleSubmit = () => {
     const payload: PutVoteInput[] = Object.entries(votes).map(([candidateId, choice]) => ({
       candidateId,
@@ -822,7 +842,7 @@ export function EventVotePage() {
                         flex: 'none',
                       }}
                     />
-                    未送信の変更あり
+                    未送信 {dirtyIds.size} 件（下に ● で表示）
                   </span>
                 ) : allSynced ? (
                   <span
@@ -855,6 +875,32 @@ export function EventVotePage() {
                   )
                 )}
               </div>
+              {/* 手動リセット（安全弁）: 未送信があるときだけ。下書きを破棄して最新サーバー票に更新。
+                  下の枠ごと「● 未送信」ピル＋各枠の ○△× で「何を破棄するか」を確認してから押せる。 */}
+              {dirty && !voteMutation.isPending && (
+                <button
+                  type="button"
+                  onClick={resetToServer}
+                  title="ローカルの未送信を破棄して、最新のサーバー状態に更新します"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    flex: 'none',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: 'var(--color-fg3)',
+                    padding: '6px 4px',
+                  }}
+                >
+                  <Icon name="rotate-ccw" size={14} color="currentColor" />
+                  最新に更新
+                </button>
+              )}
               <Button
                 variant="primary"
                 size="md"

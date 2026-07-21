@@ -7,6 +7,7 @@ import {
   reconcileVoteDraft,
   VOTE_DRAFT_VERSION,
   type VoteMap,
+  type VoteDraft,
 } from './vote-diff'
 
 describe('dirtyCandidateIds / votesEqual', () => {
@@ -82,7 +83,7 @@ describe('serializeVoteDraft / round-trip', () => {
 
 describe('reconcileVoteDraft', () => {
   it('baseline == 現在サーバー → 下書き採用（ローカル未送信を維持）', () => {
-    const draft = { votes: { c1: 'yes', c2: 'no' }, baseline: { c1: 'yes' }, legacy: false }
+    const draft: VoteDraft = { votes: { c1: 'yes', c2: 'no' }, baseline: { c1: 'yes' }, legacy: false }
     const server: VoteMap = { c1: 'yes' }
     const r = reconcileVoteDraft(draft, server)
     expect(r.source).toBe('draft')
@@ -93,7 +94,7 @@ describe('reconcileVoteDraft', () => {
   })
 
   it('baseline != 現在サーバー（別経路で更新）→ サーバー採用・externalChanged・非 dirty', () => {
-    const draft = { votes: { c1: 'yes' }, baseline: { c1: 'no' }, legacy: false }
+    const draft: VoteDraft = { votes: { c1: 'yes' }, baseline: { c1: 'no' }, legacy: false }
     const server: VoteMap = { c1: 'maybe', c2: 'yes' } // 外部で変わった
     const r = reconcileVoteDraft(draft, server)
     expect(r.source).toBe('server')
