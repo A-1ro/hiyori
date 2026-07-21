@@ -4,6 +4,7 @@ import { AppHeader } from '../components/AppHeader'
 import { Icon } from '../components/primitives'
 import { FeedbackButton } from '../components/FeedbackButton'
 import { useMcpStatus } from '../auth/useMcpStatus'
+import { GuideStyles } from './guideStyles'
 
 // 本番の独自ドメイン（例示の正）。セルフホスト向けは「あなたの Hiyori の URL」と一般化して併記する。
 const PROD_HOST = 'https://hiyori-schedule.com'
@@ -83,25 +84,13 @@ function Code({ children }: { children: string }) {
   )
 }
 
-// 端末に打ち込むコマンドのブロック表示（複数行可）。
+// 端末に打ち込むコマンドのブロック表示（複数行可）。狭い幅では折り返して全文を表示する。
 function CommandBlock({ lines }: { lines: string[] }) {
   return (
-    <pre
-      style={{
-        margin: '8px 0 0',
-        padding: '12px 14px',
-        borderRadius: 'var(--radius-md)',
-        background: 'var(--color-fg1)',
-        color: 'var(--color-bg, #fff)',
-        fontFamily: 'monospace',
-        fontSize: 13.5,
-        lineHeight: 1.7,
-        overflowX: 'auto',
-      }}
-    >
+    <pre className="hy-codeblock">
       {lines.map((l, i) => (
         <div key={i}>
-          <span style={{ opacity: 0.5, userSelect: 'none' }}>$ </span>
+          <span className="hy-prompt">$ </span>
           {l}
         </div>
       ))}
@@ -184,31 +173,15 @@ function CommandTable() {
           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-fg1)', marginBottom: 6 }}>
             {g.title}
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, minWidth: 520 }}>
+          <div className="hy-table-wrap">
+            <table className="hy-table">
               <tbody>
                 {g.rows.map((r) => (
                   <tr key={r.cmd}>
-                    <td
-                      style={{
-                        padding: '8px 10px',
-                        borderBottom: '1px solid var(--separator)',
-                        verticalAlign: 'top',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      <code style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--color-fg1)' }}>
-                        {r.cmd}
-                      </code>
+                    <td className="hy-cmd">
+                      <code>{r.cmd}</code>
                     </td>
-                    <td
-                      style={{
-                        padding: '8px 10px',
-                        borderBottom: '1px solid var(--separator)',
-                        color: 'var(--color-fg2)',
-                        lineHeight: 1.6,
-                      }}
-                    >
+                    <td className="hy-use">
                       {r.destructive && (
                         <span
                           title="取り消せない破壊的操作"
@@ -246,6 +219,7 @@ export function CliGuidePage() {
 
   return (
     <div>
+      <GuideStyles />
       <AppHeader back={{ onClick: () => navigate(-1) }} />
       <main style={{ maxWidth: 720, margin: '0 auto', padding: '40px 24px 96px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

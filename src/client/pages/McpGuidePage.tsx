@@ -4,6 +4,7 @@ import { AppHeader } from '../components/AppHeader'
 import { Icon } from '../components/primitives'
 import { FeedbackButton } from '../components/FeedbackButton'
 import { useMcpStatus } from '../auth/useMcpStatus'
+import { GuideStyles } from './guideStyles'
 
 // 本番の独自ドメイン（例示の正）。セルフホスト向けは「あなたの Hiyori の URL」と一般化して併記する。
 const PROD_HOST = 'https://hiyori-schedule.com'
@@ -190,43 +191,22 @@ function ScopeBadge({ scope }: { scope: 'read' | 'write' }) {
 
 function ToolTable() {
   return (
-    <div style={{ marginTop: 8, overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, minWidth: 520 }}>
+    <div className="hy-table-wrap" style={{ marginTop: 8 }}>
+      <table className="hy-table">
         <thead>
-          <tr style={{ textAlign: 'left', color: 'var(--color-fg3)' }}>
-            <th style={{ padding: '8px 10px', fontWeight: 600, borderBottom: '1px solid var(--separator)' }}>
-              ツール名
-            </th>
-            <th style={{ padding: '8px 10px', fontWeight: 600, borderBottom: '1px solid var(--separator)', whiteSpace: 'nowrap' }}>
-              区分
-            </th>
-            <th style={{ padding: '8px 10px', fontWeight: 600, borderBottom: '1px solid var(--separator)' }}>
-              用途
-            </th>
+          <tr>
+            <th>ツール名</th>
+            <th>区分</th>
+            <th>用途</th>
           </tr>
         </thead>
         <tbody>
           {TOOLS.map((t) => (
             <tr key={t.name}>
-              <td
-                style={{
-                  padding: '8px 10px',
-                  borderBottom: '1px solid var(--separator)',
-                  verticalAlign: 'top',
-                }}
-              >
-                <code style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--color-fg1)' }}>
-                  {t.name}
-                </code>
+              <td className="hy-name">
+                <code>{t.name}</code>
               </td>
-              <td
-                style={{
-                  padding: '8px 10px',
-                  borderBottom: '1px solid var(--separator)',
-                  verticalAlign: 'top',
-                  whiteSpace: 'nowrap',
-                }}
-              >
+              <td className="hy-scope">
                 <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                   <ScopeBadge scope={t.scope} />
                   {t.destructive && (
@@ -247,20 +227,120 @@ function ToolTable() {
                   )}
                 </span>
               </td>
-              <td
-                style={{
-                  padding: '8px 10px',
-                  borderBottom: '1px solid var(--separator)',
-                  color: 'var(--color-fg2)',
-                  lineHeight: 1.6,
-                }}
-              >
-                {t.use}
-              </td>
+              <td className="hy-use">{t.use}</td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// 対応クライアント（2026 年時点の現況）。level: ◎ ネイティブ / ○ 設定で可 / △ 現状不可。
+type ClientRow = {
+  name: string
+  level: '◎' | '○' | '△'
+  summary: string
+  detail: ReactNode
+}
+
+const CLIENTS: ClientRow[] = [
+  {
+    name: 'Claude',
+    level: '◎',
+    summary: 'ネイティブ対応',
+    detail: (
+      <>
+        Claude Desktop / Web / Code のいずれもリモート MCP（コネクタ）にネイティブ対応。
+        Hiyori の <code style={{ fontFamily: 'monospace' }}>/mcp</code> エンドポイントを最も素直に接続できます。
+      </>
+    ),
+  },
+  {
+    name: 'ChatGPT',
+    level: '○',
+    summary: 'Developer Mode で対応',
+    detail: (
+      <>
+        設定 →「Security and login」→ <strong>Developer mode</strong> を ON にすると、リモート MCP サーバー
+        （HTTPS エンドポイント）を接続できます（Plus / Pro / Team / Enterprise / Edu）。ローカル接続は不可・
+        リモートのみで、Hiyori とは相性良好です。
+      </>
+    ),
+  },
+  {
+    name: 'Gemini',
+    level: '△',
+    summary: '消費者アプリは現状不可',
+    detail: (
+      <>
+        消費者向けの Gemini アプリ（gemini.google.com）には、現時点で任意のリモート MCP サーバーを追加する
+        導線がありません。MCP 対応は Gemini API / Gemini CLI / Gemini Enterprise などの開発者・企業向けの面のみです。
+      </>
+    ),
+  },
+]
+
+function LevelBadge({ level }: { level: '◎' | '○' | '△' }) {
+  const color =
+    level === '◎'
+      ? 'var(--color-blurple)'
+      : level === '○'
+        ? 'var(--color-success, #2e9e5b)'
+        : 'var(--color-fg3)'
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        flexShrink: 0,
+        width: 28,
+        height: 28,
+        borderRadius: '50%',
+        border: `2px solid ${color}`,
+        color,
+        fontSize: 15,
+        fontWeight: 700,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        lineHeight: 1,
+      }}
+    >
+      {level}
+    </span>
+  )
+}
+
+function ClientSupport() {
+  return (
+    <div style={{ marginTop: 8, display: 'grid', gap: 12 }}>
+      {CLIENTS.map((c) => (
+        <div
+          key={c.name}
+          style={{
+            display: 'flex',
+            gap: 12,
+            alignItems: 'flex-start',
+            padding: '14px 16px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--separator)',
+            background: 'var(--color-surface-raised, #f7f7f8)',
+          }}
+        >
+          <LevelBadge level={c.level} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-fg1)' }}>{c.name}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--color-fg3)' }}>
+                {c.summary}
+              </span>
+            </div>
+            <div style={{ marginTop: 4, fontSize: 13.5, lineHeight: 1.7, color: 'var(--color-fg2)' }}>
+              {c.detail}
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -272,6 +352,7 @@ export function McpGuidePage() {
 
   return (
     <div>
+      <GuideStyles />
       <AppHeader back={{ onClick: () => navigate(-1) }} />
       <main style={{ maxWidth: 720, margin: '0 auto', padding: '40px 24px 96px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -329,6 +410,35 @@ export function McpGuidePage() {
               </div>
             </div>
           </div>
+        </Section>
+
+        <Section title="対応クライアント">
+          <p style={{ margin: 0 }}>
+            どの AI アシスタントから使えるか、現時点（2026 年時点）の対応状況です。この分野は動きが速いため、
+            最新の対応可否は各クライアントのドキュメントもあわせてご確認ください。
+          </p>
+          <ClientSupport />
+          <Note>
+            出典: ChatGPT の Developer Mode は{' '}
+            <a
+              href="https://developers.openai.com/api/docs/guides/developer-mode"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--color-blurple-ink)' }}
+            >
+              OpenAI のガイド
+            </a>
+            、Gemini のリモート MCP 対応（企業向け）は{' '}
+            <a
+              href="https://cloud.google.com/blog/products/ai-machine-learning/gemini-enterprise-agent-platform-remote-mcp-server/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--color-blurple-ink)' }}
+            >
+              Google Cloud のブログ
+            </a>
+            を参照。
+          </Note>
         </Section>
 
         <Section title="接続する">
