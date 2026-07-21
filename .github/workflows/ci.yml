@@ -43,6 +43,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Client Test (jsdom)
+        run: pnpm test:client
+
       - name: Build
         run: pnpm build
 
