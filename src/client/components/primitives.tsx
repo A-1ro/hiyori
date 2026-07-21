@@ -22,7 +22,6 @@ type IconName =
   | 'info'
   | 'rotate-ccw'
   | 'message-square'
-  | 'coffee'
   | 'x'
 
 const LUCIDE: Record<IconName, string> = {
@@ -47,8 +46,6 @@ const LUCIDE: Record<IconName, string> = {
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   'rotate-ccw': '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
   'message-square': '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
-  coffee:
-    '<path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><path d="M6 2v2M10 2v2M14 2v2"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
 }
 
