@@ -1,4 +1,5 @@
-import { useState, type CSSProperties } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { Button, Icon } from './primitives'
 import { useSession } from '../auth/useSession'
 import { submitFeedback, ApiError, type FeedbackCategory } from '../api/client'
@@ -18,10 +19,11 @@ const CATEGORY_OPTS: Array<{ value: FeedbackCategory; label: string }> = [
 const overlayStyle: CSSProperties = {
   position: 'fixed',
   inset: 0,
-  zIndex: 100,
+  // ヘッダー（sticky, z-index:20）や他の stacking context より確実に上に出す。
+  zIndex: 1000,
   background: 'rgba(0,0,0,0.42)',
   display: 'flex',
-  alignItems: 'flex-end',
+  alignItems: 'center',
   justifyContent: 'center',
   padding: 16,
 }
@@ -85,6 +87,18 @@ export function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' | 'link'
     }
   }
 
+  // Esc で閉じる。開いている間だけリスナを張る。
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // close は done に依存するが、Esc の閉じ挙動としては最新値で十分。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, done])
+
   const handleSubmit = async () => {
     if (message.trim().length === 0 || submitting) return
     setSubmitting(true)
@@ -125,21 +139,27 @@ export function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' | 'link'
         <button
           type="button"
           onClick={openModal}
-          aria-label="フィードバック・不具合報告"
-          title="フィードバック・不具合報告"
+          aria-label="不具合報告・フィードバック"
+          title="不具合報告・フィードバック"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            gap: 5,
             background: 'transparent',
-            border: 'none',
+            border: '1px solid var(--color-border-strong)',
             cursor: 'pointer',
-            padding: 6,
-            borderRadius: 8,
-            color: 'var(--color-fg3)',
+            padding: '5px 10px',
+            borderRadius: 'var(--radius-pill)',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            fontWeight: 600,
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+            color: 'var(--color-fg2)',
           }}
         >
-          <Icon name="message-square" size={18} />
+          <Icon name="message-square" size={15} />
+          不具合報告
         </button>
       ) : (
         <button
@@ -164,8 +184,9 @@ export function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' | 'link'
         </button>
       )}
 
-      {open && (
-        <div style={overlayStyle} onClick={close}>
+      {open &&
+        createPortal(
+          <div style={overlayStyle} onClick={close}>
           <div style={cardStyle} onClick={(e) => e.stopPropagation()}>
             <div
               style={{
@@ -304,8 +325,9 @@ export function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' | 'link'
               </>
             )}
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   )
 }
