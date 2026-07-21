@@ -17,16 +17,31 @@
 		}
 	],
 	"vars": {
-		"ENVIRONMENT": "production"
+		"ENVIRONMENT": "production",
 		// F-12 (#24): 完了済み (closed / cancelled) イベントを最終活動から N 日で自動削除したい
 		// セルフホスト運用者は "EVENT_RETENTION_DAYS": "90" のように正の整数を設定する。
 		// 未設定（デフォルト）は自動削除しない（永久保持）。
+		//
+		// MCP サーバー（AI 連携第2弾）。'true' で /mcp を有効化。当面は本番オフ（既存機能に影響なし）。
+		// 有効化時はセルフホスト手順（DO migration 適用済み・Bearer 認証）に従う。
+		"MCP_ENABLED": "false"
 	},
 	"observability": {
 		"enabled": true
 	},
+	// McpAgent（Agents SDK）用 Durable Object。SQLite バックエンド = Free プラン枠内（追加課金なし）。
+	"durable_objects": {
+		"bindings": [
+			{ "name": "MCP_OBJECT", "class_name": "HiyoriMcpAgent" }
+		]
+	},
+	"migrations": [
+		{ "tag": "v1", "new_sqlite_classes": ["HiyoriMcpAgent"] }
+	],
 	"ratelimits": [
-		{ "name": "CLI_AUTH_RATELIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
+		{ "name": "CLI_AUTH_RATELIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+		// MCP 濫用対策（key = discordUserId）。write / 破壊的操作を含むため CLI 認証より少し緩めの短周期上限。
+		{ "name": "MCP_RATELIMIT", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } }
 	],
 	"triggers": {
 		// 毎時: CLI 認証リクエストの期限切れ掃除 / 毎日 3:00 UTC: 完了済みイベントの TTL 削除 (F-12 #24)

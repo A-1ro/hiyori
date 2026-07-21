@@ -37,6 +37,7 @@ import { loadSession, requireSession } from './auth/session'
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/discord'
 import { generateDeviceCode, generateUserCode, normalizeUserCode } from './auth/cli-device'
 import { cli_auth_requests } from '../../drizzle/schema'
+import { handleMcpRequest, isMcpEnabled, MCP_ROUTE } from './mcp/handler'
 
 export interface Env {
   DB: D1Database
@@ -57,6 +58,13 @@ export interface Env {
   // F-12 (#24): 完了済み (closed / cancelled) イベントを最終活動から N 日で自動削除する
   // 保持日数。未設定（デフォルト）・空・非数値・0 以下はすべて「自動削除しない」。
   EVENT_RETENTION_DAYS?: string
+  // MCP サーバー（AI 連携第2弾）。'true' / '1' のときだけ /mcp を有効化する。
+  // 未設定・その他の値なら /mcp は 404（既存機能に一切影響しない）。
+  MCP_ENABLED?: string
+  // McpAgent 用 Durable Object（SQLite バックエンド・Free プラン枠内）。
+  MCP_OBJECT: DurableObjectNamespace
+  // MCP 濫用対策の Rate Limit binding（key = discordUserId）。未設定ならスキップ。
+  MCP_RATELIMIT?: RateLimit
 }
 
 // 完了済みイベント TTL 削除用の日次 cron（wrangler.jsonc の triggers.crons と一致させる）
@@ -195,7 +203,7 @@ function isAllDay(startAt: Date, endAt: Date): boolean {
   return midnight(startAt) && midnight(endAt) && diffMs >= 24 * 60 * 60 * 1000
 }
 
-const buildApp = (env: Env) => {
+export const buildApp = (env: Env) => {
   const app = nanoka<{ Bindings: Env }>(d1Adapter(env.DB))
 
   const Event = app.model(eventTableName, eventFields)
@@ -1781,8 +1789,20 @@ window.__vite_plugin_react_preamble_installed__ = true
 
 export type AppType = ReturnType<typeof buildApp>
 
+// McpAgent の Durable Object クラス。wrangler.jsonc の durable_objects binding
+// (MCP_OBJECT) から参照される。MCP_ENABLED が off でもクラス自体は export が必要。
+export { HiyoriMcpAgent } from './mcp/agent'
+
 export default {
   async fetch(req, env, ctx) {
+    // MCP: /mcp は（GET/POST 問わず）常に handleMcpRequest へ渡す。
+    // フラグ off のときは handleMcpRequest 先頭で 404 を返す（= /mcp を完全に不可視にする）。
+    // ここでフラグ判定して分岐を素通りさせると、GET /mcp が SSR キャッチオールに落ちて
+    // 200 HTML を返してしまうため、パス判定は必ず isMcpEnabled の外で行う。
+    const url = new URL(req.url)
+    if (url.pathname === MCP_ROUTE || url.pathname.startsWith(`${MCP_ROUTE}/`)) {
+      return handleMcpRequest(req, env, ctx)
+    }
     return buildApp(env).fetch(req, env, ctx)
   },
   async scheduled(event, env, ctx) {

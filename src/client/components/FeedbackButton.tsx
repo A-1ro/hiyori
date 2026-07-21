@@ -1,4 +1,4 @@
-import { useState, useEffect, type CSSProperties } from 'react'
+import { useState, useEffect, useCallback, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { Button, Icon } from './primitives'
 import { useSession } from '../auth/useSession'
@@ -77,7 +77,8 @@ export function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' | 'link'
     setError(undefined)
     setOpen(true)
   }
-  const close = () => {
+  // done が変わったときだけ identity を更新（useEffect の依存を安定させる）。
+  const close = useCallback(() => {
     setOpen(false)
     // 次に開くときのために入力をリセット（送信済みなら特に）。
     if (done) {
@@ -85,7 +86,7 @@ export function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' | 'link'
       setCategory('')
       setName('')
     }
-  }
+  }, [done])
 
   // Esc で閉じる。開いている間だけリスナを張る。
   useEffect(() => {
@@ -95,9 +96,7 @@ export function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' | 'link'
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-    // close は done に依存するが、Esc の閉じ挙動としては最新値で十分。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, done])
+  }, [open, close])
 
   const handleSubmit = async () => {
     if (message.trim().length === 0 || submitting) return

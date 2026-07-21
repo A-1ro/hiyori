@@ -19,8 +19,10 @@
   },
   "dependencies": {
     "@hono/zod-validator": "^0.8.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@nanokajs/core": "1.9.0",
     "@tanstack/react-query": "^5.101.1",
+    "agents": "^0.17.4",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.27",
     "react": "^19.2.7",
