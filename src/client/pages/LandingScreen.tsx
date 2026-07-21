@@ -1,9 +1,9 @@
-import { Link, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 import { AppHeader } from '../components/AppHeader'
+import { Footer } from '../components/Footer'
 import { MiniMatrix } from '../components/MiniMatrix'
 import { Badge, Button, DiscordMark, Icon } from '../components/primitives'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
-import { useMcpStatus } from '../auth/useMcpStatus'
 
 function loginHref(returnTo: string): string {
   return `/api/auth/discord?returnTo=${encodeURIComponent(returnTo)}`
@@ -11,7 +11,6 @@ function loginHref(returnTo: string): string {
 
 export function LandingScreen() {
   const navigate = useNavigate()
-  const { data: mcpStatus } = useMcpStatus()
   return (
     <div>
       <AppHeader />
@@ -141,46 +140,7 @@ export function LandingScreen() {
           </p>
         </div>
 
-        <footer
-          style={{
-            marginTop: 40,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 12,
-            fontSize: 13,
-            color: 'var(--color-fg3)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 18 }}>
-            <Link to="/help" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-              使い方
-            </Link>
-            <Link to="/help/cli" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-              CLI
-            </Link>
-            {mcpStatus?.enabled && (
-              <Link to="/help/mcp" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-                AI 連携
-              </Link>
-            )}
-            <Link to="/terms" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-              利用規約
-            </Link>
-            <Link to="/privacy" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-              プライバシーポリシー
-            </Link>
-          </div>
-          <a
-            href="https://buymeacoffee.com/a1ro"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Buy Me a Coffee で開発支援する"
-            style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}
-          >
-            ☕ よろしければ開発支援をお願いします
-          </a>
-        </footer>
+        <Footer />
       </main>
     </div>
   )

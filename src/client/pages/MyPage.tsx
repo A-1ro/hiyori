@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppHeader } from '../components/AppHeader'
 import { Avatar, Badge, Button, DiscordMark, Icon } from '../components/primitives'
 import { loginUrl, useLogout, useSession, type SessionUser } from '../auth/useSession'
-import { useMcpStatus } from '../auth/useMcpStatus'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 import {
   ApiError,
@@ -644,7 +643,6 @@ export function MyPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const { data: sessionData, isLoading: sessionLoading } = useSession()
-  const { data: mcpStatus } = useMcpStatus()
   const user = sessionData?.user ?? null
 
   const { data: myEvents, isLoading: eventsLoading } = useQuery({
@@ -750,54 +748,6 @@ export function MyPage() {
           >
             新しい日程調整をつくる
           </Button>
-        </div>
-
-        <div
-          style={{
-            marginTop: 32,
-            paddingTop: 24,
-            borderTop: '1px solid var(--separator)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 14,
-          }}
-        >
-          <a
-            href={DISCORD_BOT_INVITE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 13,
-              color: 'var(--color-blurple)',
-              textDecoration: 'none',
-            }}
-          >
-            <DiscordMark size={14} color="var(--color-blurple)" />
-            {DISCORD_BOT_INVITE_LABEL}
-          </a>
-          <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
-            <Link to="/help" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-              使い方
-            </Link>
-            <Link to="/help/cli" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-              CLI
-            </Link>
-            {mcpStatus?.enabled && (
-              <Link to="/help/mcp" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-                AI 連携
-              </Link>
-            )}
-            <Link to="/terms" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-              利用規約
-            </Link>
-            <Link to="/privacy" style={{ color: 'var(--color-fg3)', textDecoration: 'none' }}>
-              プライバシーポリシー
-            </Link>
-          </div>
         </div>
       </main>
     </div>
