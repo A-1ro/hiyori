@@ -24,7 +24,7 @@
 		//
 		// MCP サーバー（AI 連携第2弾）。'true' で /mcp を有効化。当面は本番オフ（既存機能に影響なし）。
 		// 有効化時はセルフホスト手順（DO migration 適用済み・Bearer 認証）に従う。
-		"MCP_ENABLED": "false"
+		"MCP_ENABLED": "true"
 	},
 	"observability": {
 		"enabled": true
