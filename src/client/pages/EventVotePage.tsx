@@ -27,7 +27,13 @@ import {
 } from '../components/primitives'
 import { BulkVoteBar } from '../components/events/BulkVoteBar'
 import { useSession, loginUrl } from '../auth/useSession'
-import { dirtyCandidateIds, type VoteMap } from '../lib/vote-diff'
+import {
+  dirtyCandidateIds,
+  parseVoteDraft,
+  serializeVoteDraft,
+  reconcileVoteDraft,
+  type VoteMap,
+} from '../lib/vote-diff'
 
 const WD = ['日', '月', '火', '水', '木', '金', '土']
 
@@ -90,6 +96,13 @@ export function EventVotePage() {
   const [guestName, setGuestName] = useState('')
   const [registerError, setRegisterError] = useState<string | undefined>()
   const [votes, setVotes] = useState<Record<string, VoteChoice>>({})
+  // 下書きの baseline（＝この下書きが基準とするサーバー票のスナップショット）。
+  // dirty 判定は votes とこの baseline の差分で行う（別経路で増えたサーバー票を
+  // 「未送信のローカル変更」と誤認しないため）。ハイドレート時に確定する。
+  const [baseline, setBaseline] = useState<VoteMap>({})
+  // 別経路（CLI/MCP/他端末）でサーバー票が変わっていたため、古い下書きを破棄して
+  // 最新サーバー票を表示したときに一度だけ出す控えめな通知。
+  const [externalNotice, setExternalNotice] = useState(false)
   const { data: sessionData } = useSession()
   const sessionUser = sessionData?.user ?? null
 
@@ -111,51 +124,65 @@ export function EventVotePage() {
     enabled: !!id && !!sessionUser,
   })
 
-  // 初期化（id ごとに1回）。復元の優先順位は「ローカル下書き ＞ サーバー保存済み」。
-  // サーバーへ未送信の入力中の値が、再フェッチで巻き戻らないようにするため。
+  // 初期化（id ごとに1回）。下書きの baseline と現在のサーバー票を突き合わせて分岐する:
+  //   - baseline == 現在サーバー（外部変更なし）→ ローカル下書き（未送信編集）を採用
+  //   - baseline != 現在サーバー（CLI/MCP/他端末で更新）→ 古い下書きを破棄し最新サーバー採用
+  // これで「別経路でサーバーが変わった」ケースを未送信と誤判定しない。
   // id が変わった場合は前イベントの votes を持ち越さないよう必ず再初期化する。
   useEffect(() => {
     if (!id || myLoading) return
     if (hydratedForId.current === id) return
-    let draft: Record<string, VoteChoice> | null = null
+
+    const currentServer: VoteMap = {}
+    for (const v of myData?.votes ?? []) {
+      currentServer[v.candidateId] = v.choice as VoteChoice
+    }
+
+    let raw: string | null = null
     if (draftKey) {
       try {
-        const raw = localStorage.getItem(draftKey)
-        if (raw) draft = JSON.parse(raw) as Record<string, VoteChoice>
+        raw = localStorage.getItem(draftKey)
       } catch {
-        draft = null
+        raw = null
       }
     }
-    if (draft && Object.keys(draft).length > 0) {
-      setVotes(draft)
-    } else if (myData && myData.votes.length > 0) {
-      const initial: Record<string, VoteChoice> = {}
-      for (const v of myData.votes) {
-        initial[v.candidateId] = v.choice as VoteChoice
+    const draft = parseVoteDraft(raw)
+    const result = reconcileVoteDraft(draft, currentServer)
+
+    setVotes(result.votes)
+    // baseline は常に「今のサーバー票」を採用。以降のローカル編集はこれを基準に未送信判定する。
+    setBaseline(currentServer)
+    if (result.externalChanged) {
+      setExternalNotice(true)
+      // 破棄した古い下書きは掃除しておく（次回開いたときに再判定させない）。
+      if (draftKey) {
+        try {
+          localStorage.removeItem(draftKey)
+        } catch {
+          // no-op
+        }
       }
-      setVotes(initial)
-    } else {
-      // 下書きもサーバー票も無いイベントに切り替わったら、前イベントの票をクリア
-      setVotes({})
     }
     hydratedForId.current = id
   }, [id, myData, myLoading, draftKey])
 
   // 下書きの自動保存（端末ローカルのみ。サーバーには送らない）。
-  // 現在の id の初期化が完了するまでは書かない（別イベントの候補 ID を
-  // 取り違えて保存しないようにするため）。
+  // baseline との差分（＝純粋なローカル未送信編集）があるときだけ、votes と baseline を
+  // 同梱して保存する。差分が無い（サーバーと一致）ときは下書きを消す。
+  // 現在の id の初期化が完了するまでは書かない（別イベントの候補 ID を取り違えないため）。
   useEffect(() => {
     if (!draftKey || hydratedForId.current !== id) return
     try {
-      if (Object.keys(votes).length > 0) {
-        localStorage.setItem(draftKey, JSON.stringify(votes))
+      const hasLocalEdits = dirtyCandidateIds(votes, baseline).length > 0
+      if (hasLocalEdits) {
+        localStorage.setItem(draftKey, serializeVoteDraft(votes, baseline))
       } else {
         localStorage.removeItem(draftKey)
       }
     } catch {
       // localStorage 不可（プライベートブラウズ等）の場合は黙って諦める
     }
-  }, [votes, draftKey, id])
+  }, [votes, baseline, draftKey, id])
 
   const registerMutation = useMutation({
     mutationFn: (kind: 'guest' | 'discord') => {
@@ -232,19 +259,12 @@ export function EventVotePage() {
   const answered = Object.keys(votes).length
   const participant = myData?.participant ?? null
 
-  // サーバーに送信済みの内容（＝集計に反映されている値）。myVotes キャッシュ由来。
-  // 送信中は onMutate の楽観更新でここも更新される → 送信中は dirty=false（ボタンは isPending で無効）。
-  // 送信失敗時は onError がキャッシュをロールバック → 再び dirty=true になり未送信マークが戻る。
-  const serverVotes = useMemo<VoteMap>(() => {
-    const m: VoteMap = {}
-    for (const v of myData?.votes ?? []) m[v.candidateId] = v.choice as VoteChoice
-    return m
-  }, [myData])
-
-  // 画面の入力値 votes とサーバー送信済み serverVotes を枠単位で diff。差分のある枠 id 集合。
+  // 画面の入力値 votes と baseline（下書きの基準サーバー票）を枠単位で diff。
+  // baseline と比較することで、別経路（CLI/MCP/他端末）で増減したサーバー票を
+  // 「未送信のローカル変更」と誤認しない。差分のある枠 id 集合。
   const dirtyIds = useMemo(
-    () => new Set(dirtyCandidateIds(votes, serverVotes)),
-    [votes, serverVotes],
+    () => new Set(dirtyCandidateIds(votes, baseline)),
+    [votes, baseline],
   )
   // 未送信の変更が「どこかに」あるか（参加登録済みのときだけ意味を持つ）。
   const dirty = !!participant && dirtyIds.size > 0
@@ -503,6 +523,44 @@ export function EventVotePage() {
             </p>
           )}
         </div>
+
+        {/* 別経路（CLI/MCP/他端末）でサーバー票が更新されていたときの一度きりの通知 */}
+        {externalNotice && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              marginBottom: 16,
+              padding: '10px 12px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--color-blue-soft, var(--color-surface-sunken))',
+              border: '1px solid var(--color-border)',
+              fontSize: 13,
+              color: 'var(--color-fg2)',
+            }}
+          >
+            <Icon name="info" size={16} color="var(--color-blue)" />
+            <span style={{ flex: 1 }}>
+              別の経路で回答が更新されていたため、最新の内容を表示しています。
+            </span>
+            <button
+              type="button"
+              onClick={() => setExternalNotice(false)}
+              aria-label="閉じる"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 4,
+                color: 'var(--color-fg4)',
+                display: 'flex',
+              }}
+            >
+              <Icon name="x" size={15} />
+            </button>
+          </div>
+        )}
 
         {/* bulk bar */}
         {participant && eventData.candidates.length > 0 && (
