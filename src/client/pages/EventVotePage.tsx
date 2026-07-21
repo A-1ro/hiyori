@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useParams, useNavigate, Link } from 'react-router'
+import { useParams, useNavigate, Link, useBlocker } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchEvent,
@@ -27,6 +27,7 @@ import {
 } from '../components/primitives'
 import { BulkVoteBar } from '../components/events/BulkVoteBar'
 import { useSession, loginUrl } from '../auth/useSession'
+import { dirtyCandidateIds, type VoteMap } from '../lib/vote-diff'
 
 const WD = ['日', '月', '火', '水', '木', '金', '土']
 
@@ -231,6 +232,47 @@ export function EventVotePage() {
   const answered = Object.keys(votes).length
   const participant = myData?.participant ?? null
 
+  // サーバーに送信済みの内容（＝集計に反映されている値）。myVotes キャッシュ由来。
+  // 送信中は onMutate の楽観更新でここも更新される → 送信中は dirty=false（ボタンは isPending で無効）。
+  // 送信失敗時は onError がキャッシュをロールバック → 再び dirty=true になり未送信マークが戻る。
+  const serverVotes = useMemo<VoteMap>(() => {
+    const m: VoteMap = {}
+    for (const v of myData?.votes ?? []) m[v.candidateId] = v.choice as VoteChoice
+    return m
+  }, [myData])
+
+  // 画面の入力値 votes とサーバー送信済み serverVotes を枠単位で diff。差分のある枠 id 集合。
+  const dirtyIds = useMemo(
+    () => new Set(dirtyCandidateIds(votes, serverVotes)),
+    [votes, serverVotes],
+  )
+  // 未送信の変更が「どこかに」あるか（参加登録済みのときだけ意味を持つ）。
+  const dirty = !!participant && dirtyIds.size > 0
+
+  // 離脱ガード（E）: 未送信のとき、ブラウザ離脱（reload/close）を beforeunload で警告。
+  useEffect(() => {
+    if (!dirty) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      // 一部ブラウザは returnValue のセットで確認ダイアログを出す（文言はブラウザ既定）。
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirty])
+
+  // 離脱ガード（E）: SPA 内遷移（ヘッダのリンク等）は useBlocker で止めて確認する。
+  // 送信成功時は楽観更新で dirty=false になってから navigate するので自分の遷移はブロックされない。
+  const blocker = useBlocker(dirty)
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return
+    const ok = window.confirm(
+      '未送信の変更があります。送信せずにこのページを離れますか？',
+    )
+    if (ok) blocker.proceed()
+    else blocker.reset()
+  }, [blocker])
+
   if (eventLoading || myLoading) {
     return (
       <div>
@@ -285,7 +327,10 @@ export function EventVotePage() {
     voteMutation.mutate(payload)
   }
 
-  const ready = answered > 0 && !!participant
+  // 送信できる＝未送信の変更があり、送信中でない。
+  const canSubmit = dirty && !voteMutation.isPending
+  // 全部入力済みでサーバーと一致（＝送信済み・変更なし）。
+  const allSynced = !dirty && answered > 0
 
   return (
     <div>
@@ -602,6 +647,36 @@ export function EventVotePage() {
                               –{s.end}
                             </span>
                           </span>
+                          {/* D: この枠の入力がサーバー送信済みと違う（未送信）ときだけ小さなピルを出す */}
+                          {participant && dirtyIds.has(s.id) && (
+                            <span
+                              title="この枠はまだ送信されていません"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: '2px 8px',
+                                borderRadius: 'var(--radius-pill)',
+                                background: 'var(--color-warn-soft, var(--color-blurple-soft))',
+                                color: 'var(--color-warn-ink, var(--color-blurple-ink))',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                lineHeight: 1.4,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: '50%',
+                                  background: 'currentColor',
+                                  flex: 'none',
+                                }}
+                              />
+                              未送信
+                            </span>
+                          )}
                         </div>
                         <VoteControl
                           size="sm"
@@ -631,45 +706,112 @@ export function EventVotePage() {
             padding: '14px 24px',
           }}
         >
-          <div
-            style={{
-              maxWidth: 600,
-              margin: '0 auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 16,
-            }}
-          >
+          <div style={{ maxWidth: 600, margin: '0 auto' }}>
+            {/* B: 送信失敗の可視化。送信バー内にインラインの赤字メッセージ。 */}
+            {voteMutation.isError && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginBottom: 10,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--color-no-ink)',
+                }}
+              >
+                <Icon name="alert-circle" size={15} color="currentColor" />
+                送信できませんでした。通信状況を確認して、もう一度お試しください。
+              </div>
+            )}
             <div
               style={{
-                flex: 1,
-                fontSize: 13,
-                color: 'var(--color-fg2)',
-                fontWeight: 500,
-                fontVariantNumeric: 'tabular-nums',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 16,
               }}
             >
-              <span style={{ color: 'var(--color-fg1)', fontWeight: 600 }}>{answered}</span>
-              <span style={{ color: 'var(--color-fg3)' }}>/{totalSlots} 枠</span>
-              {answered < totalSlots && answered > 0 && (
-                <span
-                  style={{ marginLeft: 8, fontSize: 12, color: 'var(--color-fg4)', fontWeight: 500 }}
-                >
-                  （途中送信OK・あとから追記できます）
-                </span>
-              )}
+              <div
+                style={{
+                  flex: 1,
+                  fontSize: 13,
+                  color: 'var(--color-fg2)',
+                  fontWeight: 500,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                <span style={{ color: 'var(--color-fg1)', fontWeight: 600 }}>{answered}</span>
+                <span style={{ color: 'var(--color-fg3)' }}>/{totalSlots} 枠</span>
+                {/* A: 未送信の変更があることを示す全体バッジ */}
+                {dirty ? (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      marginLeft: 10,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: 'var(--color-warn-ink, var(--color-blurple-ink))',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: '50%',
+                        background: 'currentColor',
+                        flex: 'none',
+                      }}
+                    />
+                    未送信の変更あり
+                  </span>
+                ) : allSynced ? (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      marginLeft: 10,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: 'var(--color-yes-ink)',
+                    }}
+                  >
+                    <Icon name="check" size={14} color="currentColor" />
+                    送信済み
+                  </span>
+                ) : (
+                  answered < totalSlots &&
+                  answered > 0 && (
+                    <span
+                      style={{
+                        marginLeft: 8,
+                        fontSize: 12,
+                        color: 'var(--color-fg4)',
+                        fontWeight: 500,
+                      }}
+                    >
+                      （途中送信OK・あとから追記できます）
+                    </span>
+                  )
+                )}
+              </div>
+              <Button
+                variant="primary"
+                size="md"
+                disabled={!canSubmit}
+                onClick={handleSubmit}
+              >
+                {voteMutation.isPending
+                  ? '送信中...'
+                  : allSynced
+                    ? '送信済み'
+                    : dirty
+                      ? '未送信の変更を送信'
+                      : '回答を送信'}
+              </Button>
             </div>
-            {voteMutation.isSuccess && (
-              <span style={{ fontSize: 12, color: 'var(--color-yes-ink)' }}>保存しました</span>
-            )}
-            <Button
-              variant="primary"
-              size="md"
-              disabled={!ready || voteMutation.isPending}
-              onClick={handleSubmit}
-            >
-              {voteMutation.isPending ? '送信中...' : '回答を送信'}
-            </Button>
           </div>
         </div>
       )}

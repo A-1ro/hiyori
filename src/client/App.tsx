@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router'
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router'
 import { useSession } from './auth/useSession'
 import { LandingScreen } from './pages/LandingScreen'
 import { EventCreatePage } from './pages/EventCreatePage'
@@ -20,19 +20,21 @@ function HomeRoute() {
   return <LandingScreen />
 }
 
+// データルーター。投票ページの未送信ガード（useBlocker）はデータルーター配下でのみ動くため、
+// <BrowserRouter>+<Routes> ではなく createBrowserRouter を使う。ルート定義自体は従来のフラット構成のまま。
+const router = createBrowserRouter([
+  { path: '/', element: <HomeRoute /> },
+  { path: '/me', element: <MyPage /> },
+  { path: '/help', element: <HelpPage /> },
+  { path: '/terms', element: <TermsPage /> },
+  { path: '/privacy', element: <PrivacyPage /> },
+  { path: '/events/new', element: <EventCreatePage /> },
+  { path: '/events/:id', element: <EventDetailPage /> },
+  { path: '/events/:id/edit', element: <EventEditPage /> },
+  { path: '/events/:id/vote', element: <EventVotePage /> },
+  { path: '/events/:id/tally', element: <EventTallyPage /> },
+])
+
 export function App() {
-  return (
-    <Routes>
-      <Route path="/" element={<HomeRoute />} />
-      <Route path="/me" element={<MyPage />} />
-      <Route path="/help" element={<HelpPage />} />
-      <Route path="/terms" element={<TermsPage />} />
-      <Route path="/privacy" element={<PrivacyPage />} />
-      <Route path="/events/new" element={<EventCreatePage />} />
-      <Route path="/events/:id" element={<EventDetailPage />} />
-      <Route path="/events/:id/edit" element={<EventEditPage />} />
-      <Route path="/events/:id/vote" element={<EventVotePage />} />
-      <Route path="/events/:id/tally" element={<EventTallyPage />} />
-    </Routes>
-  )
+  return <RouterProvider router={router} />
 }
