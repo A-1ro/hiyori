@@ -20,6 +20,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `pnpm db:migrate:local` | Apply migrations to local D1 |
 | `pnpm db:migrate:remote` | Apply migrations to remote D1 (production) |
 
+**e2e Worker (`hiyori-e2e`) deploys need `CLOUDFLARE_ENV=e2e` at build time.** This repo uses `@cloudflare/vite-plugin`, whose `.wrangler/deploy/config.json` redirect makes `wrangler deploy` read the build-generated `dist/hiyori/wrangler.json` — so `--env e2e` alone is ignored and would deploy the flattened *production* config. Correct sequence: `CLOUDFLARE_ENV=e2e pnpm run build` then `npx wrangler deploy --env e2e`, and verify with `--dry-run` that the resolved name is `hiyori-e2e` (cron empty, ratelimit 1201/1202) before the real deploy. Never run `wrangler d1 migrations apply` for e2e — it shares the production D1.
+
 For local D1, run `wrangler d1 create hiyori` once and paste the returned `database_id` into `wrangler.jsonc`. Secrets (Discord bot token, OAuth client secret, etc.) go through `wrangler secret put`, not `vars`.
 
 **Self-host / fresh-clone KV setup (only if using the MCP server).** `wrangler.jsonc`'s `kv_namespaces` `OAUTH_KV` id is the canonical instance's namespace. Because `wrangler deploy` validates binding ids **even when `MCP_ENABLED=false`**, a self-hoster on a different account must replace it with their own: run `wrangler kv namespace create OAUTH_KV` once and paste the returned `id` into the `OAUTH_KV` binding in `wrangler.jsonc` (same "paste your own id" operation as D1's `database_id`). This is only needed if you intend to enable the remote MCP server (see `docs/plans/2026-07-21-mcp-server.md` §7). `OAUTH_KV` holds OAuth 2.1 grants/tokens for the MCP server; it is unused while `MCP_ENABLED=false`.
