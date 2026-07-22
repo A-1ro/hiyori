@@ -19,10 +19,10 @@ vi.mock('../auth/useSession', async (importActual) => {
 const testUser: SessionUser = {
   userId: 'u1',
   discordUserId: '12345678901234567',
-  username: 'hinata',
-  globalName: 'ひなた',
+  username: 'testuser',
+  globalName: 'テストユーザー',
   avatar: null,
-  displayName: 'ひなた',
+  displayName: 'テストユーザー',
 }
 
 type SessionResult = ReturnType<typeof useSession>
@@ -60,7 +60,7 @@ describe('AppHeader の導線', () => {
   it('ログイン時は表示名のマイページ導線とログアウトボタンが存在する', () => {
     setSessionUser(testUser)
     renderHeader()
-    const me = screen.getByRole('link', { name: 'ひなた' })
+    const me = screen.getByRole('link', { name: 'テストユーザー' })
     expect(me.getAttribute('href')).toBe('/me')
     expect(screen.getByRole('button', { name: 'ログアウト' })).toBeTruthy()
     // ログイン導線は出ない
@@ -70,7 +70,7 @@ describe('AppHeader の導線', () => {
   it('マイページ表示中は表示名がリンクではなくテキストになる', () => {
     setSessionUser(testUser)
     renderHeader('/me')
-    expect(screen.queryByRole('link', { name: 'ひなた' })).toBeNull()
-    expect(screen.getByText('ひなた')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'テストユーザー' })).toBeNull()
+    expect(screen.getByText('テストユーザー')).toBeTruthy()
   })
 })
