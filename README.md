@@ -89,6 +89,7 @@ pnpm dev
 | `DISCORD_CHANNEL_TOKEN_SECRET` | secret | チャンネル連携トークン（HMAC-SHA256）の署名鍵。**未設定だと Discord 連携は無効化**（トークン提示時に 503） |
 | `EVENT_RETENTION_DAYS` | var | 完了済み（`closed` / `cancelled`）イベントを最終活動から N 日経過後に日次 cron で自動削除する保持日数（正の整数）。**未設定（デフォルト）は自動削除しない = 永久保持** |
 | `FEEDBACK_ADMIN_TOKEN` | secret | 不具合報告フォームの読み出しAPI（`GET` / `PATCH /api/feedback`）を保護する admin トークン。**未設定だと読み出しAPIは常に 403**（安全側・誤って全公開しない）。投稿フォーム（`POST /api/feedback`）は未設定でも動作し、報告は D1 に蓄積される（読み出しだけが無効） |
+| `ANNOUNCEMENTS_ADMIN_TOKEN` | secret | 運営お知らせの書き込み API（`POST` / `PATCH /api/announcements`）を保護する admin トークン。**未設定だと書き込みAPIは常に 403**（安全側）。公開 GET（`GET /api/announcements`）は未設定でも動作する。ローテーション手順は [`docs/ops.md`](docs/ops.md) 参照 |
 
 > `pnpm discord:register` は `DISCORD_APP_ID`（= `DISCORD_CLIENT_ID` と同値）と `DISCORD_BOT_TOKEN`、任意で `DISCORD_GUILD_ID`（ギルド限定登録）を `.dev.vars` から読む。
 
@@ -110,6 +111,48 @@ Authorization: Bearer <FEEDBACK_ADMIN_TOKEN>
 
 - `since` は ISO8601 の `createdAt`。`createdAt` がそれより新しい行だけ返すので、ポーラーは受信した最新 `createdAt` を次回の `since` に使えば新着だけ取得できる。
 - `wrangler secret put FEEDBACK_ADMIN_TOKEN` で登録（ローカルは `.dev.vars`）。未設定でもフォーム投稿は動き、報告は D1 に貯まる（読み出しのみ無効）。
+
+### 運営お知らせ（Announcements）
+
+ヘッダのベルアイコンからログイン不要で閲覧できる。公開 GET は `Cache-Control: no-store` で origin 直返し・レート制限（60 req/min per IP）付き。投稿は admin Bearer 保護（`ANNOUNCEMENTS_ADMIN_TOKEN`）で、CLI `scripts/announce.mjs`（Node 22 標準依存ゼロ）から行う。
+
+```
+# セットアップ: 秘密トークン生成 → wrangler secret に登録
+node -e "console.log(crypto.randomBytes(32).toString('hex'))"
+pnpm exec wrangler secret put ANNOUNCEMENTS_ADMIN_TOKEN
+# → 対話プロンプトに上で生成した値を貼る
+
+# 投稿（stdin から本文を渡す）
+echo "詳細:
+- 不具合内容を修正しました
+- 適用済み" | ANNOUNCEMENTS_ADMIN_TOKEN=xxx \
+  node scripts/announce.mjs \
+    --api-url https://hiyori-schedule.com \
+    --title "投票の重複バグを修正しました" \
+    --category bug_fix
+
+# 投稿（--body で直接指定）
+ANNOUNCEMENTS_ADMIN_TOKEN=xxx node scripts/announce.mjs \
+  --api-url https://hiyori-schedule.com \
+  --title "新機能: XXX を追加しました" \
+  --category new_feature \
+  --body "XXX の使い方は..." \
+  --yes
+
+# dry-run（送信せずリクエスト JSON を確認）
+ANNOUNCEMENTS_ADMIN_TOKEN=xxx node scripts/announce.mjs \
+  --api-url https://hiyori-schedule.com \
+  --title "test" --category notice --body "..." --dry-run
+
+# アーカイブ（誤投稿を取り下げ）
+ANNOUNCEMENTS_ADMIN_TOKEN=xxx node scripts/announce.mjs \
+  --api-url https://hiyori-schedule.com --archive <id> --yes
+```
+
+- カテゴリは `bug_fix` / `new_feature` / `notice` の 3 種類（`bug_fix` = 橙・`new_feature` = 緑・`notice` = 灰でバッジ表示）
+- 本文は 4000 字まで。プレーンテキスト＋改行のみ。クライアント側で `http://` / `https://` を自動リンク化（`javascript:` / `data:` 等は絶対にリンク化しない）
+- `--published-at`（ISO 8601）で公開日時を明示できる（未来不可・過去 30 日以内）
+- 未確認事項がある場合の運用ドキュメント（ローテ手順・PII 混入時の緊急対応・D1 Time Travel 注記）は [`docs/ops.md`](docs/ops.md) を参照
 
 ### Discord Bot のセットアップ
 

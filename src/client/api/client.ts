@@ -298,3 +298,56 @@ export async function submitFeedback(input: FeedbackInput): Promise<{ ok: boolea
   const res = await api.api.feedback.$post({ json: input })
   return handleResponse(res)
 }
+
+// お知らせ機能（企画書 §5）。公開 GET は認証不要、書き込みは admin Bearer 保護。
+export type AnnouncementCategory = 'bug_fix' | 'new_feature' | 'notice'
+export type AnnouncementStatus = 'published' | 'archived'
+
+export interface AnnouncementResponse {
+  id: string
+  title: string
+  body: string
+  category: AnnouncementCategory
+  status: AnnouncementStatus
+  publishedAt: string
+}
+
+export interface PublishAnnouncementInput {
+  title: string
+  body: string
+  category: AnnouncementCategory
+  publishedAt?: string
+}
+
+// 公開 GET：認証不要・最大 50 件、既定 5 件。
+export async function fetchAnnouncements(
+  input: { limit?: number } = {},
+): Promise<{ announcements: AnnouncementResponse[] }> {
+  const query = input.limit ? { limit: String(input.limit) } : {}
+  const res = await api.api.announcements.$get({ query })
+  return handleResponse(res)
+}
+
+// admin 書き込み：Bearer トークンを呼び出し側で付与する（CLI や運営 UI 経由）。
+// ブラウザ側での通常使用は想定しない（type export を主目的とする wrapper）。
+export async function publishAnnouncement(
+  input: PublishAnnouncementInput,
+  bearerToken: string,
+): Promise<{ ok: boolean; id: string }> {
+  const res = await api.api.announcements.$post(
+    { json: input },
+    { headers: { Authorization: `Bearer ${bearerToken}` } },
+  )
+  return handleResponse(res)
+}
+
+export async function archiveAnnouncement(
+  id: string,
+  bearerToken: string,
+): Promise<{ ok: boolean; id: string; status: AnnouncementStatus }> {
+  const res = await api.api.announcements[':id'].$patch(
+    { param: { id }, json: { status: 'archived' } },
+    { headers: { Authorization: `Bearer ${bearerToken}` } },
+  )
+  return handleResponse(res)
+}

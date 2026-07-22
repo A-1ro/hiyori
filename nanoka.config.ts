@@ -1,4 +1,5 @@
 import { defineConfig } from '@nanokajs/core/config'
+import { announcementFields, announcementTableName } from './src/models/announcement'
 import { auditLogFields, auditLogTableName } from './src/models/auditLog'
 import { calendarSubscriptionFields, calendarSubscriptionTableName } from './src/models/calendarSubscription'
 import { candidateFields, candidateTableName } from './src/models/candidate'
@@ -24,6 +25,7 @@ export default defineConfig({
     { name: sessionTableName, fields: sessionFields },
     { name: cliAuthRequestTableName, fields: cliAuthRequestFields },
     { name: feedbackTableName, fields: feedbackFields },
+    { name: announcementTableName, fields: announcementFields },
   ],
   output: './drizzle/schema.ts',
 })
