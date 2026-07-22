@@ -38,14 +38,15 @@ export function linkify(text: string): LinkifySegment[] {
 
   // regex は stateful なので毎回 lastIndex を 0 に戻す（グローバル regex を関数間で共有する事故防止）。
   URL_REGEX.lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = URL_REGEX.exec(text)) !== null) {
+  let match: RegExpExecArray | null = URL_REGEX.exec(text)
+  while (match !== null) {
     const candidate = match[0]
     // scheme allowlist 二重チェック。regex を通っても javascript:/data: 等は URL コンストラクタで
     // parse 成功する（将来 Markdown 対応時の別経路対策）ので必ず protocol を確認する。
     if (!isSafeHttpUrl(candidate)) {
       // リンク化しない → 通常テキスト扱いで進める（regex を1文字進めて誤マッチを避ける）
       URL_REGEX.lastIndex = match.index + 1
+      match = URL_REGEX.exec(text)
       continue
     }
     if (match.index > lastIndex) {
@@ -53,6 +54,7 @@ export function linkify(text: string): LinkifySegment[] {
     }
     segments.push({ type: 'url', value: candidate })
     lastIndex = match.index + candidate.length
+    match = URL_REGEX.exec(text)
   }
   if (lastIndex < text.length) {
     segments.push({ type: 'text', value: text.slice(lastIndex) })

@@ -261,6 +261,7 @@ export function AnnouncementBell() {
                         </span>
                         {unread && (
                           <span
+                            role="status"
                             aria-label="未読"
                             style={{
                               display: 'inline-block',
