@@ -42,6 +42,27 @@ export async function loginAs(discordUserId: string, username = `user_${discordU
   return `hiyori_session=${sessionToken}`
 }
 
+// 期限切れセッションを挿入する（loginAs と同型・expiresAt だけ過去）。
+// loadSession の `gt(expiresAt, now)` 条件が生きていることの検証用。
+export async function loginAsExpired(discordUserId: string, username = `user_${discordUserId}`): Promise<string> {
+  const db = (env as { DB: D1Database }).DB
+  const now = Date.now()
+
+  const userId = await ensureUser(db, discordUserId, username)
+
+  const sessionToken = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('')
+  const tokenHash = await hashToken(sessionToken)
+  const sessionId = crypto.randomUUID()
+  // 1 秒前に失効済み
+  const expiresAt = now - 1000
+
+  await db.prepare(
+    'INSERT INTO sessions (id, userId, tokenHash, kind, createdAt, lastUsedAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(sessionId, userId, tokenHash, 'web', now - SESSION_TTL_MS, now - SESSION_TTL_MS, expiresAt).run()
+
+  return `hiyori_session=${sessionToken}`
+}
+
 export async function loginAsBearer(discordUserId: string, username = `user_${discordUserId}`): Promise<string> {
   const db = (env as { DB: D1Database }).DB
   const now = Date.now()
