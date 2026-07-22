@@ -222,7 +222,7 @@ Claude / MCP クライアント
 
 ## 7. OSS / セルフホスト整合
 
-- **独自インフラ非依存**。ひなた側の資産（ポータル等）には一切依存しない。使うのは Cloudflare の一次プリミティブ（Workers / D1 / KV / DO / Rate Limit）のみ。
+- **独自インフラ非依存**。開発支援用AIアシスタント側の資産（内部ポータル等）には一切依存しない。使うのは Cloudflare の一次プリミティブ（Workers / D1 / KV / DO / Rate Limit）のみ。
 - **env で完結・任意機能**。MCP は `MCP_ENABLED`（+ `OAUTH_KV` binding の有無）でゲート。**未設定なら MCP 機能は無効**（`/mcp` は 404/503）。Discord チャンネル連携が secret 未設定で無効になる既存作法（`DISCORD_CHANNEL_TOKEN_SECRET`）と同じ流儀。
 - セルフホスターの手順は「①`wrangler kv namespace create OAUTH_KV` して**返ってきた id を `wrangler.jsonc` の `OAUTH_KV` binding に貼る**（D1 の `database_id` と同じ運用。`wrangler deploy` は `MCP_ENABLED=false` でも binding の id を検証するため、他アカウントでは差し替え必須）②DO migration 適用 ③（Discord OAuth App は Hiyori 運用に元々必要なので流用）④deploy」だけ。**運用者の Discord OAuth App がそのまま MCP の上流 IdP** になる。
 - 社内限定運用者向けに、案 C（Cloudflare Access 前段）を README のオプションとして併記。
