@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { Icon } from './primitives'
 import { fetchAnnouncements, type AnnouncementResponse } from '../api/client'
 import { linkify } from '../utils/linkify'
@@ -44,11 +52,20 @@ function writeLastSeenAt(iso: string): void {
   }
 }
 
-const dropdownStyle: CSSProperties = {
-  position: 'absolute',
-  top: 'calc(100% + 6px)',
-  right: 0,
-  width: 'min(360px, calc(100vw - 24px))',
+// ドロップダウン位置はベルの実座標から JS で決める。
+// 以前は親の `inline-flex` + `position: relative` を containing block に
+// `position: absolute; right: 0` で吊っていたが、モバイル幅ではベルが
+// 画面右端から数百 px 内側にあるため 360px 幅のドロップダウンが
+// ビューポート左に大きくはみ出す（実機 iOS Safari で発生）。
+// `position: fixed` + `getBoundingClientRect()` で右端を明示的にクリップして
+// 常にビューポート内に収める。
+const DROPDOWN_WIDTH = 360
+const VIEWPORT_MARGIN = 12
+const DROPDOWN_GAP = 6
+
+const dropdownStyleBase: CSSProperties = {
+  position: 'fixed',
+  width: `min(${DROPDOWN_WIDTH}px, calc(100vw - ${VIEWPORT_MARGIN * 2}px))`,
   maxHeight: '70vh',
   overflowY: 'auto',
   background: 'var(--color-surface)',
@@ -87,7 +104,9 @@ export function AnnouncementBell() {
   const [items, setItems] = useState<AnnouncementResponse[] | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [lastSeenAt, setLastSeenAt] = useState<number>(0)
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; right: number } | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
 
   // 初回マウント時に localStorage の lastSeenAt を読む（SSR/CSR ミスマッチを避けるため useEffect 内）
   useEffect(() => {
@@ -132,6 +151,49 @@ export function AnnouncementBell() {
     }
   }, [open])
 
+  // ドロップダウンの実座標を計算。ベル要素の bounding rect からビューポート
+  // 相対の top/right を決め、右端は最低 VIEWPORT_MARGIN だけ余白を残して
+  // クリップする。position: fixed なのでヘッダの sticky や祖先の containing
+  // block 事情に影響されない。
+  // useLayoutEffect で描画前に座標を確定させることで、開き直したときに前回の
+  // 古い座標で一瞬レンダリングされる不具合を防ぐ。
+  useLayoutEffect(() => {
+    if (!open) {
+      // 閉じている間は古い座標を残さない（次回開いたとき再計算まで表示しない）
+      setDropdownPos(null)
+      return
+    }
+    const update = () => {
+      const btn = buttonRef.current
+      if (!btn) return
+      const rect = btn.getBoundingClientRect()
+      const top = rect.bottom + DROPDOWN_GAP
+      // ベルの右端に合わせる（デスクトップの通常挙動と一致）。ただし、
+      // ベルがモバイル幅で画面右端から数百 px 内側にあるとき、ベル右端揃えの
+      // ままだと 360px 幅のドロップダウンが左にはみ出す（今回の iOS Safari
+      // 事象）ため、左端がビューポートから 12px 以内に食い込まない上限で
+      // クランプする。width の実効値は CSS `min(360, layoutWidth - 24)` と
+      // 一致させて JS 側でも計算する。
+      // clientWidth はスクロールバーを除いた layout viewport（innerWidth は
+      // スクロールバー幅を含むため、右端計算にはこちらを使う）。
+      const layoutWidth = document.documentElement.clientWidth
+      const width = Math.min(DROPDOWN_WIDTH, layoutWidth - VIEWPORT_MARGIN * 2)
+      const maxRight = Math.max(VIEWPORT_MARGIN, layoutWidth - width - VIEWPORT_MARGIN)
+      const bellRightAlign = layoutWidth - rect.right
+      const right = Math.max(VIEWPORT_MARGIN, Math.min(maxRight, bellRightAlign))
+      // モバイルのスクロール bounce で毎フレーム同じ値を書かないよう、
+      // 値が変わっていないときは state を差し替えない（再レンダ抑止）。
+      setDropdownPos((prev) => (prev && prev.top === top && prev.right === right ? prev : { top, right }))
+    }
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [open])
+
   const unreadCount = useMemo(() => {
     if (!items) return 0
     return items.filter((a) => Date.parse(a.publishedAt) > lastSeenAt).length
@@ -151,8 +213,9 @@ export function AnnouncementBell() {
   }, [markAllSeen])
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex' }}>
+    <div ref={containerRef} style={{ position: 'relative', display: 'inline-block' }}>
       <button
+        ref={buttonRef}
         type="button"
         aria-label="お知らせ"
         title="お知らせ"
@@ -194,8 +257,12 @@ export function AnnouncementBell() {
         )}
       </button>
 
-      {open && (
-        <div role="dialog" aria-label="お知らせ一覧" style={dropdownStyle}>
+      {open && dropdownPos && (
+        <div
+          role="dialog"
+          aria-label="お知らせ一覧"
+          style={{ ...dropdownStyleBase, top: dropdownPos.top, right: dropdownPos.right }}
+        >
           <div
             style={{
               display: 'flex',
