@@ -303,6 +303,24 @@ export const buildApp = (env: Env) => {
   // 将来運営 UI をブラウザから追加した際は、ここに Cookie セッションによる代替経路と Origin 必須
   // チェックを追加する。
 
+  // 書き込み系 IP 単位 rate limit ミドルウェア。
+  // 【重要】auth（Bearer 検証）より前に走らせる。auth の後に置くと、不正 Bearer による無制限な
+  // 認証試行が rate limit をすり抜けて Worker CPU / D1 SHA-256 比較を食い潰す DoS 面が残る
+  // （Codex CLI レビュー指摘 #1 対応）。
+  async function limitAnnouncementWriteIp(
+    c: Context<{ Bindings: Env }>,
+    next: () => Promise<void>,
+  ): Promise<Response | void> {
+    const ip = c.req.header('CF-Connecting-IP')
+    if (ip && c.env.CLI_AUTH_RATELIMIT) {
+      const { success } = await c.env.CLI_AUTH_RATELIMIT.limit({ key: `announce-post:ip:${ip}` })
+      if (!success) {
+        return c.json({ error: 'Too many requests' }, 429, { 'Retry-After': '60' })
+      }
+    }
+    await next()
+  }
+
   // M2: /api/* に同一オリジンのみ許可する CORS チェック
   app.use('/api/*', cors({
     origin: (origin, c) => {
@@ -1885,8 +1903,10 @@ window.__vite_plugin_react_preamble_installed__ = true
       })
     })
     // お知らせ投稿（admin Bearer 保護・IP 単位 + token 単位の二重 rate limit）。
+    // IP 単位 rate limit は auth より前・token 単位は auth 成功後に評価（Codex 指摘 #1 対応）。
     .post(
       '/api/announcements',
+      limitAnnouncementWriteIp,
       zValidator('json', createAnnouncementBody, (result, c) => {
         if (!result.success) {
           return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
@@ -1898,12 +1918,6 @@ window.__vite_plugin_react_preamble_installed__ = true
         // Bearer 時は Origin 検証 skip、Cookie セッション時は required（企画書 §5.2 / §7.2）。
         // 現状は Bearer 認証のみを許容（Cookie 経由の書き込みは MVP 対象外）だが、将来運営 UI を
         // 追加した際に備えて判定ロジックのみ実装しておく（Bearer 認証済みなら Origin は問わない）。
-        // Rate limit: IP 単位（CLI_AUTH_RATELIMIT を key namespace で流用）+ token 単位（専用 binding）。
-        const ip = c.req.header('CF-Connecting-IP')
-        if (ip && c.env.CLI_AUTH_RATELIMIT) {
-          const { success } = await c.env.CLI_AUTH_RATELIMIT.limit({ key: `announce-post:ip:${ip}` })
-          if (!success) return c.json({ error: 'Too many requests' }, 429, { 'Retry-After': '60' })
-        }
         if (c.env.ANNOUNCE_POST_TOKEN_RATELIMIT) {
           const { success } = await c.env.ANNOUNCE_POST_TOKEN_RATELIMIT.limit({
             key: `announce-post:token:${auth.tokenHash8}`,
@@ -1923,8 +1937,10 @@ window.__vite_plugin_react_preamble_installed__ = true
       },
     )
     // お知らせのステータス更新（admin Bearer 保護・archive / unarchive）。
+    // IP 単位 rate limit は auth より前・token 単位は auth 成功後に評価（Codex 指摘 #1 対応）。
     .patch(
       '/api/announcements/:id',
+      limitAnnouncementWriteIp,
       zValidator('json', patchAnnouncementBody, (result, c) => {
         if (!result.success) {
           return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
@@ -1933,11 +1949,6 @@ window.__vite_plugin_react_preamble_installed__ = true
       async (c) => {
         const auth = await checkAnnouncementsAdmin(c)
         if (!auth.ok) return c.json({ error: 'Forbidden' }, 403)
-        const ip = c.req.header('CF-Connecting-IP')
-        if (ip && c.env.CLI_AUTH_RATELIMIT) {
-          const { success } = await c.env.CLI_AUTH_RATELIMIT.limit({ key: `announce-post:ip:${ip}` })
-          if (!success) return c.json({ error: 'Too many requests' }, 429, { 'Retry-After': '60' })
-        }
         if (c.env.ANNOUNCE_POST_TOKEN_RATELIMIT) {
           const { success } = await c.env.ANNOUNCE_POST_TOKEN_RATELIMIT.limit({
             key: `announce-post:token:${auth.tokenHash8}`,

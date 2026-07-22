@@ -169,6 +169,32 @@ describe('POST /api/announcements', () => {
     )
     expect(res.status).toBe(201)
   })
+
+  it('publishedAt が過去30日境界の内側（30日-1秒）は 201（境界包含・Codex 指摘 #4 対応）', async () => {
+    ;(env as Record<string, unknown>).ANNOUNCEMENTS_ADMIN_TOKEN = ADMIN_TOKEN
+    // 30日ちょうどは、テストクライアント側の now とサーバー側の now の間の実行遅延（数〜数百ms）で
+    // 境界を跨いで 400 に落ちる。fake timer を導入せずに t >= now - 30days の閾値挙動を確認する
+    // ため、境界内側の 30日-1秒 で 201 を確認する。
+    const insideBoundary = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000 + 1000).toISOString()
+    const res = await post(
+      '/api/announcements',
+      { ...VALID, publishedAt: insideBoundary },
+      authHeader(ADMIN_TOKEN),
+    )
+    expect(res.status).toBe(201)
+  })
+
+  it('publishedAt が現在時刻ちょうど（境界）は 201', async () => {
+    ;(env as Record<string, unknown>).ANNOUNCEMENTS_ADMIN_TOKEN = ADMIN_TOKEN
+    // now を丸めて 5 秒過去に（送信中に future と判定される可能性を避ける）
+    const nowIso = new Date(Date.now() - 5000).toISOString()
+    const res = await post(
+      '/api/announcements',
+      { ...VALID, publishedAt: nowIso },
+      authHeader(ADMIN_TOKEN),
+    )
+    expect(res.status).toBe(201)
+  })
 })
 
 describe('GET /api/announcements', () => {
@@ -248,11 +274,43 @@ describe('GET /api/announcements', () => {
     expect(body.announcements).toHaveLength(5)
   })
 
-  it('limit=100 は上限 50 に切り詰められる', async () => {
+  it('limit=100 は 51 件投稿しても上限 50 で切り詰められる', async () => {
+    ;(env as Record<string, unknown>).ANNOUNCEMENTS_ADMIN_TOKEN = ADMIN_TOKEN
+    // 51 件を過去 30 日以内の別々の publishedAt で投稿
+    for (let i = 0; i < 51; i += 1) {
+      const at = new Date(Date.now() - (51 - i) * 60 * 1000).toISOString()
+      const r = await post(
+        '/api/announcements',
+        { ...VALID, title: `bulk-#${i}`, publishedAt: at },
+        authHeader(ADMIN_TOKEN),
+      )
+      expect(r.status).toBe(201)
+    }
     const res = await get('/api/announcements?limit=100')
-    // 0 件のときも 200 で返る（実際の 50 上限は上限値に達したときのみ効くが、
-    // クエリ解析で例外が出ないことをここでは確認する）
     expect(res.status).toBe(200)
+    const body = (await res.json()) as { announcements: unknown[] }
+    // Math.min(100, 50) で 50 件に切り詰められる
+    expect(body.announcements).toHaveLength(50)
+  })
+
+  it('limit=0 / 負数 / NaN は default 5 に fallback（拒否せず返す）', async () => {
+    ;(env as Record<string, unknown>).ANNOUNCEMENTS_ADMIN_TOKEN = ADMIN_TOKEN
+    // 7 件投稿
+    for (let i = 0; i < 7; i += 1) {
+      await post(
+        '/api/announcements',
+        { ...VALID, title: `#${i}` },
+        authHeader(ADMIN_TOKEN),
+      )
+    }
+    const zero = await get('/api/announcements?limit=0')
+    const neg = await get('/api/announcements?limit=-1')
+    const nan = await get('/api/announcements?limit=foo')
+    for (const res of [zero, neg, nan]) {
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { announcements: unknown[] }
+      expect(body.announcements).toHaveLength(5)
+    }
   })
 })
 
