@@ -115,3 +115,13 @@ export const feedback = sqliteTable('feedback', {
   status: text('status').notNull().default("new"),
   createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
 })
+
+export const announcement = sqliteTable('announcement', {
+  id: text('id').primaryKey().notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  category: text('category').notNull(),
+  status: text('status').notNull().default("published"),
+  publishedAt: integer('publishedAt', { mode: 'timestamp_ms' }).notNull(),
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
+})

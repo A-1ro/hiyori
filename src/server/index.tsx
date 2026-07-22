@@ -28,7 +28,8 @@ import { decisionFields, decisionTableName } from '../models/decision'
 import { eventFields, eventTableName } from '../models/event'
 import { participantFields, participantTableName } from '../models/participant'
 import { voteFields, voteTableName } from '../models/vote'
-import { calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions, feedback } from '../../drizzle/schema'
+import { announcement, calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions, feedback } from '../../drizzle/schema'
+import { announcementFields, announcementTableName } from '../models/announcement'
 import { feedbackFields, feedbackTableName } from '../models/feedback'
 import { userTableName, userFields } from '../models/user'
 import { sessionTableName, sessionFields } from '../models/session'
@@ -53,9 +54,17 @@ export interface Env {
   // POST/PATCH /api/events で discordChannelToken の検証に使う。未設定なら Discord 連携不可。
   DISCORD_CHANNEL_TOKEN_SECRET?: string
   CLI_AUTH_RATELIMIT?: RateLimit
+  // お知らせ公開 GET の DoS 対策 rate limit（key = announce-get:ip:${ip}, 60 req/min per IP）。
+  ANNOUNCE_GET_RATELIMIT?: RateLimit
+  // お知らせ POST/PATCH の token 単位 rate limit（key = announce-post:token:${tokenHash8}）。
+  // Cloudflare 制約で period は 10/60 のみのため、企画書 100 req/hour を 2 req/60s（120 req/hour）で近似。
+  ANNOUNCE_POST_TOKEN_RATELIMIT?: RateLimit
   // 不具合報告フォームの読み出しAPI（GET/PATCH /api/feedback）を保護する admin トークン。
   // 未設定なら読み出しAPIは常に 403（安全側：誤って全公開しない）。投稿(POST)は未設定でも動く。
   FEEDBACK_ADMIN_TOKEN?: string
+  // お知らせ書き込み API（POST/PATCH /api/announcements）を保護する admin トークン。
+  // 未設定なら書き込みAPIは常に 403（安全側：誤って全公開しない）。公開 GET は未設定でも動く。
+  ANNOUNCEMENTS_ADMIN_TOKEN?: string
   // F-12 (#24): 完了済み (closed / cancelled) イベントを最終活動から N 日で自動削除する
   // 保持日数。未設定（デフォルト）・空・非数値・0 以下はすべて「自動削除しない」。
   EVENT_RETENTION_DAYS?: string
@@ -115,6 +124,41 @@ const patchEventBody = z.object({
 const addCandidateBody = z.object({
   startAt: z.string().datetime(),
   endAt: z.string().datetime().optional(),
+})
+
+// 運営お知らせ（層1）。カテゴリ・ステータスはホワイトリスト、本文は必須＋最大長。
+const ANNOUNCEMENT_CATEGORIES = ['bug_fix', 'new_feature', 'notice'] as const
+const ANNOUNCEMENT_PATCH_STATUSES = ['published', 'archived'] as const
+// publishedAt: サーバー時刻から見て未来ではなく、かつ過去30日以内。
+const ANNOUNCEMENT_PUBLISHED_AT_PAST_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+const createAnnouncementBody = z.object({
+  title: z
+    .string()
+    .min(1)
+    .max(120)
+    .refine((s) => s.trim().length > 0, { message: 'title cannot be whitespace only' }),
+  body: z
+    .string()
+    .min(1)
+    .max(4000)
+    .refine((s) => s.trim().length > 0, { message: 'body cannot be whitespace only' }),
+  category: z.enum(ANNOUNCEMENT_CATEGORIES),
+  publishedAt: z
+    .string()
+    .datetime()
+    .optional()
+    .refine(
+      (iso) => {
+        if (!iso) return true
+        const t = Date.parse(iso)
+        const now = Date.now()
+        return t <= now && t >= now - ANNOUNCEMENT_PUBLISHED_AT_PAST_WINDOW_MS
+      },
+      { message: 'publishedAt must be within past 30 days and not in the future' },
+    ),
+})
+const patchAnnouncementBody = z.object({
+  status: z.enum(ANNOUNCEMENT_PATCH_STATUSES),
 })
 
 // 不具合報告フォーム（層1）。カテゴリはホワイトリスト。本文は必須＋最大長でDoS/空を弾く。
@@ -221,6 +265,7 @@ export const buildApp = (env: Env) => {
   const User = app.model(userTableName, userFields)
   const Session = app.model(sessionTableName, sessionFields)
   const Feedback = app.model(feedbackTableName, feedbackFields)
+  const Announcement = app.model(announcementTableName, announcementFields)
 
   // 読み出しAPI(GET/PATCH /api/feedback)の admin トークン照合。
   // 未設定なら false（＝常に 403）で安全側に倒す。トークンはハッシュ同士の固定長比較で照合し、
@@ -232,6 +277,48 @@ export const buildApp = (env: Env) => {
     if (!provided) return false
     const [a, b] = await Promise.all([hashToken(provided), hashToken(token)])
     return a === b
+  }
+
+  // 書き込み API（POST/PATCH /api/announcements）の admin トークン照合。
+  // 未設定なら false（＝常に 403）で安全側に倒す（feedback と同じ safe-by-default）。
+  // トークンはハッシュ同士の固定長比較で照合し、長さ差による timing leak を避ける。
+  // 認証成功時は Bearer 検証済みトークンのハッシュ先頭 8 文字を返し、token 単位 rate limit の key に使う。
+  async function checkAnnouncementsAdmin(
+    c: Context<{ Bindings: Env }>,
+  ): Promise<{ ok: true; tokenHash8: string } | { ok: false }> {
+    const token = c.env.ANNOUNCEMENTS_ADMIN_TOKEN
+    if (!token) return { ok: false }
+    const provided = getBearerToken(c)
+    if (!provided) return { ok: false }
+    const [a, b] = await Promise.all([hashToken(provided), hashToken(token)])
+    if (a !== b) return { ok: false }
+    return { ok: true, tokenHash8: a.slice(0, 8) }
+  }
+
+  // 【企画書 §5.2 / §7.2 の Origin 検証ルール】
+  // Bearer 認証時は Origin 検証 skip（Bearer が CSRF 防御を兼ねる。ブラウザから任意 Origin で
+  // Bearer を付けるには CORS preflight が必要で、CORS 設定を same-origin に絞ればブラウザ経由の
+  // CSRF は成立しない）。Cookie セッション経由の書き込みは MVP では発生しないため、判定ロジックは
+  // Bearer 認証成功のみを許容する形（＝ Origin 未検証）で暗黙に skip 側に倒している。
+  // 将来運営 UI をブラウザから追加した際は、ここに Cookie セッションによる代替経路と Origin 必須
+  // チェックを追加する。
+
+  // 書き込み系 IP 単位 rate limit ミドルウェア。
+  // 【重要】auth（Bearer 検証）より前に走らせる。auth の後に置くと、不正 Bearer による無制限な
+  // 認証試行が rate limit をすり抜けて Worker CPU / D1 SHA-256 比較を食い潰す DoS 面が残る
+  // （Codex CLI レビュー指摘 #1 対応）。
+  async function limitAnnouncementWriteIp(
+    c: Context<{ Bindings: Env }>,
+    next: () => Promise<void>,
+  ): Promise<Response | void> {
+    const ip = c.req.header('CF-Connecting-IP')
+    if (ip && c.env.CLI_AUTH_RATELIMIT) {
+      const { success } = await c.env.CLI_AUTH_RATELIMIT.limit({ key: `announce-post:ip:${ip}` })
+      if (!success) {
+        return c.json({ error: 'Too many requests' }, 429, { 'Retry-After': '60' })
+      }
+    }
+    await next()
   }
 
   // M2: /api/* に同一オリジンのみ許可する CORS チェック
@@ -1778,6 +1865,99 @@ window.__vite_plugin_react_preamble_installed__ = true
         const id = c.req.param('id')
         const body = c.req.valid('json')
         const updated = await Feedback.update(id, { status: body.status })
+        if (!updated) return c.json({ error: 'Not Found' }, 404)
+        return c.json({ ok: true, id, status: body.status })
+      },
+    )
+    // お知らせ公開 GET（認証不要・edge cache 不使用・origin 直返し）。
+    // Rate limit: 60 req/min per IP（no-store 公開 GET の DoS 対策・第一防御）。
+    .get('/api/announcements', async (c) => {
+      const ip = c.req.header('CF-Connecting-IP')
+      if (ip && c.env.ANNOUNCE_GET_RATELIMIT) {
+        const { success } = await c.env.ANNOUNCE_GET_RATELIMIT.limit({ key: `announce-get:ip:${ip}` })
+        if (!success) {
+          return c.json({ error: 'Too many requests' }, 429, { 'Retry-After': '60' })
+        }
+      }
+      const limitRaw = Number(c.req.query('limit'))
+      const limit =
+        Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), 50) : 5
+      const rows = await app.db
+        .select()
+        .from(announcement)
+        .where(eq(announcement.status, 'published'))
+        // 同時刻タイブレークは createdAt DESC で解決（企画書 §4.4 / DoD L-5）。
+        .orderBy(desc(announcement.publishedAt), desc(announcement.createdAt))
+        .limit(limit)
+      // 公開 GET は edge cache を持たない（企画書 §5.1・恒久確定）。
+      c.header('Cache-Control', 'no-store')
+      return c.json({
+        announcements: rows.map((r) => ({
+          id: r.id,
+          title: r.title,
+          body: r.body,
+          category: r.category,
+          status: r.status,
+          publishedAt: r.publishedAt.toISOString(),
+        })),
+      })
+    })
+    // お知らせ投稿（admin Bearer 保護・IP 単位 + token 単位の二重 rate limit）。
+    // IP 単位 rate limit は auth より前・token 単位は auth 成功後に評価（Codex 指摘 #1 対応）。
+    .post(
+      '/api/announcements',
+      limitAnnouncementWriteIp,
+      zValidator('json', createAnnouncementBody, (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        const auth = await checkAnnouncementsAdmin(c)
+        if (!auth.ok) return c.json({ error: 'Forbidden' }, 403)
+        // Bearer 時は Origin 検証 skip、Cookie セッション時は required（企画書 §5.2 / §7.2）。
+        // 現状は Bearer 認証のみを許容（Cookie 経由の書き込みは MVP 対象外）だが、将来運営 UI を
+        // 追加した際に備えて判定ロジックのみ実装しておく（Bearer 認証済みなら Origin は問わない）。
+        if (c.env.ANNOUNCE_POST_TOKEN_RATELIMIT) {
+          const { success } = await c.env.ANNOUNCE_POST_TOKEN_RATELIMIT.limit({
+            key: `announce-post:token:${auth.tokenHash8}`,
+          })
+          if (!success) return c.json({ error: 'Too many requests' }, 429, { 'Retry-After': '60' })
+        }
+        const body = c.req.valid('json')
+        const publishedAt = body.publishedAt ? new Date(body.publishedAt) : undefined
+        const created = await Announcement.create({
+          title: body.title,
+          body: body.body,
+          category: body.category,
+          ...(publishedAt ? { publishedAt } : {}),
+          // status は既定 'published'、createdAt はモデル既定で付与。
+        })
+        return c.json({ ok: true, id: created.id }, 201)
+      },
+    )
+    // お知らせのステータス更新（admin Bearer 保護・archive / unarchive）。
+    // IP 単位 rate limit は auth より前・token 単位は auth 成功後に評価（Codex 指摘 #1 対応）。
+    .patch(
+      '/api/announcements/:id',
+      limitAnnouncementWriteIp,
+      zValidator('json', patchAnnouncementBody, (result, c) => {
+        if (!result.success) {
+          return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+        }
+      }),
+      async (c) => {
+        const auth = await checkAnnouncementsAdmin(c)
+        if (!auth.ok) return c.json({ error: 'Forbidden' }, 403)
+        if (c.env.ANNOUNCE_POST_TOKEN_RATELIMIT) {
+          const { success } = await c.env.ANNOUNCE_POST_TOKEN_RATELIMIT.limit({
+            key: `announce-post:token:${auth.tokenHash8}`,
+          })
+          if (!success) return c.json({ error: 'Too many requests' }, 429, { 'Retry-After': '60' })
+        }
+        const id = c.req.param('id')
+        const body = c.req.valid('json')
+        const updated = await Announcement.update(id, { status: body.status })
         if (!updated) return c.json({ error: 'Not Found' }, 404)
         return c.json({ ok: true, id, status: body.status })
       },

@@ -93,6 +93,14 @@ Discord と連携可能な日程調整 Web ツール。
   - フォーム（ログイン不要・ゲスト可）→ `POST /api/feedback` → D1 `feedback` テーブルに保存。送信時に現在ページ URL / イベント ID / User-Agent / ログイン状態を自動添付（生 IP は保存せずハッシュのみ）。既存 Rate Limit で濫用抑止、本文必須＋最大長、カテゴリはホワイトリスト。
   - 読み出しは admin トークン（`FEEDBACK_ADMIN_TOKEN`）保護の**汎用** API `GET /api/feedback`（`?since` / `?status` / `?limit`）と `PATCH /api/feedback/:id`。未設定なら読み出しは常に 403（安全側）。
   - **設計方針**: Hiyori のコードは特定インフラに依存しない。外部（通知・トリアージ）連携は「外部 → この読み出し API を定期ポーリング」の一方通行（層2）で外付けし、Hiyori 側には書かない。
+- F-14 運営お知らせ / Announcements（層1・Hiyori 単体で完結）
+  - ヘッダ右上のベルアイコン（ログイン不要で全ユーザーに表示）→ ドロップダウンで直近 5 件を表示。本文はプレーンテキスト＋改行＋クライアント側での URL 自動リンク化のみ。ゲスト参加者にもリーチする。
+  - 公開 GET `/api/announcements`（認証不要・`Cache-Control: no-store` で origin 直返し・IP 単位 rate limit 60 req/min）。カテゴリは `bug_fix` / `new_feature` / `notice` の 3 種類。
+  - 書き込み `POST /api/announcements` / `PATCH /api/announcements/:id`（`status` の変更のみ）は admin トークン（`ANNOUNCEMENTS_ADMIN_TOKEN`）Bearer 保護。IP 単位＋token 単位の二重 rate limit。未設定なら書き込みは常に 403（安全側）。
+  - 投稿 CLI: `scripts/announce.mjs`（Node 22 標準依存ゼロ）。確認プロンプトは `/dev/tty` 直読み、tty 無し環境では `--yes` 必須。`--archive <id>` で誤投稿の取り下げも可。
+  - 未読管理はクライアント localStorage の `hiyori:announcements:lastSeenAt`（ゲストのままでも動作）。ドロップダウンを閉じるか「すべて既読にする」で更新。
+  - **セキュリティ**: XSS 対策として本文の Markdown/HTML 解釈はしない。URL 自動リンク化は scheme allowlist（`http:` / `https:`）を regex＋`URL()` protocol の二重チェックで担保。auto-linkify はユニットテスト（`src/client/utils/__tests__/linkify.test.ts`）で `javascript:` / `data:` / 全角 URL 疑似などのケースを検証。
+  - **設計方針**: MVP は個別詳細ページを持たず、accordion で全展開する UX。Phase 2 で `/announcements` 一覧＋`/announcements/:id` 詳細・Discord 通知連動を検討。
 
 ### 5.3 将来的に検討
 - 公開 URL のアクセス制限（パスフレーズ / Discord ロール）

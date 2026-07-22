@@ -51,7 +51,17 @@
 	"ratelimits": [
 		{ "name": "CLI_AUTH_RATELIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
 		// MCP 濫用対策（key = discordUserId）。write / 破壊的操作を含むため CLI 認証より少し緩めの短周期上限。
-		{ "name": "MCP_RATELIMIT", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } }
+		{ "name": "MCP_RATELIMIT", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } },
+		// お知らせ公開 GET の DoS 対策（key = announce-get:ip:${ip}）。
+		// no-store 選択で GET が全 req D1 直撃かつ認証不要のため、単純 flood を第一防御で塞ぐ。
+		// 通常ユーザーは 1 ページで 1 回 GET・自動ポーリング等は想定しない。
+		{ "name": "ANNOUNCE_GET_RATELIMIT", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } },
+		// お知らせ POST/PATCH の token 単位 rate limit（key = announce-post:token:${tokenHash8}）。
+		// IP 単位（CLI_AUTH_RATELIMIT を流用）とは別軸で、token 漏洩後の spam を数千〜数万に到達させない防御。
+		// リリース日の連投（テスト込みで 5〜10 件）や正常運用は 100 req/hour で十分吸収できる。
+		// period は 10 / 60 のみ許容（Cloudflare 制約）。企画書§5.2 の「100 req/hour」を近似し、
+		// period=60, limit=2（2 req/min ≈ 120 req/hour）で「token 漏洩後の massive spam 抑制」の目的を維持する。
+		{ "name": "ANNOUNCE_POST_TOKEN_RATELIMIT", "namespace_id": "1004", "simple": { "limit": 2, "period": 60 } }
 	],
 	"triggers": {
 		// 毎時: CLI 認証リクエストの期限切れ掃除 / 毎日 3:00 UTC: 完了済みイベントの TTL 削除 (F-12 #24)
@@ -101,9 +111,11 @@
 				{ "tag": "v1", "new_sqlite_classes": ["HiyoriMcpAgent"] }
 			],
 			"ratelimits": [
-				// 本番（1001/1002）・STG 案（1101/1102）と衝突しない別番号
+				// 本番（1001-1004）・STG 案（1101-1104）と衝突しない別番号
 				{ "name": "CLI_AUTH_RATELIMIT", "namespace_id": "1201", "simple": { "limit": 10, "period": 60 } },
-				{ "name": "MCP_RATELIMIT", "namespace_id": "1202", "simple": { "limit": 60, "period": 60 } }
+				{ "name": "MCP_RATELIMIT", "namespace_id": "1202", "simple": { "limit": 60, "period": 60 } },
+				{ "name": "ANNOUNCE_GET_RATELIMIT", "namespace_id": "1203", "simple": { "limit": 60, "period": 60 } },
+				{ "name": "ANNOUNCE_POST_TOKEN_RATELIMIT", "namespace_id": "1204", "simple": { "limit": 2, "period": 60 } }
 			],
 			// 本番 D1 共有のため cron の二重発火を防ぐ（空配列を明示）
 			"triggers": { "crons": [] }

@@ -4,6 +4,16 @@ import { createMemoryRouter, RouterProvider } from 'react-router'
 import { AppHeader } from './AppHeader'
 import { useSession, type SessionUser } from '../auth/useSession'
 
+// AnnouncementBell 内の fetchAnnouncements（Hono RPC）は jsdom 環境で自動発火し
+// 実 API に到達しないので、モックして空配列を返させる（レンダリングだけ確認する）。
+vi.mock('../api/client', async (importActual) => {
+  const actual = await importActual<typeof import('../api/client')>()
+  return {
+    ...actual,
+    fetchAnnouncements: vi.fn(async () => ({ announcements: [] })),
+  }
+})
+
 // 導線スモークテスト（監査レポート 2026-07-22 H-1 対応）。
 // useSession / useLogout はマウント時の fetch と QueryClient 依存を避けるため差し替える
 // （EventVotePage.test.tsx と同じ流儀）。loginUrl は純関数なので実体を使う。
@@ -72,5 +82,12 @@ describe('AppHeader の導線', () => {
     renderHeader('/me')
     expect(screen.queryByRole('link', { name: 'テストユーザー' })).toBeNull()
     expect(screen.getByText('テストユーザー')).toBeTruthy()
+  })
+
+  it('AnnouncementBell（お知らせ）ボタンが常に存在する', () => {
+    setSessionUser(null)
+    renderHeader()
+    // 未ログイン時にもベルが出る（ログイン非依存の公開情報）
+    expect(screen.getByRole('button', { name: 'お知らせ' })).toBeTruthy()
   })
 })
