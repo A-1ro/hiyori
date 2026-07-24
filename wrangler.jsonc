@@ -81,8 +81,11 @@
 	"env": {
 		"e2e": {
 			"name": "hiyori-e2e",
-			// 検証 URL: https://hiyori-e2e.aaa-4e2k3.workers.dev（custom domain は張らない）
-			"workers_dev": true,
+			// 検証 URL: https://e2e.hiyori-schedule.com（custom domain。workers.dev URL は無効化）
+			"workers_dev": false,
+			"routes": [
+				{ "pattern": "e2e.hiyori-schedule.com", "custom_domain": true }
+			],
 			"vars": {
 				// 本番同等の "production" を維持すること。"e2e" 等に変えると src/server/index.tsx が
 				// React Refresh preamble（/@react-refresh — デプロイ環境には存在しない）を注入し、空白画面になる。
