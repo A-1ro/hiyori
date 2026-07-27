@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import hiyoriLogo from '../assets/images/hiyori-logo-trimmed.png'
 
 type IconName =
@@ -219,6 +219,98 @@ export function Button({
       {children}
       {iconRight}
     </button>
+  )
+}
+
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel = '削除',
+  cancelLabel = 'キャンセル',
+  danger = true,
+  onConfirm,
+  onCancel,
+}: {
+  title: string
+  message: ReactNode
+  confirmLabel?: string
+  cancelLabel?: string
+  danger?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.45)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        zIndex: 60,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 400,
+          background: 'var(--color-surface)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-lg)',
+          padding: 22,
+        }}
+      >
+        <h3
+          style={{
+            margin: '0 0 8px',
+            fontSize: 17,
+            fontWeight: 700,
+            color: 'var(--color-fg1)',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {title}
+        </h3>
+        <p
+          style={{
+            margin: '0 0 20px',
+            fontSize: 13.5,
+            color: 'var(--color-fg2)',
+            lineHeight: 1.55,
+          }}
+        >
+          {message}
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Button variant="secondary" size="sm" onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+          <Button
+            variant={danger ? 'danger' : 'primary'}
+            size="sm"
+            onClick={onConfirm}
+            style={danger ? { border: '1px solid var(--color-no-ink)' } : undefined}
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
 

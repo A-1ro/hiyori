@@ -9,7 +9,7 @@ import {
   ApiError,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
-import { Badge, Button, DiscordMark, Icon } from '../components/primitives'
+import { Badge, Button, ConfirmDialog, DiscordMark, Icon } from '../components/primitives'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 
 const WD = ['日', '月', '火', '水', '木', '金', '土']
@@ -29,6 +29,7 @@ export function EventDetailPage() {
   const [copied, setCopied] = useState(false)
   const [subError, setSubError] = useState<string | undefined>()
   const [subModalUrl, setSubModalUrl] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['event', id],
@@ -121,8 +122,7 @@ export function EventDetailPage() {
   }
 
   const handleDelete = () => {
-    if (!confirm('このイベントを削除しますか？参加者の回答もすべて消えます。')) return
-    deleteMutation.mutate()
+    setConfirmDelete(true)
   }
 
   // -----------------------------------------------------------------
@@ -661,6 +661,18 @@ export function EventDetailPage() {
       </main>
       {subModalUrl && (
         <SubscribeModal webcalUrl={subModalUrl} onClose={() => setSubModalUrl(null)} />
+      )}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="このイベントを削除しますか？"
+          message="参加者の回答もすべて消えます。この操作は取り消せません。"
+          confirmLabel="削除"
+          onConfirm={() => {
+            setConfirmDelete(false)
+            deleteMutation.mutate()
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
       )}
     </div>
   )
