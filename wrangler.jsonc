@@ -75,8 +75,10 @@
 	//
 	// 設計上の要点:
 	// - D1 は専用DB `hiyori-e2e` を使用（2026-07-26に本番共有から分離）。分離理由: e2eの操作が本番の利用統計
-	//   （アクティビティ集計）に混入していたため。破壊系 CLI（d1 execute / migrations apply / seed）を
-	//   e2e 向けに叩いても影響範囲は hiyori-e2e のみで、本番データには一切触れない。
+	//   （アクティビティ集計）に混入していたため。破壊系 CLI（d1 execute / migrations apply / seed）は
+	//   必ず `--env e2e`（対象は binding `DB` もしくは DB 名 `hiyori-e2e`）で叩くこと。この場合の影響範囲は
+	//   hiyori-e2e のみで本番データには触れない。注意: 位置引数に本番 DB 名 `hiyori` を渡すと `--env e2e` を
+	//   付けても本番 D1 を直撃する（wrangler は DB 名/ binding 名で解決するため）。
 	// - KV（OAUTH_KV）は引き続き本番と同一 ID を共有（テストアカウント単位で閉じるため実害なし・新設不要）。
 	// - DO（HiyoriMcpAgent）は Worker 内で完結するため、e2e 側にも binding + migrations を定義して独立稼働させる。
 	// - cron は空配列を明示（e2e Worker自体に定期ジョブは不要。掃除・TTL削除は本番デプロイ版のみが担当）。
