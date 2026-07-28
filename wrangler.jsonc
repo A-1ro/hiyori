@@ -74,10 +74,14 @@
 	//   env.e2e に書いた分だけが e2e 側で使われる）。
 	//
 	// 設計上の要点:
-	// - D1 / KV は本番と【同一 ID を意図的に共有】する（リソース新設なし・0円）。破壊系 CLI（d1 execute /
-	//   migrations apply / seed）を e2e 向けのつもりで叩いても対象は本番と同じ DB である点に注意。
+	// - D1 は専用DB `hiyori-e2e` を使用（2026-07-26に本番共有から分離）。分離理由: e2eの操作が本番の利用統計
+	//   （アクティビティ集計）に混入していたため。破壊系 CLI（d1 execute / migrations apply / seed）は
+	//   必ず `--env e2e`（対象は binding `DB` もしくは DB 名 `hiyori-e2e`）で叩くこと。この場合の影響範囲は
+	//   hiyori-e2e のみで本番データには触れない。注意: 位置引数に本番 DB 名 `hiyori` を渡すと `--env e2e` を
+	//   付けても本番 D1 を直撃する（wrangler は DB 名/ binding 名で解決するため）。
+	// - KV（OAUTH_KV）は引き続き本番と同一 ID を共有（テストアカウント単位で閉じるため実害なし・新設不要）。
 	// - DO（HiyoriMcpAgent）は Worker 内で完結するため、e2e 側にも binding + migrations を定義して独立稼働させる。
-	// - cron は空配列を明示（本番 D1 を共有しているため、掃除 cron の二重発火を絶対に避ける）。
+	// - cron は空配列を明示（e2e Worker自体に定期ジョブは不要。掃除・TTL削除は本番デプロイ版のみが担当）。
 	"env": {
 		"e2e": {
 			"name": "hiyori-e2e",
@@ -95,9 +99,9 @@
 			"d1_databases": [
 				{
 					"binding": "DB",
-					"database_name": "hiyori",
-					// 本番 D1 と同一 ID（共有・新設しない）
-					"database_id": "4fb101ec-5490-452f-b7fb-a0e8ded356d2",
+					"database_name": "hiyori-e2e",
+					// e2e専用D1（本番から分離。利用統計への混入と誤操作時の被害範囲を防ぐ）
+					"database_id": "dfb132a9-0f57-4661-9830-f3295fc8c589",
 					"migrations_dir": "drizzle/migrations"
 				}
 			],
@@ -120,7 +124,7 @@
 				{ "name": "ANNOUNCE_GET_RATELIMIT", "namespace_id": "1203", "simple": { "limit": 60, "period": 60 } },
 				{ "name": "ANNOUNCE_POST_TOKEN_RATELIMIT", "namespace_id": "1204", "simple": { "limit": 2, "period": 60 } }
 			],
-			// 本番 D1 共有のため cron の二重発火を防ぐ（空配列を明示）
+			// e2e Workerに定期ジョブは不要（空配列を明示）
 			"triggers": { "crons": [] }
 		}
 	}
