@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppHeader } from '../components/AppHeader'
-import { Avatar, Badge, Button, DiscordMark, Icon } from '../components/primitives'
+import { Avatar, Badge, Button, ConfirmDialog, DiscordMark, Icon } from '../components/primitives'
 import { loginUrl, useLogout, useSession, type SessionUser } from '../auth/useSession'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 import {
@@ -185,12 +185,14 @@ function SubscriptionCard({
   onRegenerated: (webcalUrl: string) => void
 }) {
   const [copied, setCopied] = useState(false)
+  // 確認 dialog は「開いた時点の subscription id」を捕捉する（表示中に props が差し替わっても対象がずれない）
+  const [confirm, setConfirm] = useState<{ mode: 'delete' | 'regenerate'; id: string } | null>(null)
   const deleteMut = useMutation({
-    mutationFn: () => deleteSubscription(subscription.id),
+    mutationFn: (subscriptionId: string) => deleteSubscription(subscriptionId),
     onSuccess: onDeleted,
   })
   const regenerateMut = useMutation({
-    mutationFn: () => regenerateSubscription(subscription.id),
+    mutationFn: (subscriptionId: string) => regenerateSubscription(subscriptionId),
     onSuccess: (data) => onRegenerated(data.webcalUrl),
   })
 
@@ -292,10 +294,7 @@ function SubscriptionCard({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => {
-            if (!confirm('購読 URL を再生成しますか？既存のリンクは無効になります。')) return
-            regenerateMut.mutate()
-          }}
+          onClick={() => setConfirm({ mode: 'regenerate', id: subscription.id })}
           disabled={regenerateMut.isPending}
         >
           再生成
@@ -303,16 +302,40 @@ function SubscriptionCard({
         <Button
           variant="danger"
           size="sm"
-          onClick={() => {
-            if (!confirm('この購読を削除しますか？')) return
-            deleteMut.mutate()
-          }}
+          onClick={() => setConfirm({ mode: 'delete', id: subscription.id })}
           disabled={deleteMut.isPending}
           icon={<Icon name="trash" size={14} />}
         >
           削除
         </Button>
       </div>
+      {confirm?.mode === 'regenerate' && (
+        <ConfirmDialog
+          title="購読 URL を再生成しますか？"
+          message="既存のリンクは無効になります。"
+          confirmLabel="再生成"
+          danger={false}
+          onConfirm={() => {
+            const target = confirm.id
+            setConfirm(null)
+            regenerateMut.mutate(target)
+          }}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+      {confirm?.mode === 'delete' && (
+        <ConfirmDialog
+          title="この購読を削除しますか？"
+          message="この操作は取り消せません。"
+          confirmLabel="削除"
+          onConfirm={() => {
+            const target = confirm.id
+            setConfirm(null)
+            deleteMut.mutate(target)
+          }}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
     </div>
   )
 }

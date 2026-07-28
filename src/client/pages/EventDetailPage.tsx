@@ -9,7 +9,7 @@ import {
   ApiError,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
-import { Badge, Button, DiscordMark, Icon } from '../components/primitives'
+import { Badge, Button, ConfirmDialog, DiscordMark, Icon } from '../components/primitives'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 
 const WD = ['日', '月', '火', '水', '木', '金', '土']
@@ -29,6 +29,8 @@ export function EventDetailPage() {
   const [copied, setCopied] = useState(false)
   const [subError, setSubError] = useState<string | undefined>()
   const [subModalUrl, setSubModalUrl] = useState<string | null>(null)
+  // 削除確認は「開いた時点のイベント id」を捕捉する（dialog 表示中に route が変わっても対象がずれない）
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['event', id],
@@ -43,7 +45,7 @@ export function EventDetailPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => deleteEvent(id!),
+    mutationFn: (eventId: string) => deleteEvent(eventId),
     onSuccess: () => navigate('/'),
   })
 
@@ -121,8 +123,7 @@ export function EventDetailPage() {
   }
 
   const handleDelete = () => {
-    if (!confirm('このイベントを削除しますか？参加者の回答もすべて消えます。')) return
-    deleteMutation.mutate()
+    if (id) setConfirmDeleteId(id)
   }
 
   // -----------------------------------------------------------------
@@ -661,6 +662,19 @@ export function EventDetailPage() {
       </main>
       {subModalUrl && (
         <SubscribeModal webcalUrl={subModalUrl} onClose={() => setSubModalUrl(null)} />
+      )}
+      {confirmDeleteId && (
+        <ConfirmDialog
+          title="このイベントを削除しますか？"
+          message="参加者の回答もすべて消えます。この操作は取り消せません。"
+          confirmLabel="削除"
+          onConfirm={() => {
+            const target = confirmDeleteId
+            setConfirmDeleteId(null)
+            deleteMutation.mutate(target)
+          }}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
       )}
     </div>
   )
