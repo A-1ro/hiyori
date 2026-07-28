@@ -241,10 +241,15 @@ export function ConfirmDialog({
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Escape') {
+        // capture 段階で受けて伝播を止め、下層モーダル（SubscribeModal 等）の
+        // Escape リスナーが同じ 1 打鍵で発火して二重に閉じるのを防ぐ
+        e.stopPropagation()
+        onCancel()
+      }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [onCancel])
 
   return (

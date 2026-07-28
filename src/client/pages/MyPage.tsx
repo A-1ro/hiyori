@@ -185,13 +185,14 @@ function SubscriptionCard({
   onRegenerated: (webcalUrl: string) => void
 }) {
   const [copied, setCopied] = useState(false)
-  const [confirmMode, setConfirmMode] = useState<'delete' | 'regenerate' | null>(null)
+  // 確認 dialog は「開いた時点の subscription id」を捕捉する（表示中に props が差し替わっても対象がずれない）
+  const [confirm, setConfirm] = useState<{ mode: 'delete' | 'regenerate'; id: string } | null>(null)
   const deleteMut = useMutation({
-    mutationFn: () => deleteSubscription(subscription.id),
+    mutationFn: (subscriptionId: string) => deleteSubscription(subscriptionId),
     onSuccess: onDeleted,
   })
   const regenerateMut = useMutation({
-    mutationFn: () => regenerateSubscription(subscription.id),
+    mutationFn: (subscriptionId: string) => regenerateSubscription(subscriptionId),
     onSuccess: (data) => onRegenerated(data.webcalUrl),
   })
 
@@ -293,7 +294,7 @@ function SubscriptionCard({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setConfirmMode('regenerate')}
+          onClick={() => setConfirm({ mode: 'regenerate', id: subscription.id })}
           disabled={regenerateMut.isPending}
         >
           再生成
@@ -301,36 +302,38 @@ function SubscriptionCard({
         <Button
           variant="danger"
           size="sm"
-          onClick={() => setConfirmMode('delete')}
+          onClick={() => setConfirm({ mode: 'delete', id: subscription.id })}
           disabled={deleteMut.isPending}
           icon={<Icon name="trash" size={14} />}
         >
           削除
         </Button>
       </div>
-      {confirmMode === 'regenerate' && (
+      {confirm?.mode === 'regenerate' && (
         <ConfirmDialog
           title="購読 URL を再生成しますか？"
           message="既存のリンクは無効になります。"
           confirmLabel="再生成"
           danger={false}
           onConfirm={() => {
-            setConfirmMode(null)
-            regenerateMut.mutate()
+            const target = confirm.id
+            setConfirm(null)
+            regenerateMut.mutate(target)
           }}
-          onCancel={() => setConfirmMode(null)}
+          onCancel={() => setConfirm(null)}
         />
       )}
-      {confirmMode === 'delete' && (
+      {confirm?.mode === 'delete' && (
         <ConfirmDialog
           title="この購読を削除しますか？"
           message="この操作は取り消せません。"
           confirmLabel="削除"
           onConfirm={() => {
-            setConfirmMode(null)
-            deleteMut.mutate()
+            const target = confirm.id
+            setConfirm(null)
+            deleteMut.mutate(target)
           }}
-          onCancel={() => setConfirmMode(null)}
+          onCancel={() => setConfirm(null)}
         />
       )}
     </div>

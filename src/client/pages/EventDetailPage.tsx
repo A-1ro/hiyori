@@ -29,7 +29,8 @@ export function EventDetailPage() {
   const [copied, setCopied] = useState(false)
   const [subError, setSubError] = useState<string | undefined>()
   const [subModalUrl, setSubModalUrl] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  // 削除確認は「開いた時点のイベント id」を捕捉する（dialog 表示中に route が変わっても対象がずれない）
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['event', id],
@@ -44,7 +45,7 @@ export function EventDetailPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: () => deleteEvent(id!),
+    mutationFn: (eventId: string) => deleteEvent(eventId),
     onSuccess: () => navigate('/'),
   })
 
@@ -122,7 +123,7 @@ export function EventDetailPage() {
   }
 
   const handleDelete = () => {
-    setConfirmDelete(true)
+    if (id) setConfirmDeleteId(id)
   }
 
   // -----------------------------------------------------------------
@@ -662,16 +663,17 @@ export function EventDetailPage() {
       {subModalUrl && (
         <SubscribeModal webcalUrl={subModalUrl} onClose={() => setSubModalUrl(null)} />
       )}
-      {confirmDelete && (
+      {confirmDeleteId && (
         <ConfirmDialog
           title="このイベントを削除しますか？"
           message="参加者の回答もすべて消えます。この操作は取り消せません。"
           confirmLabel="削除"
           onConfirm={() => {
-            setConfirmDelete(false)
-            deleteMutation.mutate()
+            const target = confirmDeleteId
+            setConfirmDeleteId(null)
+            deleteMutation.mutate(target)
           }}
-          onCancel={() => setConfirmDelete(false)}
+          onCancel={() => setConfirmDeleteId(null)}
         />
       )}
     </div>
