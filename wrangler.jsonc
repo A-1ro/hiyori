@@ -3,6 +3,9 @@
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "hiyori",
 	"main": "src/server/index.tsx",
+	// 本番は custom domain (hiyori-schedule.com) のみ公開。workers.dev を明示無効に
+	// しないと、CI の wrangler deploy がデフォルトで workers.dev を再有効化してしまう。
+	"workers_dev": false,
 	"compatibility_date": "2026-05-01",
 	"compatibility_flags": [
 		"nodejs_compat"
