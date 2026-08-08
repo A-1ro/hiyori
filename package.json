@@ -19,14 +19,14 @@
     "discord:register": "node --env-file-if-exists=.dev.vars scripts/register-discord-commands.mjs"
   },
   "dependencies": {
-    "@cloudflare/workers-oauth-provider": "^0.8.3",
+    "@cloudflare/workers-oauth-provider": "^0.10.0",
     "@hono/zod-validator": "^0.9.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@nanokajs/core": "1.9.0",
     "@tanstack/react-query": "^5.101.4",
     "agents": "^0.20.1",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.32",
+    "hono": "^4.13.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router": "^8.3.0",
@@ -34,24 +34,24 @@
     "zod": "^3.23.0 || ^4.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.6",
-    "@cloudflare/vite-plugin": "^1.48.0",
-    "@cloudflare/vitest-pool-workers": "^0.19.0",
+    "@biomejs/biome": "2.5.7",
+    "@cloudflare/vite-plugin": "^1.51.0",
+    "@cloudflare/vitest-pool-workers": "^0.20.2",
     "@cloudflare/workers-types": "^4.20260702.1",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^26.1.2",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^6.0.4",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "drizzle-kit": "^0.31.10",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "vitest": "^4.1.10",
-    "wrangler": "^4.115.0"
+    "wrangler": "^4.119.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
