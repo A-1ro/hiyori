@@ -16,6 +16,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 | `pnpm build` | Vite production build → emits client assets to `dist/client/` and Worker bundle to `dist/hiyori/` |
 | `pnpm deploy` | `vite build && wrangler deploy` |
 | `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm typecheck:tests` | Typecheck server tests with `tsconfig.test.json` |
 | `pnpm db:generate` | `nanoka generate` (models → `drizzle/schema.ts`) then `drizzle-kit generate` (schema → SQL migration in `drizzle/migrations/`) — **run this after any change to `src/models/*.ts`** |
 | `pnpm db:migrate:local` | Apply migrations to local D1 |
 | `pnpm db:migrate:remote` | Apply migrations to remote D1 (production) |
@@ -60,9 +61,9 @@ The React app (`src/client/`) mounts (`createRoot(...).render(...)`) into `<div 
 
 `src/shared/api.ts` exposes `createApi(baseUrl)` returning `hc<AppType>(baseUrl)`. The `import type { AppType } from '../server/index'` is type-only (enforced by `verbatimModuleSyntax: true`) — no server code lands in the client bundle.
 
-### Known sharp edge: SSR catch-all eats unknown API paths
+### Unknown API paths return JSON
 
-The current `app.get('*')` catch-all returns the SSR HTML shell for **any** unmatched GET, including `/api/<typo>`. That breaks RPC error handling (clients get HTML when expecting JSON). When adding the first real API routes, also add path-aware handling — either narrow the SSR catch-all to non-`/api` paths, or add an `app.notFound()` that returns JSON for `c.req.path.startsWith('/api/')`.
+`app.notFound()` returns a JSON 404 for unmatched `/api/*` paths and non-GET requests. Other unmatched GET paths receive the HTML shell for client-side routing. Preserve this distinction so RPC clients do not receive HTML errors.
 
 ### Authentication (F-06)
 
@@ -111,6 +112,9 @@ docs/requirements.md       Product decisions, data model rationale, open questio
 ```
 
 ## Versioning notes
+
+- Workspace development requires Node **22.22+ (22.x) or 24.11+** and **pnpm 10.33.2**. Use the pinned package manager so dependency build-script permissions are honored.
+- Security overrides in `package.json` constrain affected transitive versions. The esbuild override intentionally updates legacy `@esbuild-kit/core-utils` (0.18.20), `tsx` (0.25.12), `tsup` (0.27.3), and 0.28.0 to 0.28.1; these are build-time tools, so verify both builds and `pnpm db:generate` as well as tests before changing it. Other overrides stay within the existing major (and sharp minor). Revalidate `pnpm audit` before changing or removing overrides.
 
 - **Vite 8** (not 7) — `@vitejs/plugin-react@6` requires it. The requirements doc still says "Vite 7+" which 8 satisfies; don't downgrade.
 - **React 19**, **Tailwind v4** (`@tailwindcss/vite` plugin, no `tailwind.config.ts` needed — Tailwind v4 reads CSS-imported config).

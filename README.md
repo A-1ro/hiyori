@@ -24,7 +24,7 @@ Discord 連携の **日程調整 Web ツール**。複数人で候補日を出�
 |---|---|
 | ランタイム | Cloudflare Workers（`nodejs_compat`） |
 | サーバー | Hono 4（API ＋ SSR シェル）、エントリ `src/server/index.tsx` |
-| クライアント | React 19（CSR）、React Router 7、TanStack Query |
+| クライアント | React 19（CSR）、React Router 8、TanStack Query |
 | ビルド | Vite 8 ＋ `@cloudflare/vite-plugin`（Worker をローカル miniflare で実行・HMR） |
 | DB | Cloudflare D1（SQLite）＋ Drizzle ORM |
 | モデル定義 | [`@nanokajs/core`](https://www.npmjs.com/package/@nanokajs/core)（`src/models/*.ts` から Drizzle スキーマを生成） |
@@ -37,7 +37,7 @@ Discord 連携の **日程調整 Web ツール**。複数人で候補日を出�
 
 ### 前提
 
-- Node.js 20+ / **pnpm**
+- Node.js **22.22+（22.x）または24.11以降** / **pnpm 10.33.2**（`packageManager` 指定に従う）
 - Cloudflare アカウント（`wrangler` ログイン済み）
 
 ### セットアップ
@@ -68,6 +68,9 @@ pnpm dev
 | `pnpm build` | 本番ビルド（クライアント → `dist/client/`、Worker → `dist/hiyori/`） |
 | `pnpm deploy` | `vite build && wrangler deploy` |
 | `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm typecheck:tests` | サーバーテストの型チェック（`tsconfig.test.json`） |
+| `pnpm test:client` | React コンポーネントのテスト（jsdom） |
+| `pnpm lint` | Biome による静的チェック |
 | `pnpm test` | `vitest run`（Workers プールでテスト） |
 | `pnpm db:generate` | `nanoka generate`（モデル → `drizzle/schema.ts`）→ `drizzle-kit generate`（SQL マイグレーション）。**`src/models/*.ts` を変更したら必ず実行** |
 | `pnpm db:migrate:local` | ローカル D1 にマイグレーション適用 |

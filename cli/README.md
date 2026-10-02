@@ -12,7 +12,7 @@ npm install -g hiyori-cli
 npx hiyori-cli --help
 ```
 
-Requires **Node.js >= 22.12**.
+Requires **Node.js >= 22.12** to run the CLI. Building or testing the full workspace requires **Node.js 22.22+ (22.x) or 24.11+** and **pnpm 10.33.2**, as specified by the root package.
 
 ## Quick start
 
