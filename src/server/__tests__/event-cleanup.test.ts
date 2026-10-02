@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, assert } from 'vitest'
 import { env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
 import {
@@ -233,6 +233,7 @@ describe('cleanupExpiredEvents', () => {
     await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
     const payloads = await auditPayloads()
     expect(payloads).toHaveLength(1)
+    assert(payloads[0], 'Expected one audit log payload')
     expect(payloads[0].retentionDays).toBe(RETENTION_DAYS)
     expect(payloads[0].deletedCount).toBe(1)
     expect(payloads[0].sampleIds).toEqual([eventId])
@@ -283,6 +284,7 @@ describe('cleanupExpiredEvents', () => {
     // 監査ログの件数・サンプルも実際に消えたものと一致する
     const payloads = await auditPayloads()
     expect(payloads).toHaveLength(1)
+    assert(payloads[0], 'Expected one audit log payload')
     expect(payloads[0].deletedCount).toBe(1)
     expect(payloads[0].sampleIds).toEqual([stillExpired])
   })
