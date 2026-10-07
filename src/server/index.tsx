@@ -26,9 +26,10 @@ import {
 import { candidateFields, candidateTableName } from '../models/candidate'
 import { decisionFields, decisionTableName } from '../models/decision'
 import { eventFields, eventTableName } from '../models/event'
+import { eventInviteFields, eventInviteTableName } from '../models/eventInvite'
 import { participantFields, participantTableName } from '../models/participant'
 import { voteFields, voteTableName } from '../models/vote'
-import { announcement, calendar_subscriptions, candidates, decisions, events, participants, votes, users, sessions, feedback } from '../../drizzle/schema'
+import { announcement, calendar_subscriptions, candidates, decisions, event_invites, events, participants, votes, users, sessions, feedback } from '../../drizzle/schema'
 import { announcementFields, announcementTableName } from '../models/announcement'
 import { feedbackFields, feedbackTableName } from '../models/feedback'
 import { userTableName, userFields } from '../models/user'
@@ -96,6 +97,7 @@ const createEventBody = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   defaultDurationMinutes: z.number().int().min(1).max(60 * 24),
+  visibility: z.enum(['public', 'invite_only']).default('public'),
   deadline: z.string().datetime().optional(),
   timezone: z.string().max(64).optional(),
   // /hiyori new から発行された HMAC 署名トークン。直接 channel ID を受け付けない。
@@ -114,6 +116,7 @@ const createEventBody = z.object({
 const patchEventBody = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
+  visibility: z.enum(['public', 'invite_only']).optional(),
   deadline: z.string().datetime().optional().nullable(),
   defaultDurationMinutes: z.number().int().min(1).max(60 * 24).optional(),
   timezone: z.string().max(64).optional(),
@@ -124,6 +127,10 @@ const patchEventBody = z.object({
 const addCandidateBody = z.object({
   startAt: z.string().datetime(),
   endAt: z.string().datetime().optional(),
+})
+
+const eventInviteBody = z.object({
+  discordUserId: z.string().regex(/^\d{17,20}$/, 'Invalid Discord user ID'),
 })
 
 // 運営お知らせ（層1）。カテゴリ・ステータスはホワイトリスト、本文は必須＋最大長。
@@ -256,6 +263,7 @@ export const buildApp = (env: Env) => {
   const app = nanoka<{ Bindings: Env }>(d1Adapter(env.DB))
 
   const Event = app.model(eventTableName, eventFields)
+  const EventInvite = app.model(eventInviteTableName, eventInviteFields)
   const Candidate = app.model(candidateTableName, candidateFields)
   const Participant = app.model(participantTableName, participantFields)
   const Vote = app.model(voteTableName, voteFields)
@@ -266,6 +274,30 @@ export const buildApp = (env: Env) => {
   const Session = app.model(sessionTableName, sessionFields)
   const Feedback = app.model(feedbackTableName, feedbackFields)
   const Announcement = app.model(announcementTableName, announcementFields)
+
+  type EventRow = Awaited<ReturnType<typeof Event.findOne>>
+
+  // Public events preserve the MVP behavior. Invite-only events require the organizer
+  // or an active Discord-user-ID invite; this helper is reused by every event read path.
+  async function isEventVisibleTo(eventRow: NonNullable<EventRow>, discordUserId?: string | null): Promise<boolean> {
+    if (eventRow.visibility !== 'invite_only') return true
+    if (!discordUserId) return false
+    if (eventRow.organizerDiscordId === discordUserId) return true
+    const rows = await app.db
+      .select({ id: event_invites.id })
+      .from(event_invites)
+      .where(and(eq(event_invites.eventId, eventRow.id), eq(event_invites.discordUserId, discordUserId)))
+      .limit(1)
+    return rows.length > 0
+  }
+
+  async function eventAccess(c: Context<{ Bindings: Env }>, eventRow: NonNullable<EventRow>) {
+    const session = await loadSession(c, app, sessions, users)
+    const allowed = await isEventVisibleTo(eventRow, session?.discordUserId)
+    return { session, allowed }
+  }
+
+  const eventNotFound = (c: Context<{ Bindings: Env }>) => c.json({ error: 'Not Found' }, 404)
 
   // 読み出しAPI(GET/PATCH /api/feedback)の admin トークン照合。
   // 未設定なら false（＝常に 403）で安全側に倒す。トークンはハッシュ同士の固定長比較で照合し、
@@ -961,6 +993,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             title: body.title,
             description: body.description ?? null,
             defaultDurationMinutes: body.defaultDurationMinutes,
+            visibility: body.visibility,
             status: 'open',
             deadline: body.deadline ? new Date(body.deadline) : null,
             timezone: body.timezone ?? 'UTC',
@@ -974,7 +1007,9 @@ window.__vite_plugin_react_preamble_installed__ = true
         if (!eventRow) throw new HTTPException(500, { message: 'Internal Server Error' })
         const candidateRows = await Candidate.findMany({ where: { eventId }, limit: 1000 })
 
-        if (eventRow.discordChannelId) {
+        // Do not post a private event's title/description into a channel whose membership
+        // is not represented by the Hiyori invite list.
+        if (eventRow.discordChannelId && eventRow.visibility !== 'invite_only') {
           const workerHost = new URL(c.req.url).host
           c.executionCtx.waitUntil(
             announceEventCreated(
@@ -1003,6 +1038,8 @@ window.__vite_plugin_react_preamble_installed__ = true
       const id = c.req.param('id')
       const eventRow = await Event.findOne(id)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+      const access = await eventAccess(c, eventRow)
+      if (!access.allowed) return eventNotFound(c)
 
       const candidateRows = await Candidate.findMany({
         where: { eventId: id },
@@ -1014,6 +1051,59 @@ window.__vite_plugin_react_preamble_installed__ = true
         event: Event.toResponse(eventRow),
         candidates: Candidate.toResponseMany(candidateRows),
       })
+    })
+    .get('/api/events/:id/invites', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
+      const eventRow = await Event.findOne(c.req.param('id'))
+      if (!eventRow) return eventNotFound(c)
+      if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
+      const rows = await EventInvite.findMany({
+        where: { eventId: eventRow.id },
+        orderBy: { column: 'createdAt', direction: 'asc' },
+        limit: 500,
+      })
+      return c.json({ invites: rows.map((row) => ({
+        id: row.id,
+        eventId: row.eventId,
+        discordUserId: row.discordUserId,
+        createdAt: row.createdAt.toISOString(),
+      })) })
+    })
+    .post(
+      '/api/events/:id/invites',
+      zValidator('json', eventInviteBody, (result, c) => {
+        if (!result.success) return c.json({ error: 'Invalid request', issues: result.error.issues }, 400)
+      }),
+      async (c) => {
+        const session = await requireSession(c, app, sessions, users)
+        const eventRow = await Event.findOne(c.req.param('id'))
+        if (!eventRow) return eventNotFound(c)
+        if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
+        const { discordUserId } = c.req.valid('json')
+        const existing = await EventInvite.findMany({ where: { eventId: eventRow.id, discordUserId }, limit: 1 })
+        if (existing.length > 0) return c.json({ invite: existing[0] }, 200)
+        const id = crypto.randomUUID()
+        await app.db.insert(event_invites).values({
+          id,
+          eventId: eventRow.id,
+          discordUserId,
+          createdAt: new Date(),
+        })
+        const invite = await EventInvite.findOne(id)
+        if (!invite) throw new HTTPException(500, { message: 'Invite creation failed' })
+        return c.json({ invite }, 201)
+      },
+    )
+    .delete('/api/events/:id/invites/:discordUserId', async (c) => {
+      const session = await requireSession(c, app, sessions, users)
+      const eventRow = await Event.findOne(c.req.param('id'))
+      if (!eventRow) return eventNotFound(c)
+      if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
+      const discordUserId = c.req.param('discordUserId')
+      const rows = await EventInvite.findMany({ where: { eventId: eventRow.id, discordUserId }, limit: 1 })
+      if (rows.length === 0) return eventNotFound(c)
+      await EventInvite.delete(rows[0]!.id)
+      return new Response(null, { status: 204 })
     })
     .patch(
       '/api/events/:id',
@@ -1035,6 +1125,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         const updateData: Omit<Partial<typeof eventRow>, 'deadline'> & { deadline?: Date | null } = {}
         if (body.title !== undefined) updateData.title = body.title
         if (body.description !== undefined) updateData.description = body.description
+        if (body.visibility !== undefined) updateData.visibility = body.visibility
         // deadline は任意項目。null / 空を送ったら「締切なし」として NULL 保存する。
         // undefined を渡すと drizzle が SET 句から除外し前値が残る（＝締切を消せない）ため、
         // 明示的に null を代入してカラムをクリアする。
@@ -1085,6 +1176,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       await app.batch([
         app.db.delete(decisions).where(eq(decisions.eventId, id)),
         ...voteDeletes,
+        app.db.delete(event_invites).where(eq(event_invites.eventId, id)),
         app.db.delete(participants).where(eq(participants.eventId, id)),
         app.db.delete(candidates).where(eq(candidates.eventId, id)),
         app.db.delete(events).where(eq(events.id, id)),
@@ -1155,6 +1247,9 @@ window.__vite_plugin_react_preamble_installed__ = true
         const eventRow = await Event.findOne(eventId)
         if (!eventRow) return c.json({ error: 'Not Found' }, 404)
 
+        const access = await eventAccess(c, eventRow)
+        if (!access.allowed) return eventNotFound(c)
+
         if (eventRow.deadline && new Date() > eventRow.deadline) {
           return c.json({ error: 'Deadline passed' }, 403)
         }
@@ -1162,7 +1257,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         const body = c.req.valid('json')
 
         if (body.kind === 'discord') {
-          const session = await requireSession(c, app, sessions, users)
+          const session = access.session ?? await requireSession(c, app, sessions, users)
           const existing = await Participant.findMany({
             where: { eventId, discordUserId: session.discordUserId },
             limit: 1,
@@ -1188,6 +1283,9 @@ window.__vite_plugin_react_preamble_installed__ = true
         }
 
         // kind === 'guest'
+        if (eventRow.visibility === 'invite_only') {
+          return c.json({ error: 'Invite-only events require Discord login' }, 403)
+        }
         const cookieName = `${GUEST_COOKIE_PREFIX}${eventId}`
         const existingToken = getCookie(c, cookieName)
         if (existingToken) {
@@ -1237,6 +1335,8 @@ window.__vite_plugin_react_preamble_installed__ = true
         const eventId = c.req.param('id')
         const eventRow = await Event.findOne(eventId)
         if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+        const access = await eventAccess(c, eventRow)
+        if (!access.allowed) return eventNotFound(c)
 
         if (eventRow.deadline && new Date() > eventRow.deadline) {
           return c.json({ error: 'Deadline passed' }, 403)
@@ -1291,6 +1391,8 @@ window.__vite_plugin_react_preamble_installed__ = true
       const eventId = c.req.param('id')
       const eventRow = await Event.findOne(eventId)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+      const access = await eventAccess(c, eventRow)
+      if (!access.allowed) return eventNotFound(c)
 
       const participantRow = await resolveParticipantByAnyAuth(c, eventId)
 
@@ -1308,6 +1410,8 @@ window.__vite_plugin_react_preamble_installed__ = true
       const id = c.req.param('id')
       const eventRow = await Event.findOne(id)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+      const access = await eventAccess(c, eventRow)
+      if (!access.allowed) return eventNotFound(c)
 
       const [candidateRows, participantRows] = await Promise.all([
         Candidate.findMany({ where: { eventId: id }, orderBy: { column: 'startAt', direction: 'asc' }, limit: 1000 }),
@@ -1448,7 +1552,9 @@ window.__vite_plugin_react_preamble_installed__ = true
       const id = c.req.param('id')
       const eventRow = await Event.findOne(id)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
-      const s = await loadSession(c, app, sessions, users)
+      const access = await eventAccess(c, eventRow)
+      if (!access.allowed) return eventNotFound(c)
+      const s = access.session
       if (!s) return c.json({ isOrganizer: false })
       const isOrganizer = eventRow.organizerDiscordId === s.discordUserId
       return c.json({ isOrganizer })
@@ -1467,7 +1573,11 @@ window.__vite_plugin_react_preamble_installed__ = true
         where: { discordUserId: did },
         limit: 500,
       })
-      const participatedEventIds = [...new Set(myParticipants.map((p) => p.eventId))]
+      const myInvites = await EventInvite.findMany({ where: { discordUserId: did }, limit: 500 })
+      const participatedEventIds = [...new Set([
+        ...myParticipants.map((p) => p.eventId),
+        ...myInvites.map((invite) => invite.eventId),
+      ])]
 
       let participating: typeof organized = []
       if (participatedEventIds.length > 0) {
@@ -1483,6 +1593,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             title: e.title,
             description: e.description ?? undefined,
             defaultDurationMinutes: e.defaultDurationMinutes,
+            visibility: e.visibility,
             status: e.status,
             deadline: e.deadline ?? undefined,
             timezone: e.timezone,
@@ -1594,6 +1705,8 @@ window.__vite_plugin_react_preamble_installed__ = true
       const id = c.req.param('id')
       const eventRow = await Event.findOne(id)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+      const access = await eventAccess(c, eventRow)
+      if (!access.allowed) return eventNotFound(c)
 
       // 取消済みも含めて出力（SEQUENCE+STATUS:CANCELLED が iCal クライアントに削除指示を伝える）
       const decisionRows = await app.db.select().from(decisions)
@@ -1662,7 +1775,11 @@ window.__vite_plugin_react_preamble_installed__ = true
       for (const d of decisionRows) {
         const ev = await Event.findOne(d.eventId)
         const cand = await Candidate.findOne(d.candidateId)
-        if (!ev || !cand) continue
+        // The user-all feed is a public calendar endpoint.  Do not put
+        // invite-only events into it, even when the feed owner is currently
+        // invited: the token may be copied into an external calendar service
+        // and its access cannot be scoped per event.
+        if (!ev || ev.visibility === 'invite_only' || !cand) continue
         vevents.push(eventToVEvent({
           event: { id: ev.id, title: ev.title, description: ev.description },
           decision: {

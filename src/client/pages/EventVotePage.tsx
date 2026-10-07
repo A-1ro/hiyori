@@ -338,6 +338,7 @@ export function EventVotePage() {
   }
 
   const { event } = eventData
+  const isInviteOnly = event.visibility === 'invite_only'
 
   const setVote = (candidateId: string, choice: VoteChoice) => {
     setVotes((prev) => ({ ...prev, [candidateId]: choice }))
@@ -452,7 +453,7 @@ export function EventVotePage() {
                 </div>
               </div>
             </div>
-          ) : asGuest ? (
+          ) : !isInviteOnly && asGuest ? (
             <div>
               <Field label="お名前（ゲスト）" hint="匿名では回答できません">
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -512,9 +513,11 @@ export function EventVotePage() {
               >
                 参加する
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setAsGuest(true)}>
-                名前を変える
-              </Button>
+              {!isInviteOnly && (
+                <Button variant="ghost" size="sm" onClick={() => setAsGuest(true)}>
+                  名前を変える
+                </Button>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -538,7 +541,7 @@ export function EventVotePage() {
                 <DiscordMark size={19} />
                 Discord でログイン
               </a>
-              <button
+              {!isInviteOnly && <button
                 type="button"
                 onClick={() => setAsGuest(true)}
                 style={{
@@ -553,7 +556,12 @@ export function EventVotePage() {
                 }}
               >
                 ログインなしで名前を入れて回答する
-              </button>
+              </button>}
+              {isInviteOnly && (
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--color-fg3)', textAlign: 'center' }}>
+                  招待限定イベントのため、ゲスト参加は利用できません。
+                </p>
+              )}
             </div>
           )}
           {registerError && (

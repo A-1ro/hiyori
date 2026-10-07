@@ -6,6 +6,7 @@ import { candidateFields, candidateTableName } from './src/models/candidate'
 import { cliAuthRequestFields, cliAuthRequestTableName } from './src/models/cliAuthRequest'
 import { decisionFields, decisionTableName } from './src/models/decision'
 import { eventFields, eventTableName } from './src/models/event'
+import { eventInviteFields, eventInviteTableName } from './src/models/eventInvite'
 import { feedbackFields, feedbackTableName } from './src/models/feedback'
 import { participantFields, participantTableName } from './src/models/participant'
 import { sessionFields, sessionTableName } from './src/models/session'
@@ -15,6 +16,7 @@ import { voteFields, voteTableName } from './src/models/vote'
 export default defineConfig({
   models: [
     { name: eventTableName, fields: eventFields },
+    { name: eventInviteTableName, fields: eventInviteFields },
     { name: candidateTableName, fields: candidateFields },
     { name: participantTableName, fields: participantFields },
     { name: voteTableName, fields: voteFields },

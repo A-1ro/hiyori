@@ -17,6 +17,7 @@ export function EventCreatePage() {
         title: payload.title,
         description: payload.description,
         defaultDurationMinutes: payload.defaultDurationMinutes,
+        visibility: payload.visibility,
         deadline: payload.deadline,
         timezone: payload.timezone,
         discordChannelToken: payload.discordChannelToken,

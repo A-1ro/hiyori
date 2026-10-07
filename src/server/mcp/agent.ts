@@ -143,7 +143,7 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
       'hiyori_get_event',
       {
         description:
-          'イベント 1 件の詳細（イベント情報 + 候補日時 + あなたが主催者か）を返す。公開読み取り。',
+          'イベント 1 件の詳細（イベント情報 + 候補日時 + あなたが主催者か）を返す。公開イベントまたは本人が許可されたイベントのみ。',
         inputSchema: { eventId: z.string().min(1).describe('イベント ID') },
         annotations: { title: 'Get event', readOnlyHint: true, openWorldHint: false },
       },
@@ -169,7 +169,7 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
       'hiyori_tally',
       {
         description:
-          '投票の集計（候補ごとの yes/maybe/no と参加者ごとの○△×表、確定状況）を返す。公開読み取り。',
+          '投票の集計（候補ごとの yes/maybe/no と参加者ごとの○△×表、確定状況）を返す。公開イベントまたは本人が許可されたイベントのみ。',
         inputSchema: { eventId: z.string().min(1).describe('イベント ID') },
         annotations: { title: 'Tally votes', readOnlyHint: true, openWorldHint: false },
       },
@@ -206,7 +206,7 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
       'hiyori_get_ics',
       {
         description:
-          '確定済みイベントの .ics（iCalendar）本文をテキストで返す。未確定なら 404 エラー。公開読み取り。',
+          '確定済みイベントの .ics（iCalendar）本文をテキストで返す。未確定なら 404 エラー。公開イベントまたは本人が許可されたイベントのみ。',
         inputSchema: { eventId: z.string().min(1).describe('イベント ID') },
         annotations: { title: 'Get .ics', readOnlyHint: true, openWorldHint: false },
       },
@@ -250,6 +250,7 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
             .max(365)
             .describe('候補日時スロット'),
           description: z.string().max(2000).optional().describe('説明（任意）'),
+          visibility: z.enum(['public', 'invite_only']).optional().describe('公開範囲。省略時は public。招待限定イベントは後から Discord user ID を招待する。'),
           deadline: z.string().datetime().optional().describe('投票締切（ISO8601, 任意）'),
           timezone: z.string().max(64).optional().describe('表示タイムゾーン（IANA, 任意）'),
         },

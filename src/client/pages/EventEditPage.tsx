@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -6,6 +7,9 @@ import {
   addCandidate,
   deleteCandidate,
   ApiError,
+  fetchEventInvites,
+  addEventInvite,
+  removeEventInvite,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
 import { Button } from '../components/primitives'
@@ -33,6 +37,7 @@ export function EventEditPage() {
         title: payload.title,
         description: payload.description,
         defaultDurationMinutes: payload.defaultDurationMinutes,
+        visibility: payload.visibility,
         deadline: payload.deadline ?? null,
         timezone: payload.timezone,
         // Discord 連携の付け替え/解除は編集 UI から行わない（/hiyori new 経由で再作成）
@@ -117,7 +122,74 @@ export function EventEditPage() {
           errorMessage={mutation.error?.message}
           onSubmit={(payload) => mutation.mutate(payload)}
         />
+        <EventInviteManager eventId={id!} />
       </main>
     </div>
+  )
+}
+
+function EventInviteManager({ eventId }: { eventId: string }) {
+  const [discordUserId, setDiscordUserId] = useState('')
+  const queryClient = useQueryClient()
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['eventInvites', eventId],
+    queryFn: () => fetchEventInvites(eventId),
+  })
+  const addMutation = useMutation({
+    mutationFn: () => addEventInvite(eventId, discordUserId.trim()),
+    onSuccess: () => {
+      setDiscordUserId('')
+      queryClient.invalidateQueries({ queryKey: ['eventInvites', eventId] })
+    },
+  })
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => removeEventInvite(eventId, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['eventInvites', eventId] }),
+  })
+
+  return (
+    <section
+      style={{
+        marginTop: 18,
+        padding: 20,
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      <h3 style={{ margin: 0, fontSize: 17, color: 'var(--color-fg1)' }}>招待する Discord ユーザー</h3>
+      <p style={{ margin: '6px 0 14px', fontSize: 13, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
+        招待限定イベントでは、ここに登録した Discord user ID の本人だけが閲覧・回答できます。公開イベントでも先に登録しておけます。
+      </p>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          value={discordUserId}
+          onChange={(e) => setDiscordUserId(e.target.value)}
+          placeholder="Discord user ID（17〜20桁）"
+          inputMode="numeric"
+          style={{ flex: 1, minWidth: 0, padding: '10px 12px', border: '1px solid var(--color-border-strong)', borderRadius: 'var(--radius-sm)', background: 'var(--color-surface)', color: 'var(--color-fg1)' }}
+        />
+        <Button
+          variant="secondary"
+          onClick={() => addMutation.mutate()}
+          disabled={!/^\d{17,20}$/.test(discordUserId.trim()) || addMutation.isPending}
+        >
+          追加
+        </Button>
+      </div>
+      {addMutation.error && <p style={{ margin: '8px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>招待の追加に失敗しました。</p>}
+      {error && <p style={{ margin: '12px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>招待一覧を読み込めません。</p>}
+      {!isLoading && data?.invites.length === 0 && <p style={{ margin: '14px 0 0', color: 'var(--color-fg3)', fontSize: 13 }}>招待はまだありません。</p>}
+      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+        {data?.invites.map((invite) => (
+          <div key={invite.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)' }}>
+            <code style={{ flex: 1, fontSize: 13, color: 'var(--color-fg1)' }}>{invite.discordUserId}</code>
+            <Button variant="ghost" size="sm" onClick={() => removeMutation.mutate(invite.discordUserId)} disabled={removeMutation.isPending}>
+              取消
+            </Button>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
