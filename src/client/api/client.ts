@@ -53,6 +53,7 @@ export interface CreateEventInput {
   description?: string
   defaultDurationMinutes: number
   visibility?: 'public' | 'invite_only'
+  invitedDiscordUserIds?: string[]
   deadline?: string
   timezone?: string
   // /hiyori new スラッシュコマンド由来の HMAC 署名トークン。手動入力は受け付けない。

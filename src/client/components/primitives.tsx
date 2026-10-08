@@ -188,6 +188,7 @@ export function Button({
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={disabled ? undefined : onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => {

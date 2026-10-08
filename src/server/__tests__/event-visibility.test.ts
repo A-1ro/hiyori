@@ -93,6 +93,76 @@ beforeEach(async () => {
 })
 
 describe('公開／招待限定イベントの認可', () => {
+  const newEventBody = (invitedDiscordUserIds: string[]) => ({
+    title: `initial-invites-${crypto.randomUUID()}`,
+    visibility: 'invite_only',
+    invitedDiscordUserIds,
+    defaultDurationMinutes: 60,
+    candidates: [{ startAt: '2026-11-01T10:00:00.000Z', endAt: '2026-11-01T11:00:00.000Z' }],
+  })
+
+  it('作成時に招待を保存し、重複をまとめて招待済み本人だけに即時アクセスを許可する', async () => {
+    const organizer = await loginAs(ORGANIZER_ID)
+    const invited = await loginAs(INVITED_ID)
+    const other = await loginAs(OTHER_ID)
+    const response = await post('/api/events', newEventBody([INVITED_ID, ` ${INVITED_ID} `]), { Cookie: organizer })
+    expect(response.status).toBe(201)
+    const { event } = await response.json() as { event: { id: string } }
+    const list = await jsonFetch(`/api/events/${event.id}/invites`, { headers: { Cookie: organizer } })
+    const { invites } = await list.json() as { invites: Array<{ discordUserId: string }> }
+    expect(invites.map((invite) => invite.discordUserId)).toEqual([INVITED_ID])
+    expect((await jsonFetch(`/api/events/${event.id}`, { headers: { Cookie: invited } })).status).toBe(200)
+    expect((await jsonFetch(`/api/events/${event.id}`, { headers: { Cookie: other } })).status).toBe(404)
+    expect((await jsonFetch(`/api/events/${event.id}`)).status).toBe(404)
+    expect((await post(`/api/events/${event.id}/participants`, { kind: 'discord', displayName: 'invited' }, { Cookie: invited })).status).toBe(201)
+  })
+
+  it('作成時の招待はログインを必要とする', async () => {
+    expect((await post('/api/events', newEventBody([INVITED_ID]))).status).toBe(401)
+  })
+
+  it('不正なID・上限超過・公開イベントへの招待は作成前に拒否する', async () => {
+    const organizer = await loginAs(ORGANIZER_ID)
+    const db = (env as { DB: D1Database }).DB
+    for (const body of [
+      newEventBody([INVITED_ID, 'username']),
+      newEventBody(['1234567890123456']),
+      newEventBody(['123456789012345678901']),
+      newEventBody(Array.from({ length: 501 }, (_, i) => `${10000000000000000n + BigInt(i)}`)),
+      { ...newEventBody([INVITED_ID]), visibility: 'public' },
+    ]) {
+      expect((await post('/api/events', body, { Cookie: organizer })).status).toBe(400)
+      const row = await db.prepare('SELECT COUNT(*) AS count FROM events WHERE title = ?').bind(body.title).first<{ count: number }>()
+      expect(row?.count).toBe(0)
+    }
+  })
+
+  it('500人の初期招待もD1の変数上限を超えずに保存する', async () => {
+    const organizer = await loginAs(ORGANIZER_ID)
+    const ids = Array.from({ length: 500 }, (_, i) => `${20000000000000000n + BigInt(i)}`)
+    const response = await post('/api/events', newEventBody(ids), { Cookie: organizer })
+    expect(response.status).toBe(201)
+    const { event } = await response.json() as { event: { id: string } }
+    const db = (env as { DB: D1Database }).DB
+    const row = await db.prepare('SELECT COUNT(*) AS count FROM event_invites WHERE eventId = ?').bind(event.id).first<{ count: number }>()
+    expect(row?.count).toBe(500)
+  })
+
+  it('招待挿入に失敗したらイベント・候補・一部の招待をすべてロールバックする', async () => {
+    const organizer = await loginAs(ORGANIZER_ID)
+    const db = (env as { DB: D1Database }).DB
+    const counts = () => db.prepare('SELECT (SELECT COUNT(*) FROM events) AS events, (SELECT COUNT(*) FROM candidates) AS candidates, (SELECT COUNT(*) FROM event_invites) AS invites').first()
+    const before = await counts()
+    await db.exec(`CREATE TRIGGER reject_initial_invite BEFORE INSERT ON event_invites WHEN NEW.discordUserId = '${OTHER_ID}' BEGIN SELECT RAISE(ABORT, 'test invitation failure'); END;`)
+    try {
+      const ids = [...Array.from({ length: 21 }, (_, i) => `${30000000000000000n + BigInt(i)}`), OTHER_ID]
+      expect((await post('/api/events', newEventBody(ids), { Cookie: organizer })).status).toBe(500)
+      expect(await counts()).toEqual(before)
+    } finally {
+      await db.exec('DROP TRIGGER reject_initial_invite;')
+    }
+  })
+
   it('既存互換: visibility 省略のイベントは公開で、ゲスト参加できる', async () => {
     const organizer = await loginAs(ORGANIZER_ID)
     const created = await createEvent(organizer)

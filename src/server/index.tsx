@@ -93,11 +93,15 @@ const displayNameSchema = z.string().min(1).max(80).refine(
   { message: 'displayName contains forbidden control characters' },
 )
 
+const discordUserIdSchema = z.string().trim().regex(/^\d{17,20}$/, 'Invalid Discord user ID')
+
 const createEventBody = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   defaultDurationMinutes: z.number().int().min(1).max(60 * 24),
   visibility: z.enum(['public', 'invite_only']).default('public'),
+  invitedDiscordUserIds: z.array(discordUserIdSchema).max(500).default([])
+    .transform((ids) => [...new Set(ids)]),
   deadline: z.string().datetime().optional(),
   timezone: z.string().max(64).optional(),
   // /hiyori new から発行された HMAC 署名トークン。直接 channel ID を受け付けない。
@@ -111,6 +115,9 @@ const createEventBody = z.object({
     )
     .min(1)
     .max(365),
+}).refine((body) => body.visibility === 'invite_only' || body.invitedDiscordUserIds.length === 0, {
+  message: 'Invitations at creation require invite_only visibility',
+  path: ['invitedDiscordUserIds'],
 })
 
 const patchEventBody = z.object({
@@ -130,7 +137,7 @@ const addCandidateBody = z.object({
 })
 
 const eventInviteBody = z.object({
-  discordUserId: z.string().regex(/^\d{17,20}$/, 'Invalid Discord user ID'),
+  discordUserId: discordUserIdSchema,
 })
 
 // 運営お知らせ（層1）。カテゴリ・ステータスはホワイトリスト、本文は必須＋最大長。
@@ -969,7 +976,7 @@ window.__vite_plugin_react_preamble_installed__ = true
           return { startAt, endAt }
         })
 
-        // event と candidates を D1 batch で atomic に挿入する
+        // イベント・候補・初期招待は同一 batch。招待保存に失敗してもイベントだけ残さない。
         const eventId = crypto.randomUUID()
         const eventCreatedAt = new Date()
         const candidateValues = candidateInputs.map((ci) => ({
@@ -986,6 +993,16 @@ window.__vite_plugin_react_preamble_installed__ = true
         for (let i = 0; i < candidateValues.length; i += CHUNK) {
           candidateInserts.push(app.db.insert(candidates).values(candidateValues.slice(i, i + CHUNK)))
         }
+        const inviteValues = body.invitedDiscordUserIds.map((discordUserId) => ({
+          id: crypto.randomUUID(),
+          eventId,
+          discordUserId,
+          createdAt: eventCreatedAt,
+        }))
+        const inviteInserts = []
+        for (let i = 0; i < inviteValues.length; i += CHUNK) {
+          inviteInserts.push(app.db.insert(event_invites).values(inviteValues.slice(i, i + CHUNK)))
+        }
         await app.batch([
           app.db.insert(events).values({
             id: eventId,
@@ -1001,6 +1018,7 @@ window.__vite_plugin_react_preamble_installed__ = true
             createdAt: eventCreatedAt,
           }),
           ...candidateInserts,
+          ...inviteInserts,
         ])
 
         const eventRow = await Event.findOne(eventId)
