@@ -44,6 +44,11 @@ function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   })
+  queryClient.setQueryDefaults(['session'], { gcTime: Infinity })
+  queryClient.setQueryData(['session'], { user: {
+    userId: 'owner', discordUserId: '32345678901234567', username: 'organizer',
+    displayName: '主催者', globalName: null, avatar: null,
+  } })
   const router = createMemoryRouter([
     { path: '/events/:id/edit', element: <EventEditPage /> },
   ], { initialEntries: ['/events/event1/edit'] })
@@ -74,6 +79,25 @@ beforeEach(() => {
 })
 
 describe('EventEditPage の招待管理', () => {
+  it('複数の旧形式の招待を読み取り専用 ID で区別し、選んだレコードだけを取消する', async () => {
+    const otherId = '22345678901234567890'
+    vi.mocked(fetchEventInvites).mockResolvedValue({ invites: [invite, { ...invite, id: 'invite2', discordUserId: otherId }] })
+    renderPage()
+    await screen.findByText(`Discord ID: ${INVITED_ID}`)
+    expect(screen.getByText(`Discord ID: ${otherId}`)).toBeTruthy()
+    expect(screen.getAllByText('以前の招待')).toHaveLength(2)
+    const first = screen.getByRole('button', { name: `Discord ID ${INVITED_ID} の招待を取消` })
+    const second = screen.getByRole('button', { name: `Discord ID ${otherId} の招待を取消` })
+    expect(first).not.toBe(second)
+    expect(screen.queryByRole('textbox', { name: /ユーザー ID/ })).toBeNull()
+    expect(screen.queryByDisplayValue(INVITED_ID)).toBeNull()
+    expect(screen.queryByDisplayValue(otherId)).toBeNull()
+    expect(screen.queryByRole('radio', { name: /ユーザー ID/ })).toBeNull()
+    fireEvent.click(second)
+    await waitFor(() => expect(removeEventInvite).toHaveBeenCalledWith('event1', 'invite2'))
+    expect(removeEventInvite).toHaveBeenCalledOnce()
+  })
+
   it('ユーザー名を独立して送信し、受取り待ちの招待をレコード ID で取り消せる', async () => {
     vi.mocked(fetchEventInvites).mockResolvedValue({ invites: [{ ...invite, id: 'pending1', discordUserId: null, discordUsername: 'new_friend' }] })
     renderPage()
@@ -84,7 +108,7 @@ describe('EventEditPage の招待管理', () => {
     fireEvent.click(screen.getByRole('button', { name: '追加' }))
     await waitFor(() => expect(addEventInvite).toHaveBeenCalledWith('event1', { discordUsername: 'another_friend' }))
     await waitFor(() => expect((screen.getByRole('textbox', { name: '招待する Discord ユーザー名' }) as HTMLInputElement).value).toBe(''))
-    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    fireEvent.click(screen.getByRole('button', { name: /の招待を取消$/ }))
     await waitFor(() => expect(removeEventInvite).toHaveBeenCalledWith('event1', 'pending1'))
   })
 
@@ -191,7 +215,7 @@ describe('EventEditPage の招待管理', () => {
     await waitFor(() => expect((screen.getByRole('textbox', { name: '招待する Discord ユーザー名' }) as HTMLInputElement).value).toBe(''))
     expect(updateEvent).not.toHaveBeenCalled()
 
-    fireEvent.click(within(manager).getByRole('button', { name: '取消' }))
+    fireEvent.click(within(manager).getByRole('button', { name: /の招待を取消$/ }))
     await waitFor(() => expect(removeEventInvite).toHaveBeenCalledWith('event1', 'invite1'))
     expect(updateEvent).not.toHaveBeenCalled()
   })
@@ -217,7 +241,7 @@ describe('EventEditPage の招待管理', () => {
     vi.mocked(removeEventInvite).mockRejectedValueOnce(new Error('取消に失敗'))
     renderPage()
     await screen.findByText('以前の招待')
-    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    fireEvent.click(screen.getByRole('button', { name: /の招待を取消$/ }))
     await screen.findByText('招待の取消に失敗しました。')
     expect(screen.getByText('以前の招待')).toBeTruthy()
   })
@@ -237,6 +261,6 @@ describe('EventEditPage の招待管理', () => {
     expect(input.style.minWidth).toBe('0px')
     expect(id.style.minWidth).toBe('0px')
     expect(id.style.overflowWrap).toBe('anywhere')
-    expect(screen.getByRole('button', { name: '取消' }).style.flexShrink).toBe('0')
+    expect(screen.getByRole('button', { name: /の招待を取消$/ }).style.flexShrink).toBe('0')
   })
 })

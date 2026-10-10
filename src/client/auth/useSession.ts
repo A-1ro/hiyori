@@ -10,14 +10,25 @@ export type SessionUser = {
 }
 
 export function useSession() {
+  const qc = useQueryClient()
   return useQuery<{ user: SessionUser | null }>({
     queryKey: ['session'],
-    queryFn: async () => {
-      const res = await fetch('/api/auth/me', { credentials: 'include' })
-      if (!res.ok) return { user: null }
-      return res.json()
+    queryFn: async ({ signal }) => {
+      const res = await fetch('/api/auth/me', { credentials: 'include', signal })
+      const next: { user: SessionUser | null } = res.ok ? await res.json() : { user: null }
+      signal.throwIfAborted()
+      const previous = qc.getQueryData<{ user: SessionUser | null }>(['session'])
+      if ((previous?.user?.discordUserId ?? null) !== (next.user?.discordUserId ?? null)) {
+        // 別タブでのログアウト・アカウント切替でも、旧ユーザーの招待一覧を残さない。
+        await qc.cancelQueries({ queryKey: ['eventInvites'] })
+        signal.throwIfAborted()
+        qc.removeQueries({ queryKey: ['eventInvites'] })
+      }
+      return next
     },
     staleTime: Infinity,
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
   })
 }
 

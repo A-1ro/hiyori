@@ -35,6 +35,7 @@ import { feedbackFields, feedbackTableName } from '../models/feedback'
 import { sessionTableName, sessionFields } from '../models/session'
 import { setSessionCookie, clearSessionCookie, getSessionToken, getBearerToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, isSecureRequest, SESSION_TTL_SECONDS, CLI_SESSION_TTL_SECONDS } from './auth/cookies'
 import { loadSession, requireSession } from './auth/session'
+import type { SessionUser } from './auth/session'
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/discord'
 import { generateDeviceCode, generateUserCode, normalizeUserCode } from './auth/cli-device'
 import { cli_auth_requests } from '../../drizzle/schema'
@@ -480,6 +481,24 @@ window.__vite_plugin_react_preamble_installed__ = true
     if (!s) return null
     const rows = await Participant.findMany({
       where: { eventId, discordUserId: s.discordUserId },
+      limit: 1,
+    })
+    return rows.length > 0 ? rows[0]! : null
+  }
+
+  async function resolveVotingParticipant(
+    c: Context<{ Bindings: Env }>,
+    eventRow: NonNullable<EventRow>,
+    session: SessionUser | null,
+  ): Promise<RowType<typeof participantFields> | null> {
+    if (eventRow.visibility !== 'invite_only') {
+      return resolveParticipantByAnyAuth(c, eventRow.id)
+    }
+    // eventAccess has already authorized this Discord session. An old guest cookie
+    // from before the event became private must never select a different identity.
+    if (!session) return null
+    const rows = await Participant.findMany({
+      where: { eventId: eventRow.id, kind: 'discord', discordUserId: session.discordUserId },
       limit: 1,
     })
     return rows.length > 0 ? rows[0]! : null
@@ -1425,7 +1444,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         }
 
         const body = c.req.valid('json')
-        const participantRow = await resolveParticipantByAnyAuth(c, eventId)
+        const participantRow = await resolveVotingParticipant(c, eventRow, access.session)
 
         if (!participantRow) {
           return c.json({ error: 'Unauthorized' }, 401)
@@ -1472,7 +1491,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       const access = await eventAccess(c, eventRow)
       if (!access.allowed) return eventNotFound(c)
 
-      const participantRow = await resolveParticipantByAnyAuth(c, eventId)
+      const participantRow = await resolveVotingParticipant(c, eventRow, access.session)
 
       if (!participantRow) {
         return c.json({ participant: null, votes: [] }, 200)
