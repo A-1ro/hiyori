@@ -10,14 +10,30 @@ export type SessionUser = {
 }
 
 export function useSession() {
+  const qc = useQueryClient()
   return useQuery<{ user: SessionUser | null }>({
     queryKey: ['session'],
-    queryFn: async () => {
-      const res = await fetch('/api/auth/me', { credentials: 'include' })
-      if (!res.ok) return { user: null }
-      return res.json()
+    queryFn: async ({ signal }) => {
+      const res = await fetch('/api/auth/me', { credentials: 'include', signal })
+      // 認証が無効と確認できた場合だけ未ログインにする。通信障害や 5xx は
+      // エラーとして扱い、既存のセッション情報を消してログインを要求しない。
+      if (!res.ok && res.status !== 401 && res.status !== 403) {
+        throw new Error('ログイン状態を確認できません')
+      }
+      const next: { user: SessionUser | null } = res.ok ? await res.json() : { user: null }
+      signal.throwIfAborted()
+      const previous = qc.getQueryData<{ user: SessionUser | null }>(['session'])
+      if ((previous?.user?.discordUserId ?? null) !== (next.user?.discordUserId ?? null)) {
+        // 別タブでのログアウト・アカウント切替でも、旧ユーザーの招待一覧を残さない。
+        await qc.cancelQueries({ queryKey: ['eventInvites'] })
+        signal.throwIfAborted()
+        qc.removeQueries({ queryKey: ['eventInvites'] })
+      }
+      return next
     },
     staleTime: Infinity,
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
   })
 }
 
@@ -25,9 +41,18 @@ export function useLogout() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async () => {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+      const res = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+      if (!res.ok) throw new Error('ログアウトに失敗しました')
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['session'] }),
+    onSuccess: async () => {
+      // 旧セッションで開始した読み込みは、後から完了してもキャッシュに戻さない。
+      // session も対象にして、遅れて返る /auth/me がログイン状態を復活させない。
+      await qc.cancelQueries()
+      qc.setQueryData(['session'], { user: null })
+      // invalidate だけでは再取得中も私的なデータが残る。reset で直ちに消し、
+      // マウント中の画面にも通知してから、匿名として表示可能なデータを再取得する。
+      await qc.resetQueries({ predicate: (query) => query.queryKey[0] !== 'session' })
+    },
   })
 }
 

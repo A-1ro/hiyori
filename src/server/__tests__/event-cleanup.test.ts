@@ -150,7 +150,7 @@ describe('cleanupExpiredEvents', () => {
   beforeEach(async () => {
     await applyMigrations()
     // ストレージはファイル内で共有されるため毎回まっさらにする
-    for (const table of ['votes', 'decisions', 'candidates', 'participants', 'events', 'audit_logs']) {
+    for (const table of ['votes', 'decisions', 'candidates', 'participants', 'event_invites', 'events', 'audit_logs']) {
       await db().prepare(`DELETE FROM ${table}`).run()
     }
   })
@@ -159,11 +159,18 @@ describe('cleanupExpiredEvents', () => {
     const old = NOW.getTime() - (RETENTION_DAYS + 1) * DAY
     const eventId = await insertEvent({ status: 'closed', createdAt: old - DAY })
     const children = await insertChildren(eventId, { decidedAt: old })
+    await db().batch([
+      db().prepare('INSERT INTO event_invites (id, eventId, discordUserId, createdAt) VALUES (?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), eventId, '12345678901234567', old),
+      db().prepare('INSERT INTO event_invites (id, eventId, discordUsername, createdAt) VALUES (?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), eventId, 'pending_invitee', old),
+    ])
 
     const result = await cleanupExpiredEvents(db(), RETENTION_DAYS, NOW)
     expect(result.deletedCount).toBe(1)
 
     expect(await count('events', 'id = ?', eventId)).toBe(0)
+    expect(await count('event_invites', 'eventId = ?', eventId)).toBe(0)
     expect(await count('decisions', 'id = ?', children.decisionId)).toBe(0)
     expect(await count('candidates', 'id = ?', children.candidateId)).toBe(0)
     expect(await count('participants', 'id = ?', children.participantId)).toBe(0)

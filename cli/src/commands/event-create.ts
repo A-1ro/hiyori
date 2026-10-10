@@ -2,6 +2,8 @@ import { Command } from 'commander'
 import * as clack from '@clack/prompts'
 import { unwrap, HiyoriApiError, resolveParent, requireAuthedApi } from './_shared.js'
 import { printJson, fail } from '../output.js'
+import { collectInviteUsername, parseInviteUsername, visibilityOption } from './_invites.js'
+import type { EventVisibility } from './_invites.js'
 
 interface Candidate {
   id: string
@@ -17,6 +19,7 @@ interface EventDetail {
   timezone: string
   defaultDurationMinutes: number
   deadline?: string
+  visibility?: EventVisibility
 }
 
 interface CreateEventResponse {
@@ -37,17 +40,23 @@ export function eventCreateCommand(): Command {
     .option('--duration <min>', 'Default duration in minutes', (v) => parseInt(v, 10))
     .option('--deadline <iso>', 'Deadline (ISO 8601)')
     .option('--timezone <tz>', 'Timezone (default: UTC)')
+    .addOption(visibilityOption())
+    .option('--invite-username <username>', 'Initial Discord username invitation (repeat; requires invite_only)', collectInviteUsername, [] as string[])
     .option('--candidate <iso>', 'Candidate start time (repeat for multiple)', collectCandidate, [] as string[])
     .option('--yes', 'Skip interactive prompts')
-    .action(async (opts: { title?: string; description?: string; duration?: number; deadline?: string; timezone?: string; candidate: string[]; yes?: boolean }, cmd: Command) => {
+    .action(async (opts: { title?: string; description?: string; duration?: number; deadline?: string; timezone?: string; visibility?: EventVisibility; inviteUsername: string[]; candidate: string[]; yes?: boolean }, cmd: Command) => {
       const parentOpts = resolveParent(cmd)
+      if (opts.inviteUsername.length > 0 && opts.visibility !== 'invite_only') {
+        fail('--invite-username には --visibility invite_only が必要です')
+        return
+      }
       const authed = await requireAuthedApi(parentOpts)
       if (!authed) return
 
       const { api } = authed
 
       const hasRequiredFlags = opts.title && opts.duration && opts.candidate.length > 0
-      const nonInteractive = opts.yes || hasRequiredFlags
+      const nonInteractive = opts.yes || parentOpts.json || hasRequiredFlags
 
       let title = opts.title ?? ''
       let description = opts.description
@@ -55,6 +64,8 @@ export function eventCreateCommand(): Command {
       let deadline = opts.deadline
       let timezone = opts.timezone ?? 'UTC'
       let candidateStarts = opts.candidate
+      let visibility = opts.visibility ?? 'public'
+      const inviteUsernames = [...new Set(opts.inviteUsername)]
 
       if (!nonInteractive) {
         if (!process.stdout.isTTY) {
@@ -148,6 +159,47 @@ export function eventCreateCommand(): Command {
           return
         }
         timezone = (tzResult as string) || 'UTC'
+
+        if (opts.visibility === undefined) {
+          const visibilityResult = await clack.select({
+            message: '公開範囲',
+            initialValue: visibility,
+            options: [
+              { value: 'public', label: '公開（リンクを知る人が閲覧・回答可能）' },
+              { value: 'invite_only', label: '招待限定（招待された Discord アカウントのみ）' },
+            ],
+          })
+          if (clack.isCancel(visibilityResult)) {
+            clack.cancel('キャンセルされました')
+            fail('キャンセルされました')
+            return
+          }
+          visibility = visibilityResult as EventVisibility
+        }
+        if (visibility === 'invite_only' && inviteUsernames.length === 0) {
+          while (inviteUsernames.length < 500) {
+            const usernameResult = await clack.text({
+              message: `招待する Discord ユーザー名 ${inviteUsernames.length + 1}（任意、空白で終了）`,
+              validate: (value) => {
+                if (!value?.trim()) return undefined
+                try {
+                  parseInviteUsername(value)
+                  return undefined
+                } catch (err) {
+                  return err instanceof Error ? err.message : String(err)
+                }
+              },
+            })
+            if (clack.isCancel(usernameResult)) {
+              clack.cancel('キャンセルされました')
+              fail('キャンセルされました')
+              return
+            }
+            if (!(usernameResult as string).trim()) break
+            const username = parseInviteUsername(usernameResult as string)
+            if (!inviteUsernames.includes(username)) inviteUsernames.push(username)
+          }
+        }
       }
 
       if (!title) {
@@ -172,6 +224,8 @@ export function eventCreateCommand(): Command {
         description?: string
         deadline?: string
         timezone?: string
+        visibility?: EventVisibility
+        invitedDiscordUsernames?: string[]
       } = {
         title,
         defaultDurationMinutes: duration,
@@ -180,6 +234,8 @@ export function eventCreateCommand(): Command {
       if (description) body.description = description
       if (deadline) body.deadline = deadline
       if (timezone && timezone !== 'UTC') body.timezone = timezone
+      if (opts.visibility !== undefined || visibility === 'invite_only') body.visibility = visibility
+      if (inviteUsernames.length > 0) body.invitedDiscordUsernames = inviteUsernames
 
       let data: CreateEventResponse
       try {
@@ -205,6 +261,7 @@ export function eventCreateCommand(): Command {
       console.log(`イベントを作成しました`)
       console.log(`ID:       ${data.event.id}`)
       console.log(`タイトル: ${data.event.title}`)
+      console.log(`公開範囲: ${data.event.visibility ?? 'public'}`)
       console.log(`候補数:   ${data.candidates.length}`)
       console.log('')
       console.log('注意: このイベントは Discord チャンネルに連携されていません（連携するには /hiyori new から作成してください）')

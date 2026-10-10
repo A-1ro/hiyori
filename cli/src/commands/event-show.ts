@@ -2,6 +2,7 @@ import { Command } from 'commander'
 import { createCliApi, unwrap, HiyoriApiError } from '../api.js'
 import { resolveApiUrl, resolveToken } from '../config.js'
 import { printJson, fail } from '../output.js'
+import { eventUnavailableHint } from './_shared.js'
 
 interface Candidate {
   id: string
@@ -17,6 +18,7 @@ interface EventDetail {
   deadline?: string
   timezone: string
   defaultDurationMinutes: number
+  visibility?: string
 }
 
 interface EventResponse {
@@ -48,7 +50,7 @@ export function eventShowCommand(): Command {
         )
       } catch (err) {
         if (err instanceof HiyoriApiError && err.status === 404) {
-          fail(`イベントが見つかりません: ${id}`)
+          fail(`イベントが見つかりません: ${id}。${eventUnavailableHint(!!token)}`)
           return
         }
         fail(`エラー: ${err instanceof Error ? err.message : String(err)}`)
@@ -75,6 +77,7 @@ export function eventShowCommand(): Command {
       console.log(`Title:        ${e.title}`)
       if (e.description) console.log(`Description:  ${e.description}`)
       console.log(`Status:       ${e.status}`)
+      console.log(`Visibility:   ${e.visibility ?? 'public'}`)
       console.log(`Timezone:     ${e.timezone}`)
       console.log(`Duration:     ${e.defaultDurationMinutes}min`)
       if (e.deadline) console.log(`Deadline:     ${e.deadline}`)

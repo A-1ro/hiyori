@@ -87,7 +87,7 @@ pnpm dev
 | `DISCORD_CLIENT_ID` | var/secret | Discord Application ID（= OAuth2 Client ID） |
 | `DISCORD_CLIENT_SECRET` | secret | OAuth2 Client Secret |
 | `DISCORD_OAUTH_REDIRECT_URI` | var | OAuth コールバック URL（例: `https://{worker}.workers.dev/api/auth/discord/callback`） |
-| `DISCORD_BOT_TOKEN` | secret | Bot トークン（チャンネル通知・コマンド登録に使用） |
+| `DISCORD_BOT_TOKEN` | secret | Bot トークン（チャンネル通知・コマンド登録・ログイン済みユーザーの招待照合に使用） |
 | `DISCORD_PUBLIC_KEY` | secret | Interactions の署名検証用 公開鍵 |
 | `DISCORD_CHANNEL_TOKEN_SECRET` | secret | チャンネル連携トークン（HMAC-SHA256）の署名鍵。**未設定だと Discord 連携は無効化**（トークン提示時に 503） |
 | `EVENT_RETENTION_DAYS` | var | 完了済み（`closed` / `cancelled`）イベントを最終活動から N 日経過後に日次 cron で自動削除する保持日数（正の整数）。**未設定（デフォルト）は自動削除しない = 永久保持** |
@@ -176,6 +176,17 @@ ANNOUNCEMENTS_ADMIN_TOKEN=xxx node scripts/announce.mjs \
 ## CLI
 
 Hiyori の **端末クライアント** (`hiyori` コマンド)。読み取り系（イベント一覧・詳細、投票集計、忙しい時間帯、`.ics` ダウンロード）と書き込み系（イベント作成・編集・削除、候補枠追加・削除、投票、確定・確定取消、Webcal 購読管理）をすべて端末から操作できます。すべてのコマンドが `--json` オプションで JSON 出力に対応しており、スクリプト・プログラムからの利用も可能です。
+
+### 招待限定イベント（Web / MCP / CLI 共通）
+
+- CLI は `event create --visibility invite_only --invite-username friend_one --invite-username @friend_two` で初期招待を指定できます（タイトル・所要時間・候補日時も指定）。`event edit <event-id> --visibility public|invite_only` で公開範囲を変更できます。
+- 招待管理は主催者のみ: `invite list <event-id>`、`invite add <event-id> --username @friend_three`、`invite revoke <event-id> <invite-id> --yes`。取消には一覧の招待 ID（UUID）を使います。詳細は [CLI README](cli/README.md) を参照してください。
+- MCP は `hiyori_create_event` の `visibility` と `invitedDiscordUsernames`、`hiyori_edit_event` の `visibility`、`hiyori_list_invites` / `hiyori_add_invite` / `hiyori_revoke_invite` で同じ操作に対応します。初期招待を指定する場合は `visibility: "invite_only"` が必須です。
+- 新規招待は Discord **ユーザー名**を指定します（表示名や数値 ID ではありません）。`@`・前後空白・大文字は正規化し、数字だけの名前もユーザー名として扱います。相手の登録有無を検索せず保存します。イベントの URL を共有すると、ログイン済みの相手はそのままアクセスして受け取れます。サーバーが本人の固定 Discord ID で現在のユーザー名を Discord に問い合わせ、一度だけ招待を結び付けます。未ログインの場合は通常の Discord ログインが必要です。受取り前の改名・入力間違いに注意してください。
+- Discord の一時的な障害・利用制限や Bot トークン未設定時も、既存のログインや受取り済みの権限は維持されます。新しい招待を安全に照合できなかった場合は、少し待って同じページで再試行してください。ログイン済みなら再ログインは不要です。アクセス不可の 404 はイベントの不存在・権限不足と同じ表示になり、招待の有無を明かしません。
+- 招待は最大 500 件。初期イベント・候補日時・招待は同時に保存します。公開範囲の既定値は `public` のままです。公開イベントで招待を追加/取消しても、閲覧は制限されません。
+
+これらの機能は対応する Worker と、このリビジョンからビルドした CLI の組合せで利用できます。プレビューへの反映だけでは本番 MCP やインストール済み CLI は更新されません。
 
 ### インストール
 

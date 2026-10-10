@@ -9,6 +9,7 @@ import {
   ApiError,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
+import { InviteAccessHint } from '../components/InviteAccessHint'
 import { Badge, Button, ConfirmDialog, DiscordMark, Icon } from '../components/primitives'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 
@@ -82,6 +83,7 @@ export function EventDetailPage() {
               ? 'イベントが見つかりません。'
               : 'エラーが発生しました。'}
           </p>
+          {error instanceof ApiError && error.status === 404 && <InviteAccessHint />}
           <Button variant="ghost" onClick={() => navigate('/')} style={{ marginTop: 16 }}>
             ホームへ
           </Button>
@@ -105,6 +107,10 @@ export function EventDetailPage() {
 
   const handleSubscribe = async () => {
     setSubError(undefined)
+    if (event.visibility === 'invite_only') {
+      setSubError('招待限定イベントはカレンダー購読の対象外です')
+      return
+    }
     try {
       const { webcalUrl } = await createSubscription()
       if (webcalUrl) {
@@ -355,45 +361,51 @@ export function EventDetailPage() {
             </div>
           )}
 
-          {/* Webcal subscribe */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
-              padding: '14px 16px',
-              boxShadow: 'var(--shadow-xs)',
-            }}
-          >
+          {event.visibility === 'invite_only' ? (
+            <p style={{ margin: 0, color: 'var(--color-fg3)', fontSize: 13, textAlign: 'center' }}>
+              招待限定イベントは公開 Webcal フィードの対象外です。
+            </p>
+          ) : (
+            /* Webcal subscribe */
             <div
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: 'var(--radius-sm)',
-                background: 'var(--color-blue-soft)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                flex: 'none',
+                gap: 12,
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-md)',
+                padding: '14px 16px',
+                boxShadow: 'var(--shadow-xs)',
               }}
             >
-              <Icon name="calendar" size={20} color="var(--color-blue)" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>
-                カレンダーアプリに自動で反映
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-blue-soft)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flex: 'none',
+                }}
+              >
+                <Icon name="calendar" size={20} color="var(--color-blue)" />
               </div>
-              <div style={{ fontSize: 12.5, color: 'var(--color-fg3)' }}>
-                Webcal / iCalendar を購読すると、次回以降の確定も自動で届きます
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>
+                  カレンダーアプリに自動で反映
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--color-fg3)' }}>
+                  Webcal / iCalendar を購読すると、次回以降の確定も自動で届きます
+                </div>
               </div>
+              <Button variant="secondary" size="sm" onClick={handleSubscribe}>
+                購読
+              </Button>
             </div>
-            <Button variant="secondary" size="sm" onClick={handleSubscribe}>
-              購読
-            </Button>
-          </div>
+          )}
           {subError && (
             <p
               style={{
@@ -466,6 +478,7 @@ export function EventDetailPage() {
           >
             <Icon name="check" size={32} color="var(--color-yes-ink)" />
           </div>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <h2
             style={{
               margin: '0 0 8px',
@@ -477,8 +490,12 @@ export function EventDetailPage() {
           >
             {event.title}
           </h2>
+          {event.visibility === 'invite_only' && <Badge tone="neutral">招待限定</Badge>}
+          </div>
           <p style={{ margin: '0 0 30px', fontSize: 15, color: 'var(--color-fg2)' }}>
-            このリンクを仲間に共有して、回答を集めましょう。
+            {event.visibility === 'invite_only'
+              ? '招待された Discord アカウントだけが閲覧・回答できます。'
+              : 'このリンクを仲間に共有して、回答を集めましょう。'}
           </p>
         </div>
 
@@ -629,14 +646,16 @@ export function EventDetailPage() {
               編集
             </Button>
           </Link>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSubscribe}
-            icon={<Icon name="calendar" size={14} />}
-          >
-            カレンダーを購読
-          </Button>
+          {event.visibility !== 'invite_only' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSubscribe}
+              icon={<Icon name="calendar" size={14} />}
+            >
+              カレンダーを購読
+            </Button>
+          )}
           <Button
             variant="danger"
             size="sm"

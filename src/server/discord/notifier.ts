@@ -29,6 +29,7 @@ export interface EventLike {
   title: string
   description?: string | null
   discordChannelId?: string | null
+  visibility?: string | null
 }
 
 export function buildAnnouncementEmbed(args: {
@@ -82,6 +83,16 @@ export async function announceEventCreated(
       actorDiscordId: null,
       action: 'discord.announce.skipped',
       payload: { reason: 'no_channel', eventId: event.id },
+      createdAt: now,
+    })
+    return
+  }
+  if (event.visibility === 'invite_only') {
+    await app.db.insert(audit_logs).values({
+      id: crypto.randomUUID(),
+      actorDiscordId: null,
+      action: 'discord.announce.skipped',
+      payload: { reason: 'invite_only', eventId: event.id },
       createdAt: now,
     })
     return
@@ -207,6 +218,19 @@ export async function notifyDecisionsChanged(
         actorDiscordId: null,
         action: 'discord.notify.skipped',
         payload: { reason: 'no_channel', added: added.length, cancelled: cancelled.length },
+        createdAt: now,
+      })
+    }
+    return
+  }
+
+  if (event.visibility === 'invite_only') {
+    if (added.length > 0 || cancelled.length > 0) {
+      await app.db.insert(audit_logs).values({
+        id: crypto.randomUUID(),
+        actorDiscordId: null,
+        action: 'discord.notify.skipped',
+        payload: { reason: 'invite_only', added: added.length, cancelled: cancelled.length },
         createdAt: now,
       })
     }
