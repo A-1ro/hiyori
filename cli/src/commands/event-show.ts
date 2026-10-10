@@ -17,6 +17,7 @@ interface EventDetail {
   deadline?: string
   timezone: string
   defaultDurationMinutes: number
+  visibility?: string
 }
 
 interface EventResponse {
@@ -75,6 +76,7 @@ export function eventShowCommand(): Command {
       console.log(`Title:        ${e.title}`)
       if (e.description) console.log(`Description:  ${e.description}`)
       console.log(`Status:       ${e.status}`)
+      console.log(`Visibility:   ${e.visibility ?? 'public'}`)
       console.log(`Timezone:     ${e.timezone}`)
       console.log(`Duration:     ${e.defaultDurationMinutes}min`)
       if (e.deadline) console.log(`Deadline:     ${e.deadline}`)

@@ -22,7 +22,7 @@ afterEach(async () => {
 
 const mockEventsData = {
   organized: [
-    { id: 'aaaa-bbbb-cccc-dddd-1234567890ab', title: 'Event 1', status: 'open', deadline: '2030-01-01T00:00:00.000Z' },
+    { id: 'aaaa-bbbb-cccc-dddd-1234567890ab', title: 'Event 1', status: 'open', visibility: 'invite_only', deadline: '2030-01-01T00:00:00.000Z' },
   ],
   participating: [
     { id: 'bbbb-cccc-dddd-eeee-1234567890ab', title: 'Event 2', status: 'closed', deadline: undefined },
@@ -53,6 +53,9 @@ describe('event list コマンド', () => {
 
     expect(output.some((l) => l.includes('Event 1'))).toBe(true)
     expect(output.some((l) => l.includes('Event 2'))).toBe(true)
+    expect(output.some((l) => l.includes('Visibility'))).toBe(true)
+    expect(output.some((l) => l.includes('Event 1') && l.includes('invite_only'))).toBe(true)
+    expect(output.some((l) => l.includes('Event 2') && l.includes('public'))).toBe(true)
     vi.restoreAllMocks()
   })
 
@@ -80,6 +83,7 @@ describe('event list コマンド', () => {
 
     const parsed = JSON.parse(jsonOutput)
     expect(parsed).toHaveProperty('organized')
+    expect(parsed.organized[0].visibility).toBe('invite_only')
     expect(parsed).toHaveProperty('participating')
     vi.restoreAllMocks()
   })

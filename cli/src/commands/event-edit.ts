@@ -2,6 +2,8 @@ import { Command } from 'commander'
 import * as clack from '@clack/prompts'
 import { unwrap, HiyoriApiError, resolveParent, requireAuthedApi } from './_shared.js'
 import { printJson, fail } from '../output.js'
+import { visibilityOption } from './_invites.js'
+import type { EventVisibility } from './_invites.js'
 
 interface EventDetail {
   id: string
@@ -11,6 +13,7 @@ interface EventDetail {
   timezone: string
   defaultDurationMinutes: number
   deadline?: string
+  visibility?: EventVisibility
 }
 
 interface EventResponse {
@@ -27,14 +30,15 @@ export function eventEditCommand(): Command {
     .option('--clear-deadline', 'Clear the deadline')
     .option('--duration <min>', 'New default duration in minutes', (v) => parseInt(v, 10))
     .option('--timezone <tz>', 'New timezone')
-    .action(async (id: string, opts: { title?: string; description?: string; deadline?: string; clearDeadline?: boolean; duration?: number; timezone?: string }, cmd: Command) => {
+    .addOption(visibilityOption())
+    .action(async (id: string, opts: { title?: string; description?: string; deadline?: string; clearDeadline?: boolean; duration?: number; timezone?: string; visibility?: EventVisibility }, cmd: Command) => {
       const parentOpts = resolveParent(cmd)
       const authed = await requireAuthedApi(parentOpts)
       if (!authed) return
 
       const { api } = authed
 
-      const hasAnyFlag = opts.title !== undefined || opts.description !== undefined || opts.deadline !== undefined || opts.clearDeadline || opts.duration !== undefined || opts.timezone !== undefined
+      const hasAnyFlag = opts.title !== undefined || opts.description !== undefined || opts.deadline !== undefined || opts.clearDeadline || opts.duration !== undefined || opts.timezone !== undefined || opts.visibility !== undefined
 
       const body: {
         title?: string
@@ -42,6 +46,7 @@ export function eventEditCommand(): Command {
         deadline?: string | null
         defaultDurationMinutes?: number
         timezone?: string
+        visibility?: EventVisibility
       } = {}
 
       if (hasAnyFlag) {
@@ -54,7 +59,12 @@ export function eventEditCommand(): Command {
         }
         if (opts.duration !== undefined) body.defaultDurationMinutes = opts.duration
         if (opts.timezone !== undefined) body.timezone = opts.timezone
+        if (opts.visibility !== undefined) body.visibility = opts.visibility
       } else {
+        if (parentOpts.json || !process.stdout.isTTY) {
+          fail('非対話モードでは --title や --visibility 等の更新フラグを指定してください')
+          return
+        }
         // 対話モード: 現状を取得してデフォルト表示
         let current: EventDetail
         try {
@@ -66,11 +76,6 @@ export function eventEditCommand(): Command {
             return
           }
           fail(`エラー: ${err instanceof Error ? err.message : String(err)}`)
-          return
-        }
-
-        if (!process.stdout.isTTY) {
-          fail('対話モードには TTY が必要です。--title 等のフラグを指定してください')
           return
         }
 
@@ -143,6 +148,23 @@ export function eventEditCommand(): Command {
           return
         }
         if ((tzResult as string) !== current.timezone) body.timezone = tzResult as string
+
+        const visibilityResult = await clack.select({
+          message: '公開範囲',
+          initialValue: current.visibility ?? 'public',
+          options: [
+            { value: 'public', label: '公開（リンクを知る人が閲覧・回答可能）' },
+            { value: 'invite_only', label: '招待限定（招待された Discord アカウントのみ）' },
+          ],
+        })
+        if (clack.isCancel(visibilityResult)) {
+          clack.cancel('キャンセルされました')
+          fail('キャンセルされました')
+          return
+        }
+        if (visibilityResult !== (current.visibility ?? 'public')) {
+          body.visibility = visibilityResult as EventVisibility
+        }
       }
 
       if (Object.keys(body).length === 0) {
@@ -174,5 +196,6 @@ export function eventEditCommand(): Command {
       console.log(`イベントを更新しました`)
       console.log(`ID:       ${data.event.id}`)
       console.log(`タイトル: ${data.event.title}`)
+      console.log(`公開範囲: ${data.event.visibility ?? 'public'}`)
     })
 }

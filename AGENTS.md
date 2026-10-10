@@ -8,6 +8,25 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 **Source of truth for product decisions is `docs/requirements.md`.** Read it before proposing features, changing data model, or touching external-integration code. It contains: scope (MVP = F-01〜F-08), data model rationale, Discord/Calendar integration choices, and resolved/unresolved questions in §12. Don't relitigate items already marked decided there.
 
+## Hiyori requirements and mandatory interface parity
+
+**機能追加の場合、Web UI / REST API だけで完了とせず、MCP や CLI にも同様の機能が追加されているかを必ず確認し、できていなければ追加すること。** 入力項目・一覧/詳細出力・作成/編集/取消などの操作・ヘルプ・テストを横断して確認する。機能変更や不具合修正も、該当する全インターフェースへの影響を確認する。
+
+- Hiyori は日程調整から開催日確定・カレンダー配布までを扱う。イベント CRUD、候補日時、投票、集計、確定/取消、ICS、Webcal 購読、および公開範囲・招待管理が主なユーザー操作である。詳細な製品判断は `docs/requirements.md` を優先する。
+- Web (`src/client/`)、MCP (`src/server/mcp/agent.ts`)、CLI (`cli/src/`) は同じ Hono API のクライアントである。MCP は `internalApi`、CLI/Web は型付き API クライアントを通し、認可・検証・件数上限・原子的更新などの業務ロジックを API に集約する。クライアント側の表示/検証や MCP annotations を認可の代わりにしない。
+- 公開イベントは既定値で、既存のゲスト回答を維持する。招待限定は主催者と招待された Discord アカウントだけが閲覧・回答でき、招待一覧・追加・取消とイベント編集は主催者だけに許可する。詳細・集計・投票・個別 ICS・個人予定・MCP/CLI でも同じアクセス判定を使い、権限のない相手に非公開データや存在を明かさない。公開 Webcal/Discord 通知に招待限定の内容を流さない。
+- 新規招待の入力は全インターフェースで **Discord ユーザー名のみ**。表示名や数値 ID の入力/切替、登録ユーザー検索を追加しない。数字だけの名前もユーザー名として扱う。既存の数値 ID 招待は互換性を維持し、旧形式の識別用表示は読み取り専用とする。取消は一覧が返す安定した招待レコード ID を使う。
+- 招待は登録有無に依存せず未確定で保存し、新しい Discord OAuth ログインで取得した本人の現在のユーザー名から一度だけ固定 ID に紐付ける。セッションの古いプロフィールから確定/認可しない。全招待合計 500 件、重複排除、初期イベント/候補/招待の原子性、取消後に復活しない性質を維持する。
+- MCP の read/write スコープ、CLI の破壊的操作の確認と非対話/JSON 動作を維持する。ゲスト Cookie の回答や署名済み Discord チャンネル連携など、意図的に Web/Discord 限定の機能は `docs/plans/2026-07-21-mcp-server.md` の既定方針に従う。差異は理由を明記し、単なる実装漏れを例外にしない。
+
+### Completion checklist
+
+1. Web / REST / MCP / CLI の対応表を確認し、欠けた入力・操作・出力を実装する。新しい製品上の例外や権限拡大が必要なら、黙って省略/拡大せず確認する。
+2. 該当 API と各インターフェースの回帰テストを追加する。正常系だけでなく未認証・非主催者・read-only scope・不正入力・上限/重複・失敗時の部分更新・既存公開動作を確認する。MCP の公開 schema と CLI の実際のフラグ/サブコマンドから API への伝播もテストする。
+3. `docs/requirements.md`、README/CLI README、MCP 説明・対応表と CLI help を更新する。
+4. 最終コードでサーバー/クライアント/CLI テスト、アプリ/テスト/CLI typecheck、lint、アプリ/CLI build を実行し、モデル変更時は生成 schema/migration も確認する。未実行・失敗した確認は明記する。
+5. 承認された公開先だけに反映し、その正確な commit の CI を確認する。ソース/プレビューの対応と、本番 MCP・配布済み CLI の対応を混同しない。PR 更新はマージ・本番デプロイ・npm 公開の許可を意味しない。
+
 ## Commands
 
 | Command | What it does |

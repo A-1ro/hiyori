@@ -27,6 +27,7 @@ const mockEventData = {
     title: 'Test Event',
     description: 'A test event',
     status: 'open',
+    visibility: 'invite_only',
     deadline: '2030-01-01T00:00:00.000Z',
     timezone: 'Asia/Tokyo',
     defaultDurationMinutes: 60,
@@ -62,6 +63,7 @@ describe('event show コマンド', () => {
 
     expect(output.some((l) => l.includes('Test Event'))).toBe(true)
     expect(output.some((l) => l.includes('true'))).toBe(true)
+    expect(output).toContain('Visibility:   invite_only')
     vi.restoreAllMocks()
   })
 
@@ -91,6 +93,7 @@ describe('event show コマンド', () => {
 
     const parsed = JSON.parse(jsonOutput)
     expect(parsed).toHaveProperty('event')
+    expect(parsed.event.visibility).toBe('invite_only')
     expect(parsed).toHaveProperty('isOrganizer', false)
     vi.restoreAllMocks()
   })

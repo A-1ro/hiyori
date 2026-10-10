@@ -83,6 +83,9 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
     this.registerGetIcs()
     // Phase 2: 残りツール（フル同等）
     this.registerEditEvent()
+    this.registerListInvites()
+    this.registerAddInvite()
+    this.registerRevokeInvite()
     this.registerDeleteEvent()
     this.registerAddCandidate()
     this.registerRemoveCandidate()
@@ -230,7 +233,7 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
       'hiyori_create_event',
       {
         description:
-          '日程調整イベントを新規作成する（作成者=主催者）。候補日時を 1 件以上指定する。共有 URL を返す。',
+          '日程調整イベントを新規作成する（作成者=主催者）。候補日時を 1 件以上指定する。招待限定なら Discord ユーザー名の初期招待も同時に保存できる。共有 URL を返す。',
         inputSchema: {
           title: z.string().min(1).max(200).describe('イベント名'),
           defaultDurationMinutes: z
@@ -250,7 +253,8 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
             .max(365)
             .describe('候補日時スロット'),
           description: z.string().max(2000).optional().describe('説明（任意）'),
-          visibility: z.enum(['public', 'invite_only']).optional().describe('公開範囲。省略時は public。招待限定イベントは後から Discord user ID を招待する。'),
+          visibility: z.enum(['public', 'invite_only']).optional().describe('公開範囲。省略時は public。初期招待を指定する場合は invite_only が必須。'),
+          invitedDiscordUsernames: z.array(z.string().max(128)).max(500).optional().describe('初期招待の Discord ユーザー名（表示名・数値 ID ではない）。@ 接頭辞は任意。数字だけの名前もユーザー名として扱う。相手の新しい Discord ログインで受取りが確定する。最大 500 件。'),
           deadline: z.string().datetime().optional().describe('投票締切（ISO8601, 任意）'),
           timezone: z.string().max(64).optional().describe('表示タイムゾーン（IANA, 任意）'),
         },
@@ -369,11 +373,12 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
       'hiyori_edit_event',
       {
         description:
-          'イベントの基本情報（タイトル・説明・締切・所要時間・タイムゾーン）を編集する。主催者のみ。締切を解除するには deadline に null を渡す。',
+          'イベントの基本情報（タイトル・説明・締切・所要時間・タイムゾーン・公開範囲）を編集する。主催者のみ。締切を解除するには deadline に null を渡す。招待の追加・取消は専用ツールを使う。',
         inputSchema: {
           eventId: z.string().min(1).describe('イベント ID'),
           title: z.string().min(1).max(200).optional().describe('イベント名'),
           description: z.string().max(2000).optional().describe('説明'),
+          visibility: z.enum(['public', 'invite_only']).optional().describe('公開範囲。public にすると招待のない人も閲覧・回答できる。省略時は変更しない。'),
           deadline: z
             .string()
             .datetime()
@@ -402,6 +407,79 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
         const res = await this.call('PATCH', `/api/events/${encodeURIComponent(eventId)}`, patch)
         if (!res.ok) return apiError(res)
         return textResult(res.data)
+      },
+    )
+  }
+
+  private registerListInvites() {
+    this.server.registerTool(
+      'hiyori_list_invites',
+      {
+        description:
+          '主催するイベントの招待一覧を返す（主催者のみ）。未確定・受取り済みを含み、取消には各招待の id を使う。Discord アカウントの検索や Hiyori 登録有無の確認は行わない。',
+        inputSchema: { eventId: z.string().min(1).describe('イベント ID') },
+        annotations: { title: 'List invitations', readOnlyHint: true, openWorldHint: false },
+      },
+      async ({ eventId }) => {
+        const guard = this.scopeGuard('hiyori:read')
+        if (guard) return guard
+        const res = await this.call('GET', `/api/events/${encodeURIComponent(eventId)}/invites`)
+        if (!res.ok) return apiError(res)
+        return textResult(res.data)
+      },
+    )
+  }
+
+  private registerAddInvite() {
+    this.server.registerTool(
+      'hiyori_add_invite',
+      {
+        description:
+          '主催するイベントに Discord ユーザー名で招待を追加する。相手の登録有無を調べず未確定招待を保存し、相手の新しい Discord ログインで一度だけ受取りが確定する。初回照合時にその名前を持つアカウントが対象なので、入力間違い・改名に注意する。全招待の合計は最大 500 件。公開イベントでは招待しても閲覧は制限されない。',
+        inputSchema: {
+          eventId: z.string().min(1).describe('イベント ID'),
+          discordUsername: z.string().max(128).describe('Discord ユーザー名（表示名・数値 ID ではない）。@ 接頭辞は任意。数字だけの名前もユーザー名として扱う。'),
+        },
+        annotations: {
+          title: 'Add invitation',
+          readOnlyHint: false,
+          destructiveHint: false,
+          openWorldHint: false,
+        },
+      },
+      async ({ eventId, discordUsername }) => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call('POST', `/api/events/${encodeURIComponent(eventId)}/invites`, { discordUsername })
+        if (!res.ok) return apiError(res)
+        return textResult(res.data)
+      },
+    )
+  }
+
+  private registerRevokeInvite() {
+    this.server.registerTool(
+      'hiyori_revoke_invite',
+      {
+        description:
+          '主催するイベントの招待を取り消す。hiyori_list_invites が返した招待レコードの id を指定する（ユーザー名や Discord ユーザー ID ではない）。受取り済みの場合は同じアカウントへの他の招待も取り消す。公開イベントの閲覧は制限されない。',
+        inputSchema: {
+          eventId: z.string().min(1).describe('イベント ID'),
+          inviteId: z.string().uuid().describe('招待一覧が返した招待レコードの id（UUID）'),
+        },
+        annotations: {
+          title: 'Revoke invitation',
+          readOnlyHint: false,
+          destructiveHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ eventId, inviteId }) => {
+        const guard = this.scopeGuard('hiyori:write')
+        if (guard) return guard
+        const res = await this.call('DELETE', `/api/events/${encodeURIComponent(eventId)}/invites/${encodeURIComponent(inviteId)}`)
+        if (!res.ok) return apiError(res)
+        return textResult({ ok: true, eventId, inviteId })
       },
     )
   }

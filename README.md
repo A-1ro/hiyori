@@ -177,6 +177,16 @@ ANNOUNCEMENTS_ADMIN_TOKEN=xxx node scripts/announce.mjs \
 
 Hiyori の **端末クライアント** (`hiyori` コマンド)。読み取り系（イベント一覧・詳細、投票集計、忙しい時間帯、`.ics` ダウンロード）と書き込み系（イベント作成・編集・削除、候補枠追加・削除、投票、確定・確定取消、Webcal 購読管理）をすべて端末から操作できます。すべてのコマンドが `--json` オプションで JSON 出力に対応しており、スクリプト・プログラムからの利用も可能です。
 
+### 招待限定イベント（Web / MCP / CLI 共通）
+
+- CLI は `event create --visibility invite_only --invite-username friend_one --invite-username @friend_two` で初期招待を指定できます（タイトル・所要時間・候補日時も指定）。`event edit <event-id> --visibility public|invite_only` で公開範囲を変更できます。
+- 招待管理は主催者のみ: `invite list <event-id>`、`invite add <event-id> --username @friend_three`、`invite revoke <event-id> <invite-id> --yes`。取消には一覧の招待 ID（UUID）を使います。詳細は [CLI README](cli/README.md) を参照してください。
+- MCP は `hiyori_create_event` の `visibility` と `invitedDiscordUsernames`、`hiyori_edit_event` の `visibility`、`hiyori_list_invites` / `hiyori_add_invite` / `hiyori_revoke_invite` で同じ操作に対応します。初期招待を指定する場合は `visibility: "invite_only"` が必須です。
+- 新規招待は Discord **ユーザー名**を指定します（表示名や数値 ID ではありません）。`@`・前後空白・大文字は正規化し、数字だけの名前もユーザー名として扱います。相手の登録有無を検索せず保存し、相手が新たに Discord ログインしたときに受取りが確定します。受取り前の改名・入力間違いに注意してください。既存ログインだけでは未確定招待は受け取れません。
+- 招待は最大 500 件。初期イベント・候補日時・招待は同時に保存します。公開範囲の既定値は `public` のままです。公開イベントで招待を追加/取消しても、閲覧は制限されません。
+
+これらの機能は対応する Worker と、このリビジョンからビルドした CLI の組合せで利用できます。プレビューへの反映だけでは本番 MCP やインストール済み CLI は更新されません。
+
 ### インストール
 
 npm 実公開後（将来）：

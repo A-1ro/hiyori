@@ -81,10 +81,20 @@ CLI の全実行コマンドを MCP ツールへ写像する（§4）。認証�
 | MCP ツール | 対応 CLI | 叩く API | 権限 | 入力 → 出力 |
 |---|---|---|---|---|
 | `hiyori_list_events` | `event list` | `GET /api/me/events` | 認証必須 | なし → `{ organized[], participating[] }` |
-| `hiyori_get_event` | `event show` | `GET /api/events/:id` + `/permissions` | 公開読取（+任意で認証） | `{ eventId }` → `{ event, candidates[], isOrganizer }` |
-| `hiyori_create_event` | `event create` | `POST /api/events` | 認証必須（作成者=主催者） | `{ title, defaultDurationMinutes, candidates[{startAt}], description?, deadline?, timezone? }` → `{ event, candidates[] }` |
-| `hiyori_edit_event` | `event edit` | `PATCH /api/events/:id` | **主催者のみ** | `{ eventId, title?, description?, deadline?(null で解除), defaultDurationMinutes?, timezone? }` → `{ event }` |
+| `hiyori_get_event` | `event show` | `GET /api/events/:id` + `/permissions` | 認証必須・公開または本人が許可されたイベント | `{ eventId }` → `{ event, candidates[], isOrganizer }` |
+| `hiyori_create_event` | `event create` | `POST /api/events` | 認証必須（作成者=主催者） | `{ title, defaultDurationMinutes, candidates[{startAt}], description?, deadline?, timezone?, visibility?, invitedDiscordUsernames? }` → `{ event, candidates[] }` |
+| `hiyori_edit_event` | `event edit` | `PATCH /api/events/:id` | **主催者のみ** | `{ eventId, title?, description?, deadline?(null で解除), defaultDurationMinutes?, timezone?, visibility? }` → `{ event }` |
 | `hiyori_delete_event` | `event rm` | `DELETE /api/events/:id` | **主催者のみ** | `{ eventId }` → `{ ok }`（**破壊的**・確認注釈） |
+
+### 招待管理（2026-10 追加）
+
+| MCP ツール | 対応 CLI | 叩く API | 権限 | 入力 → 出力 |
+|---|---|---|---|---|
+| `hiyori_list_invites` | `invite list` | `GET /api/events/:id/invites` | **主催者のみ**・read | `{ eventId }` → `{ invites[] }` |
+| `hiyori_add_invite` | `invite add --username` | `POST /api/events/:id/invites` | **主催者のみ**・write | `{ eventId, discordUsername }` → `{ invite }` |
+| `hiyori_revoke_invite` | `invite revoke` | `DELETE /api/events/:id/invites/:inviteId` | **主催者のみ**・write | `{ eventId, inviteId }` → `{ ok, eventId, inviteId }`（破壊的） |
+
+初期招待は create の `invitedDiscordUsernames`（CLI: 繰返し可能な `--invite-username`）を使い、`visibility: invite_only` を明示する。公開範囲は edit でも変更可能。招待は登録検索せずユーザー名で保存し、新しい Discord ログイン時に一度だけ固定 ID に紐付ける。取消の `inviteId` は一覧が返す UUID で、Discord ID 入力は新設しない。数字だけのユーザー名も名前として扱う。初期作成の原子性・合計 500 件上限・重複排除は共通 API で検証する。既存の数値 ID 用 DELETE ルートとの互換性は内部で維持する。
 
 ### 候補（日時スロット）
 
@@ -99,7 +109,7 @@ CLI の全実行コマンドを MCP ツールへ写像する（§4）。認証�
 |---|---|---|---|---|
 | `hiyori_get_my_votes` | (`vote` 内部) | `GET /api/events/:id/votes/me` | 認証必須 | `{ eventId }` → `{ votes[] }` |
 | `hiyori_vote` | `vote` | 必要時 `POST /api/events/:id/participants` → `PUT /api/events/:id/votes` | 認証必須（参加者として自己登録） | `{ eventId, votes: [{candidateId, choice: yes\|no\|maybe}] }` → `{ votes[] }` |
-| `hiyori_tally` | `tally` | `GET /api/events/:id/tally` | 公開読取 | `{ eventId }` → `{ candidates[], participants[], matrix }` |
+| `hiyori_tally` | `tally` | `GET /api/events/:id/tally` | 認証必須・公開または本人が許可されたイベント | `{ eventId }` → `{ candidates[], participants[], matrix }` |
 
 ### 確定 / カレンダー配布
 
@@ -107,7 +117,7 @@ CLI の全実行コマンドを MCP ツールへ写像する（§4）。認証�
 |---|---|---|---|---|
 | `hiyori_confirm` | `confirm` | `POST /api/events/:id/decision` | **主催者のみ** | `{ eventId, candidateIds[] }` → `{ decision }` |
 | `hiyori_unconfirm` | `unconfirm` | `DELETE /api/events/:id/decision` | **主催者のみ** | `{ eventId }` → `{ ok }` |
-| `hiyori_get_ics` | `ics` | `GET /api/events/:id/decision.ics` | 公開読取（確定済み） | `{ eventId }` → `{ icsText }`（text/calendar 本文） |
+| `hiyori_get_ics` | `ics` | `GET /api/events/:id/decision.ics` | 認証必須・公開または本人が許可された確定済みイベント | `{ eventId }` → `{ icsText }`（text/calendar 本文） |
 
 ### 個人カレンダー / 購読
 
@@ -121,11 +131,11 @@ CLI の全実行コマンドを MCP ツールへ写像する（§4）。認証�
 
 ### 棚卸しサマリ
 
-- **CLI leaf コマンド総数: 22**（login, logout, whoami, config get, config set, event list/show/create/edit/rm, candidate add/rm, vote, tally, busy, ics, confirm, unconfirm, sub list/add/rm/regen）。
+- **CLI leaf コマンド総数: 25**（login, logout, whoami, config get, config set, event list/show/create/edit/rm, candidate add/rm, vote, tally, busy, ics, confirm, unconfirm, sub list/add/rm/regen, invite list/add/revoke）。
 - うち **plumbing 4 個**（login / logout / config get / config set）はツール化しない。
-- 残り 18 コマンドを写像 → **MCP ツール 18 個**。加えて内部利用の `get_my_votes` を明示ツール化して **合計 19 ツール**（フル同等 + 補助 1）。
-- 権限内訳: **主催者限定 write = 6**（edit / delete / candidate add / candidate rm / confirm / unconfirm）、**認証必須 = 10**、**公開読取 = 3**（get_event / tally / get_ics）。
-- 破壊的操作 = 4（delete_event, remove_candidate, remove_subscription, unconfirm）→ `destructiveHint` 注釈 + 実行前サマリ返却。
+- 残り 21 コマンドを写像 → **MCP ツール 21 個**。加えて内部利用の `get_my_votes` を明示ツール化して **合計 22 ツール**（フル同等 + 補助 1）。
+- 全 MCP ツールは認証必須。主催者限定 write は 8（edit / delete / candidate add / candidate rm / confirm / unconfirm / add_invite / revoke_invite）、招待一覧も主催者限定。get_event / tally / get_ics は公開イベントまたは本人が許可された招待限定イベントだけを返す。
+- 破壊的操作 = 6（delete_event, remove_candidate, remove_subscription, regen_subscription, unconfirm, revoke_invite）→ `destructiveHint` 注釈でクライアント側の確認判断を助ける。ツール呼出しは認可後に直接実行するため、サーバーによる事前確認・事前サマリ返却ではない。
 
 ---
 
@@ -280,7 +290,7 @@ Claude / MCP クライアント
 ### Phase 2: OAuth 化（案 A）+ 残りフル同等ツール
 - `workers-oauth-provider` 導入、Discord 上流連携、`/authorize` `/token` `/register`、`hiyori:read`/`hiyori:write` スコープ、同意画面、`OAUTH_KV`、`kind:'mcp'` 短命セッション発行、`props` 経由の本人特定、MCP 用 Rate Limit（key=discordUserId）。
 - 残りツール: `edit_event` / `delete_event` / `add_candidate` / `remove_candidate` / `unconfirm` / `my_busy` / `list/add/remove/regen_subscription`。
-- **受け入れ**: MCP クライアントが URL 指定のみで接続 → Discord ログイン → スコープ同意 → 全 19 ツールが本人権限で動作。read 同意のみのクライアントで write 系が拒否。トークン失効が効く。レート制限が discordUserId で効く。
+- **受け入れ**: MCP クライアントが URL 指定のみで接続 → Discord ログイン → スコープ同意 → 全 22 ツール（招待管理追加後）が本人権限で動作。read 同意のみのクライアントで write 系が拒否。トークン失効が効く。レート制限が discordUserId で効く。
 
 ### Phase 3: セルフホスト整備 / ドキュメント
 - README に有効化手順（KV 作成・migration・env）と接続方法（クライアント別）を追記。案 C（Access 前段）併記。`requirements.md` にオープン項目を反映。
