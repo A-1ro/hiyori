@@ -2,133 +2,117 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { EventComposer, type EventComposerProps } from './EventComposer'
 
-const FIRST_ID = '12345678901234567'
-const SECOND_ID = '23456789012345678901'
-const INVITE_LABEL = '招待する Discord ユーザー ID（任意）'
+const FIRST_NAME = 'first_friend'
+const SECOND_NAME = 'another.friend'
+const INVITE_LABEL = '招待する Discord ユーザー名（任意）'
 
 function renderComposer(overrides: Partial<EventComposerProps> = {}) {
   const onSubmit = vi.fn()
-  render(
-    <EventComposer
-      mode="create"
-      initial={{ title: 'テストイベント', dates: new Set(['2027-01-01']) }}
-      submitLabel="作成する"
-      submittingLabel="作成中..."
-      isSubmitting={false}
-      onSubmit={onSubmit}
-      {...overrides}
-    />,
-  )
+  render(<EventComposer mode="create" initial={{ title: 'テストイベント', dates: new Set(['2027-01-01']) }} submitLabel="作成する" submittingLabel="作成中..." isSubmitting={false} onSubmit={onSubmit} {...overrides} />)
   return { onSubmit }
 }
-
 function selectInviteOnly() {
   fireEvent.click(screen.getByRole('radio', { name: /^招待限定/ }))
-  return screen.getByRole('textbox', { name: INVITE_LABEL }) as HTMLTextAreaElement
+  return screen.getByRole('textbox', { name: INVITE_LABEL }) as HTMLInputElement
 }
-
 function submitButton() {
   return screen.getByRole('button', { name: '作成する' }) as HTMLButtonElement
 }
 
-describe('EventComposer の作成時招待', () => {
-  it('招待限定を選ぶと、公開範囲のすぐ下にラベル付き入力欄を表示する', () => {
+describe('EventComposer のユーザー名招待', () => {
+  it('公開範囲の直下に 1 人ずつのユーザー名欄を表示し、ID 切替を置かない', () => {
     renderComposer()
     expect(screen.queryByRole('textbox', { name: INVITE_LABEL })).toBeNull()
-
     const input = selectInviteOnly()
-    const visibilityField = screen.getByText('公開範囲').parentElement!
-    expect(visibilityField.nextElementSibling).toBe(input.parentElement)
-    expect(input.parentElement!.nextElementSibling!.textContent).toContain('所要時間')
+    const field = input.parentElement!.parentElement!.parentElement!.parentElement!
+    expect(screen.getByText('公開範囲').parentElement!.nextElementSibling).toBe(field)
+    expect(field.nextElementSibling!.textContent).toContain('所要時間')
+    expect(input.tagName).toBe('INPUT')
     expect(input.getAttribute('aria-describedby')).toBeTruthy()
-    expect(screen.getByText(/DM は自動送信されない/)).toBeTruthy()
+    expect(screen.queryByRole('radio', { name: /^ユーザー ID/ })).toBeNull()
+    expect(screen.getByText(/表示名やサーバー内のニックネームではありません/)).toBeTruthy()
+    expect(screen.getByText(/最初の受取り時にその名前を持つアカウント/)).toBeTruthy()
   })
 
-  it('改行・カンマで入力した ID の空白と空行を除き、重複をまとめて送る', () => {
+  it('入力ごとに次の欄を表示し、空白・@・大文字と重複を整理して送る', () => {
     const { onSubmit } = renderComposer()
-    fireEvent.change(selectInviteOnly(), {
-      target: { value: `  ${FIRST_ID}  ,\n${SECOND_ID}\r\n\n, ${FIRST_ID} , ` },
-    })
+    fireEvent.change(selectInviteOnly(), { target: { value: ' @First_Friend ' } })
+    fireEvent.change(screen.getByRole('textbox', { name: `${INVITE_LABEL} 2 人目` }), { target: { value: SECOND_NAME } })
+    fireEvent.change(screen.getByRole('textbox', { name: `${INVITE_LABEL} 3 人目` }), { target: { value: FIRST_NAME } })
+    expect((screen.getByRole('textbox', { name: `${INVITE_LABEL} 4 人目` }) as HTMLInputElement).value).toBe('')
     fireEvent.click(submitButton())
-
     expect(onSubmit).toHaveBeenCalledOnce()
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      visibility: 'invite_only',
-      invitedDiscordUserIds: [FIRST_ID, SECOND_ID],
-      candidates: expect.any(Array),
-    }))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ visibility: 'invite_only', invitedDiscordUsernames: [FIRST_NAME, SECOND_NAME], candidates: expect.any(Array) }))
+    expect(onSubmit.mock.calls[0]![0]).not.toHaveProperty('invitedDiscordUserIds')
   })
 
-  it.each(['1234567890123456', '123456789012345678901', '1234567890123456a', '<@12345678901234567>'])(
-    '不正な ID %s では作成せず、入力欄にエラーを関連付ける',
-    (invalidId) => {
-      const { onSubmit } = renderComposer()
-      const input = selectInviteOnly()
-      fireEvent.change(input, { target: { value: `${FIRST_ID}\n${invalidId}` } })
+  it('数字だけの文字列もユーザー名として送る', () => {
+    const { onSubmit } = renderComposer()
+    fireEvent.change(selectInviteOnly(), { target: { value: '123456789012345678' } })
+    fireEvent.click(submitButton())
+    expect(onSubmit.mock.calls[0]![0].invitedDiscordUsernames).toEqual(['123456789012345678'])
+    expect(onSubmit.mock.calls[0]![0]).not.toHaveProperty('invitedDiscordUserIds')
+  })
 
+  it.each(['@', 'a', 'a..b', '表示名', 'name#1234', 'a'.repeat(33), 'first_friend,another.friend'])(
+    '不正なユーザー名 %s では送信せず、誤りのある欄だけにエラーを付ける', (invalid) => {
+      const { onSubmit } = renderComposer()
+      const first = selectInviteOnly()
+      fireEvent.change(first, { target: { value: FIRST_NAME } })
+      const second = screen.getByRole('textbox', { name: `${INVITE_LABEL} 2 人目` })
+      fireEvent.change(second, { target: { value: invalid } })
       const error = screen.getByRole('alert')
-      expect(error.textContent).toContain('半角数字 17〜20 桁')
-      expect(input.getAttribute('aria-invalid')).toBe('true')
-      expect(input.getAttribute('aria-describedby')).toContain(error.id)
+      expect(error.textContent).toContain('2〜32 文字')
+      expect(first.getAttribute('aria-invalid')).toBe('false')
+      expect(second.getAttribute('aria-invalid')).toBe('true')
+      expect(second.getAttribute('aria-describedby')).toContain(error.id)
       expect(submitButton().disabled).toBe(true)
       fireEvent.click(submitButton())
       expect(onSubmit).not.toHaveBeenCalled()
-
-      fireEvent.change(input, { target: { value: FIRST_ID } })
+      fireEvent.change(second, { target: { value: SECOND_NAME } })
       expect(screen.queryByRole('alert')).toBeNull()
       expect(submitButton().disabled).toBe(false)
     },
   )
 
-  it('重複を除いた上限は 500 人で、501 人は作成できない', () => {
+  it('重複を除いた上限は 500 人で、貼り付けも個別の欄に分ける', () => {
     const { onSubmit } = renderComposer()
-    const input = selectInviteOnly()
-    const ids = Array.from({ length: 501 }, (_, i) => String(10000000000000000n + BigInt(i)))
-    fireEvent.change(input, { target: { value: ids.join('\n') } })
+    const names = Array.from({ length: 501 }, (_, i) => `friend_${i}`)
+    fireEvent.paste(selectInviteOnly(), { clipboardData: { getData: () => names.join('\n') } })
     expect(screen.getByRole('alert').textContent).toContain('500 人まで')
     expect(submitButton().disabled).toBe(true)
-
-    fireEvent.change(input, { target: { value: [...ids.slice(0, 500), ids[0]].join('\n') } })
+    fireEvent.change(screen.getByRole('textbox', { name: `${INVITE_LABEL} 501 人目` }), { target: { value: names[0] } })
     expect(screen.queryByRole('alert')).toBeNull()
     fireEvent.click(submitButton())
-    expect(onSubmit.mock.calls[0]![0].invitedDiscordUserIds).toEqual(ids.slice(0, 500))
+    expect(onSubmit.mock.calls[0]![0].invitedDiscordUsernames).toEqual(names.slice(0, 500))
   })
 
-  it('未入力でも招待限定イベントを作成できる', () => {
+  it('未入力でも招待限定を作成できる', () => {
     const { onSubmit } = renderComposer()
     selectInviteOnly()
     fireEvent.click(submitButton())
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ invitedDiscordUserIds: [] }))
+    expect(onSubmit.mock.calls[0]![0].invitedDiscordUsernames).toEqual([])
   })
 
-  it('公開に切り替えると非表示の ID を送らず、戻すと下書きを維持する', () => {
+  it('公開では非表示の招待を送らず、招待限定に戻すと下書きを保つ', () => {
     const { onSubmit } = renderComposer()
-    const draft = `${FIRST_ID}\ninvalid-id`
-    fireEvent.change(selectInviteOnly(), { target: { value: draft } })
+    fireEvent.change(selectInviteOnly(), { target: { value: 'invalid name' } })
     fireEvent.click(screen.getByRole('radio', { name: /^公開 / }))
-
-    expect(screen.queryByRole('textbox', { name: INVITE_LABEL })).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(submitButton().disabled).toBe(false)
     fireEvent.click(submitButton())
-    expect(onSubmit.mock.calls[0]![0].visibility).toBe('public')
+    expect(onSubmit.mock.calls[0]![0]).not.toHaveProperty('invitedDiscordUsernames')
     expect(onSubmit.mock.calls[0]![0]).not.toHaveProperty('invitedDiscordUserIds')
-
-    expect(selectInviteOnly().value).toBe(draft)
+    expect(selectInviteOnly().value).toBe('invalid name')
     expect(submitButton().disabled).toBe(true)
   })
 
-  it('編集中は招待管理を公開範囲のすぐ下に置き、作成用 ID を送らない', () => {
-    const { onSubmit } = renderComposer({
-      mode: 'edit',
-      inviteManager: <section aria-label="招待管理">既存の招待管理</section>,
-    })
+  it('編集時の招待管理も公開範囲の直下に置き、作成用招待を送らない', () => {
+    const { onSubmit } = renderComposer({ mode: 'edit', inviteManager: <section aria-label="招待管理">既存の招待管理</section> })
     const manager = screen.getByRole('region', { name: '招待管理' })
     expect(screen.getByText('公開範囲').parentElement!.nextElementSibling).toBe(manager)
     fireEvent.click(screen.getByRole('radio', { name: /^招待限定/ }))
     expect(screen.getByRole('region', { name: '招待管理' })).toBe(manager)
-    expect(screen.queryByRole('textbox', { name: INVITE_LABEL })).toBeNull()
     fireEvent.click(submitButton())
-    expect(onSubmit.mock.calls[0]![0]).not.toHaveProperty('invitedDiscordUserIds')
+    expect(onSubmit.mock.calls[0]![0]).not.toHaveProperty('invitedDiscordUsernames')
   })
 })

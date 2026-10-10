@@ -2,7 +2,7 @@
 import { d1Adapter, nanoka } from '@nanokajs/core'
 import type { RowType } from '@nanokajs/core'
 import type { BatchItem } from 'drizzle-orm/batch'
-import { eq, inArray, and, isNull, ne, gt, desc } from 'drizzle-orm'
+import { eq, inArray, and, or, exists, isNull, ne, gt, desc, sql } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
 import { getCookie, setCookie } from 'hono/cookie'
 import { cors } from 'hono/cors'
@@ -32,7 +32,6 @@ import { voteFields, voteTableName } from '../models/vote'
 import { announcement, calendar_subscriptions, candidates, decisions, event_invites, events, participants, votes, users, sessions, feedback } from '../../drizzle/schema'
 import { announcementFields, announcementTableName } from '../models/announcement'
 import { feedbackFields, feedbackTableName } from '../models/feedback'
-import { userTableName, userFields } from '../models/user'
 import { sessionTableName, sessionFields } from '../models/session'
 import { setSessionCookie, clearSessionCookie, getSessionToken, getBearerToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, isSecureRequest, SESSION_TTL_SECONDS, CLI_SESSION_TTL_SECONDS } from './auth/cookies'
 import { loadSession, requireSession } from './auth/session'
@@ -41,6 +40,7 @@ import { generateDeviceCode, generateUserCode, normalizeUserCode } from './auth/
 import { cli_auth_requests } from '../../drizzle/schema'
 import { tryLegacyBearerMcp, isMcpEnabled, MCP_ROUTE } from './mcp/handler'
 import { getOAuthProvider } from './mcp/provider'
+import { isDiscordUsername, normalizeDiscordUsername } from '../shared/discord-invites'
 
 export interface Env {
   DB: D1Database
@@ -94,6 +94,8 @@ const displayNameSchema = z.string().min(1).max(80).refine(
 )
 
 const discordUserIdSchema = z.string().trim().regex(/^\d{17,20}$/, 'Invalid Discord user ID')
+const discordUsernameSchema = z.string().max(128).transform(normalizeDiscordUsername)
+  .refine(isDiscordUsername, 'Invalid Discord username')
 
 const createEventBody = z.object({
   title: z.string().min(1).max(200),
@@ -102,6 +104,8 @@ const createEventBody = z.object({
   visibility: z.enum(['public', 'invite_only']).default('public'),
   invitedDiscordUserIds: z.array(discordUserIdSchema).max(500).default([])
     .transform((ids) => [...new Set(ids)]),
+  invitedDiscordUsernames: z.array(discordUsernameSchema).max(500).default([])
+    .transform((names) => [...new Set(names)]),
   deadline: z.string().datetime().optional(),
   timezone: z.string().max(64).optional(),
   // /hiyori new から発行された HMAC 署名トークン。直接 channel ID を受け付けない。
@@ -115,7 +119,10 @@ const createEventBody = z.object({
     )
     .min(1)
     .max(365),
-}).refine((body) => body.visibility === 'invite_only' || body.invitedDiscordUserIds.length === 0, {
+}).refine((body) => body.invitedDiscordUserIds.length + body.invitedDiscordUsernames.length <= 500, {
+  message: 'At most 500 invitations are allowed',
+  path: ['invitedDiscordUsernames'],
+}).refine((body) => body.visibility === 'invite_only' || body.invitedDiscordUserIds.length + body.invitedDiscordUsernames.length === 0, {
   message: 'Invitations at creation require invite_only visibility',
   path: ['invitedDiscordUserIds'],
 })
@@ -137,7 +144,10 @@ const addCandidateBody = z.object({
 })
 
 const eventInviteBody = z.object({
-  discordUserId: discordUserIdSchema,
+  discordUserId: discordUserIdSchema.optional(),
+  discordUsername: discordUsernameSchema.optional(),
+}).strict().refine((body) => (body.discordUserId !== undefined) !== (body.discordUsername !== undefined), {
+  message: 'Provide exactly one of discordUserId or discordUsername',
 })
 
 // 運営お知らせ（層1）。カテゴリ・ステータスはホワイトリスト、本文は必須＋最大長。
@@ -277,12 +287,24 @@ export const buildApp = (env: Env) => {
   const Decision = app.model(decisionTableName, decisionFields)
   const CalendarSubscription = app.model(calendarSubscriptionTableName, calendarSubscriptionFields)
   const AuditLog = app.model(auditLogTableName, auditLogFields)
-  const User = app.model(userTableName, userFields)
   const Session = app.model(sessionTableName, sessionFields)
   const Feedback = app.model(feedbackTableName, feedbackFields)
   const Announcement = app.model(announcementTableName, announcementFields)
 
   type EventRow = Awaited<ReturnType<typeof Event.findOne>>
+
+  // Query-side form of the same stable-ID ACL, for bulk event reads. A participant
+  // record alone never grants continued access to a private event after revocation.
+  function eventVisibilityFilter(discordUserId: string) {
+    return or(
+      ne(events.visibility, 'invite_only'),
+      eq(events.organizerDiscordId, discordUserId),
+      exists(app.db.select({ id: event_invites.id }).from(event_invites).where(and(
+        eq(event_invites.eventId, events.id),
+        eq(event_invites.discordUserId, discordUserId),
+      ))),
+    )
+  }
 
   // Public events preserve the MVP behavior. Invite-only events require the organizer
   // or an active Discord-user-ID invite; this helper is reused by every event read path.
@@ -291,9 +313,9 @@ export const buildApp = (env: Env) => {
     if (!discordUserId) return false
     if (eventRow.organizerDiscordId === discordUserId) return true
     const rows = await app.db
-      .select({ id: event_invites.id })
-      .from(event_invites)
-      .where(and(eq(event_invites.eventId, eventRow.id), eq(event_invites.discordUserId, discordUserId)))
+      .select({ id: events.id })
+      .from(events)
+      .where(and(eq(events.id, eventRow.id), eventVisibilityFilter(discordUserId)))
       .limit(1)
     return rows.length > 0
   }
@@ -500,49 +522,43 @@ window.__vite_plugin_react_preamble_installed__ = true
       const tok = await exchangeCodeForToken(c.env, code, redirectUri)
       const me = await fetchDiscordMe(tok.access_token)
 
-      const existing = await User.findMany({ where: { discordUserId: me.id }, limit: 1 })
-      let userId: string
       const sessionToken = generateSessionToken()
       const tokenHash = await hashToken(sessionToken)
-      const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000)
-      const sessionValues = {
-        id: crypto.randomUUID(),
-        userId: '' as string,
-        tokenHash,
-        createdAt: new Date(),
-        lastUsedAt: new Date(),
-        expiresAt,
+      const now = new Date()
+      const profile = {
+        username: me.username,
+        globalName: me.global_name ?? null,
+        avatar: me.avatar ?? null,
+        updatedAt: now,
       }
-      if (existing.length > 0) {
-        userId = existing[0]!.id
-        sessionValues.userId = userId
-        const now = new Date()
-        await app.batch([
-          app.db.update(users).set({
-            username: me.username,
-            globalName: me.global_name ?? null,
-            avatar: me.avatar ?? null,
-            updatedAt: now,
-          }).where(eq(users.id, userId)),
-          app.db.insert(sessions).values(sessionValues),
-        ])
-      } else {
-        userId = crypto.randomUUID()
-        sessionValues.userId = userId
-        const now = new Date()
-        await app.batch([
-          app.db.insert(users).values({
-            id: userId,
-            discordUserId: me.id,
-            username: me.username,
-            globalName: me.global_name ?? null,
-            avatar: me.avatar ?? null,
-            createdAt: now,
-            updatedAt: now,
-          }),
-          app.db.insert(sessions).values(sessionValues),
-        ])
+      const loginStatements: [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]] = [
+        // An upsert plus an in-transaction user lookup also handles concurrent first logins.
+        app.db.insert(users).values({
+          id: crypto.randomUUID(),
+          discordUserId: me.id,
+          ...profile,
+          createdAt: now,
+        }).onConflictDoUpdate({ target: users.discordUserId, set: profile }),
+        app.db.insert(sessions).values({
+          id: crypto.randomUUID(),
+          userId: sql`(SELECT id FROM users WHERE discordUserId = ${me.id})`,
+          tokenHash,
+          createdAt: now,
+          lastUsedAt: now,
+          expiresAt: new Date(now.getTime() + SESSION_TTL_SECONDS * 1000),
+        }),
+      ]
+      // Only this freshly authenticated /users/@me result can claim a username.
+      // Cached session profiles, display names and client-provided strings never can.
+      // Legacy non-unique names fail closed. A bound or deleted record cannot be claimed
+      // again, even if Discord later gives that username to a different account.
+      if (me.discriminator === '0' && isDiscordUsername(me.username) && discordUserIdSchema.safeParse(me.id).success) {
+        loginStatements.push(app.db.update(event_invites).set({
+          discordUserId: me.id,
+          claimedAt: now,
+        }).where(and(eq(event_invites.discordUsername, me.username), isNull(event_invites.discordUserId))))
       }
+      await app.batch(loginStatements)
 
       setSessionCookie(c, sessionToken)
       return c.redirect(safeR, 302)
@@ -993,15 +1009,19 @@ window.__vite_plugin_react_preamble_installed__ = true
         for (let i = 0; i < candidateValues.length; i += CHUNK) {
           candidateInserts.push(app.db.insert(candidates).values(candidateValues.slice(i, i + CHUNK)))
         }
-        const inviteValues = body.invitedDiscordUserIds.map((discordUserId) => ({
-          id: crypto.randomUUID(),
-          eventId,
-          discordUserId,
-          createdAt: eventCreatedAt,
+        const numericInviteValues = body.invitedDiscordUserIds.map((discordUserId) => ({
+          id: crypto.randomUUID(), eventId, discordUserId, createdAt: eventCreatedAt,
+        }))
+        const usernameInviteValues = body.invitedDiscordUsernames.map((discordUsername) => ({
+          id: crypto.randomUUID(), eventId, discordUsername, createdAt: eventCreatedAt,
         }))
         const inviteInserts = []
-        for (let i = 0; i < inviteValues.length; i += CHUNK) {
-          inviteInserts.push(app.db.insert(event_invites).values(inviteValues.slice(i, i + CHUNK)))
+        // Omit each kind's unused nullable columns: four params per row, 20 per
+        // INSERT. Even 365 candidates + 500 mixed invites need at most 46 queries.
+        for (const values of [numericInviteValues, usernameInviteValues]) {
+          for (let i = 0; i < values.length; i += CHUNK) {
+            inviteInserts.push(app.db.insert(event_invites).values(values.slice(i, i + CHUNK)))
+          }
         }
         await app.batch([
           app.db.insert(events).values({
@@ -1074,7 +1094,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       const session = await requireSession(c, app, sessions, users)
       const eventRow = await Event.findOne(c.req.param('id'))
       if (!eventRow) return eventNotFound(c)
-      if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
+      if (eventRow.organizerDiscordId !== session.discordUserId) return eventNotFound(c)
       const rows = await EventInvite.findMany({
         where: { eventId: eventRow.id },
         orderBy: { column: 'createdAt', direction: 'asc' },
@@ -1083,7 +1103,9 @@ window.__vite_plugin_react_preamble_installed__ = true
       return c.json({ invites: rows.map((row) => ({
         id: row.id,
         eventId: row.eventId,
-        discordUserId: row.discordUserId,
+        discordUserId: row.discordUserId ?? null,
+        discordUsername: row.discordUsername ?? null,
+        claimedAt: row.claimedAt?.toISOString() ?? null,
         createdAt: row.createdAt.toISOString(),
       })) })
     })
@@ -1096,31 +1118,65 @@ window.__vite_plugin_react_preamble_installed__ = true
         const session = await requireSession(c, app, sessions, users)
         const eventRow = await Event.findOne(c.req.param('id'))
         if (!eventRow) return eventNotFound(c)
-        if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
-        const { discordUserId } = c.req.valid('json')
-        const existing = await EventInvite.findMany({ where: { eventId: eventRow.id, discordUserId }, limit: 1 })
-        if (existing.length > 0) return c.json({ invite: existing[0] }, 200)
+        if (eventRow.organizerDiscordId !== session.discordUserId) return eventNotFound(c)
+        const { discordUserId, discordUsername } = c.req.valid('json')
         const id = crypto.randomUUID()
-        await app.db.insert(event_invites).values({
-          id,
-          eventId: eventRow.id,
-          discordUserId,
-          createdAt: new Date(),
+        // Both the cap and duplicate check are in the INSERT, never a read-then-write
+        // race. Do not resolve usernames against the users cache or an external search.
+        const column = discordUserId !== undefined ? 'discordUserId' : 'discordUsername'
+        const target = discordUserId ?? discordUsername!
+        const result = await c.env.DB.prepare(`
+          INSERT INTO event_invites (id, eventId, discordUserId, discordUsername, claimedAt, createdAt)
+          SELECT ?, ?, ?, ?, NULL, ?
+          WHERE (SELECT COUNT(*) FROM event_invites WHERE eventId = ?) < 500
+            AND NOT EXISTS (SELECT 1 FROM event_invites WHERE eventId = ? AND ${column} = ?)
+            AND EXISTS (SELECT 1 FROM events WHERE id = ? AND organizerDiscordId = ?)
+        `).bind(id, eventRow.id, discordUserId ?? null, discordUsername ?? null, Date.now(), eventRow.id, eventRow.id, target, eventRow.id, session.discordUserId).run()
+        const rows = await EventInvite.findMany({
+          where: discordUserId !== undefined
+            ? { eventId: eventRow.id, discordUserId }
+            : { eventId: eventRow.id, discordUsername: discordUsername! },
+          limit: 1,
         })
-        const invite = await EventInvite.findOne(id)
-        if (!invite) throw new HTTPException(500, { message: 'Invite creation failed' })
-        return c.json({ invite }, 201)
+        const row = rows[0]
+        if (!row) {
+          const currentEvent = await Event.findOne(eventRow.id)
+          if (!currentEvent || currentEvent.organizerDiscordId !== session.discordUserId) return eventNotFound(c)
+          return c.json({ error: 'At most 500 invitations are allowed' }, 409)
+        }
+        const invite = {
+          id: row.id,
+          eventId: row.eventId,
+          discordUserId: row.discordUserId ?? null,
+          discordUsername: row.discordUsername ?? null,
+          claimedAt: row.claimedAt?.toISOString() ?? null,
+          createdAt: row.createdAt.toISOString(),
+        }
+        return c.json({ invite }, result.meta.changes > 0 ? 201 : 200)
       },
     )
     .delete('/api/events/:id/invites/:discordUserId', async (c) => {
       const session = await requireSession(c, app, sessions, users)
       const eventRow = await Event.findOne(c.req.param('id'))
       if (!eventRow) return eventNotFound(c)
-      if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
-      const discordUserId = c.req.param('discordUserId')
-      const rows = await EventInvite.findMany({ where: { eventId: eventRow.id, discordUserId }, limit: 1 })
-      if (rows.length === 0) return eventNotFound(c)
-      await EventInvite.delete(rows[0]!.id)
+      if (eventRow.organizerDiscordId !== session.discordUserId) return eventNotFound(c)
+      // UUIDs address pending or claimed records. Keep the numeric path compatible.
+      // Retain all record IDs when a username claim overlaps an ID invitation, so an
+      // organizer's pre-claim revoke button cannot become a stale target. Revoking any
+      // bound record removes every same-event grant for that now-known account.
+      const target = c.req.param('discordUserId')
+      const result = /^\d{17,20}$/.test(target)
+        ? await c.env.DB.prepare('DELETE FROM event_invites WHERE eventId = ? AND discordUserId = ?')
+          .bind(eventRow.id, target).run()
+        : await c.env.DB.prepare(`
+          WITH target_account AS MATERIALIZED (
+            SELECT discordUserId FROM event_invites WHERE eventId = ? AND id = ? AND discordUserId IS NOT NULL
+          )
+          DELETE FROM event_invites WHERE eventId = ? AND (
+            id = ? OR discordUserId IN (SELECT discordUserId FROM target_account)
+          )
+        `).bind(eventRow.id, target, eventRow.id, target).run()
+      if (result.meta.changes === 0) return eventNotFound(c)
       return new Response(null, { status: 204 })
     })
     .patch(
@@ -1135,6 +1191,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         const id = c.req.param('id')
         const eventRow = await Event.findOne(id)
         if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+        if (!(await isEventVisibleTo(eventRow, session.discordUserId))) return eventNotFound(c)
         if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
 
         const body = c.req.valid('json')
@@ -1181,6 +1238,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       const id = c.req.param('id')
       const eventRow = await Event.findOne(id)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+      if (!(await isEventVisibleTo(eventRow, session.discordUserId))) return eventNotFound(c)
       if (eventRow.organizerDiscordId !== session.discordUserId) return c.json({ error: 'Forbidden' }, 403)
 
       const candidateRows = await Candidate.findMany({ where: { eventId: id }, limit: 10000 })
@@ -1214,6 +1272,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         const id = c.req.param('id')
         const eventRow = await Event.findOne(id)
         if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+        if (!(await isEventVisibleTo(eventRow, session.discordUserId))) return eventNotFound(c)
         if (eventRow.organizerDiscordId !== session.discordUserId) {
           return c.json({ error: 'Forbidden' }, 403)
         }
@@ -1239,6 +1298,7 @@ window.__vite_plugin_react_preamble_installed__ = true
 
       const eventRow = await Event.findOne(eventId)
       if (!eventRow) return c.json({ error: 'Not Found' }, 404)
+      if (!(await isEventVisibleTo(eventRow, session.discordUserId))) return eventNotFound(c)
       if (eventRow.organizerDiscordId !== session.discordUserId) {
         return c.json({ error: 'Forbidden' }, 403)
       }
@@ -1510,6 +1570,8 @@ window.__vite_plugin_react_preamble_installed__ = true
       async (c) => {
         const session = await requireSession(c, app, sessions, users)
         const eventId = c.req.param('id')
+        const eventRow = await Event.findOne(eventId)
+        if (!eventRow || !(await isEventVisibleTo(eventRow, session.discordUserId))) return eventNotFound(c)
         const body = c.req.valid('json')
         const workerHost = new URL(c.req.url).host
         const result = await applyDecisions(
@@ -1541,6 +1603,8 @@ window.__vite_plugin_react_preamble_installed__ = true
     .delete('/api/events/:id/decision', async (c) => {
       const session = await requireSession(c, app, sessions, users)
       const eventId = c.req.param('id')
+      const eventRow = await Event.findOne(eventId)
+      if (!eventRow || !(await isEventVisibleTo(eventRow, session.discordUserId))) return eventNotFound(c)
       const workerHost = new URL(c.req.url).host
       const result = await cancelAllDecisions(
         { app, Event, Candidate, Decision, workerHost },
@@ -1600,7 +1664,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       let participating: typeof organized = []
       if (participatedEventIds.length > 0) {
         const rows = await selectInChunks(participatedEventIds, (chunk) =>
-          app.db.select().from(events).where(inArray(events.id, chunk)),
+          app.db.select().from(events).where(and(inArray(events.id, chunk), eventVisibilityFilter(did))),
         )
         participating = rows
           .filter((e) => e.organizerDiscordId !== did)
@@ -1631,11 +1695,13 @@ window.__vite_plugin_react_preamble_installed__ = true
       const conditions = [
         eq(participants.discordUserId, session.discordUserId),
         isNull(decisions.cancelledAt),
+        eventVisibilityFilter(session.discordUserId)!,
       ]
       if (excludeEventId) conditions.push(ne(decisions.eventId, excludeEventId))
       const rows = await app.db
         .selectDistinct({ startAt: candidates.startAt })
         .from(decisions)
+        .innerJoin(events, eq(events.id, decisions.eventId))
         .innerJoin(candidates, eq(candidates.id, decisions.candidateId))
         .innerJoin(participants, eq(participants.eventId, decisions.eventId))
         .where(and(...conditions))

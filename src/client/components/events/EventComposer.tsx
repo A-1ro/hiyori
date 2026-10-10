@@ -1,6 +1,7 @@
 import { useId, useState, type CSSProperties, type ReactNode } from 'react'
 import { Button, Field, Icon, Input } from '../primitives'
 import { MonthCalendar, WD } from '../MonthCalendar'
+import { DiscordInviteFields, useDiscordInviteDraft, validateDiscordInviteDraft } from './DiscordInviteFields'
 
 const HOUR_OPTS = Array.from({ length: 13 }, (_, i) => i) // 0〜12 時間
 const MIN_OPTS = [0, 10, 20, 30, 40, 50] // 10 分刻み
@@ -279,7 +280,7 @@ export interface ComposerPayload {
   description?: string
   defaultDurationMinutes: number
   visibility: 'public' | 'invite_only'
-  invitedDiscordUserIds?: string[]
+  invitedDiscordUsernames?: string[]
   deadline?: string
   timezone: string
   // Discord 連携は /hiyori new スラッシュコマンド由来の HMAC 署名トークン経由のみ。
@@ -369,7 +370,7 @@ export function EventComposer({
   const [memo, setMemo] = useState(initial?.description ?? '')
   const [dur, setDur] = useState(initial?.defaultDurationMinutes ?? 90)
   const [visibility, setVisibility] = useState<'public' | 'invite_only'>(initial?.visibility ?? 'public')
-  const [invitedDiscordUserIdsText, setInvitedDiscordUserIdsText] = useState('')
+  const inviteDraft = useDiscordInviteDraft()
   const inviteInputId = useId()
   const [durOpen, setDurOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(initial?.dates ?? new Set())
@@ -398,16 +399,10 @@ export function EventComposer({
     ]),
   ].sort()
   const totalSlots = dates.length * bandTimes.length
-  const invitedDiscordUserIds = [...new Set(
-    invitedDiscordUserIdsText.split(/[\n,]+/).map((id) => id.trim()).filter(Boolean),
-  )]
+  const { usernames: invitedDiscordUsernames, error: inviteValidationError } = validateDiscordInviteDraft(inviteDraft)
   const inviteError = mode !== 'create' || visibility !== 'invite_only'
     ? undefined
-    : invitedDiscordUserIds.some((id) => !/^\d{17,20}$/.test(id))
-      ? 'Discord ユーザー ID は、それぞれ半角数字 17〜20 桁で入力してください。'
-      : invitedDiscordUserIds.length > 500
-        ? '一度に招待できるのは 500 人までです。'
-        : undefined
+    : inviteValidationError
   const valid = title.trim() && dates.length > 0 && bandTimes.length > 0 && !inviteError
 
   const removeDate = (ds: string) =>
@@ -438,7 +433,7 @@ export function EventComposer({
       description: memo || undefined,
       defaultDurationMinutes: dur,
       visibility,
-      ...(mode === 'create' && visibility === 'invite_only' ? { invitedDiscordUserIds } : {}),
+      ...(mode === 'create' && visibility === 'invite_only' ? { invitedDiscordUsernames } : {}),
       deadline: deadline ? new Date(deadline).toISOString() : undefined,
       timezone,
       discordChannelToken,
@@ -485,7 +480,7 @@ export function EventComposer({
 
         <Field
           label="公開範囲"
-          hint="公開は URL を知っている人が閲覧できます。招待限定は Discord user ID を招待した人だけが閲覧・回答できます。"
+          hint="公開は URL を知っている人が閲覧できます。招待限定は招待した Discord アカウントだけが閲覧・回答できます。"
         >
           <div style={{ display: 'grid', gap: 8 }}>
             {([
@@ -524,24 +519,18 @@ export function EventComposer({
 
         {mode === 'create' && visibility === 'invite_only' && (
           <div>
-            <label
-              htmlFor={inviteInputId}
-              style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--color-fg2)', marginBottom: 7 }}
-            >
-              招待する Discord ユーザー ID（任意）
-            </label>
-            <textarea
+            <DiscordInviteFields
               id={inviteInputId}
-              value={invitedDiscordUserIdsText}
-              onChange={(e) => setInvitedDiscordUserIdsText(e.target.value)}
-              rows={4}
-              placeholder={'123456789012345678\n234567890123456789'}
-              aria-invalid={Boolean(inviteError)}
-              aria-describedby={`${inviteInputId}-hint${inviteError ? ` ${inviteInputId}-error` : ''}`}
-              style={{ ...dateInputStyle, width: '100%', padding: '10px 12px', fontSize: 14, lineHeight: 1.6, resize: 'vertical' }}
+              draft={inviteDraft}
+              optional
+              describedBy={`${inviteInputId}-hint${inviteError ? ` ${inviteInputId}-error` : ''}`}
+              disabled={isSubmitting}
             />
             <p id={`${inviteInputId}-hint`} style={{ margin: '6px 0 0', fontSize: 12, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
-              17〜20 桁のユーザー ID を改行またはカンマで区切って入力してください（最大 500 人）。重複する ID はまとめます。招待はイベント作成と同時に登録され、作成後も編集できます。DM は自動送信されないため、作成後にイベントの URL を共有してください。
+              1 欄に 1 人のユーザー名を入力すると、次の欄が表示されます（最大 500 人）。重複するユーザー名はまとめます。招待はイベント作成と同時に登録され、作成後も編集できます。ユーザー名で招待した相手には、イベントの URL を共有して Discord でログインしてもらってください。DM は自動送信されません。
+            </p>
+            <p style={{ margin: '6px 0 0', fontSize: 12, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
+              ユーザー名の招待は、最初の受取り時にその名前を持つアカウントへ結び付きます。受取り前の名前変更や入力間違いに注意してください。受取り後は名前が変わっても同じアカウントの招待として扱います。
             </p>
             {inviteError && (
               <p id={`${inviteInputId}-error`} role="alert" style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--color-no-ink)' }}>

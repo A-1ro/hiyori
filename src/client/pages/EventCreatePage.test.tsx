@@ -11,8 +11,8 @@ vi.mock('../api/client', async (importActual) => {
 })
 vi.mock('../components/AppHeader', () => ({ AppHeader: () => null }))
 
-const FIRST_ID = '123456789012345678'
-const SECOND_ID = '234567890123456789'
+const FIRST_NAME = 'first_friend'
+const SECOND_NAME = 'another_friend'
 const result: Awaited<ReturnType<typeof createEvent>> = {
   event: {
     id: 'created-event',
@@ -43,8 +43,10 @@ function renderPage() {
   fireEvent.mouseDown(view.container.querySelector('button[data-ds]:not([disabled])')!)
   fireEvent.mouseUp(window)
   fireEvent.click(screen.getByRole('radio', { name: /^招待限定/ }))
-  const input = screen.getByRole('textbox', { name: '招待する Discord ユーザー ID（任意）' }) as HTMLTextAreaElement
-  fireEvent.change(input, { target: { value: ` ${FIRST_ID} ,\n${SECOND_ID},${FIRST_ID}` } })
+  const input = screen.getByRole('textbox', { name: '招待する Discord ユーザー名（任意）' }) as HTMLInputElement
+  fireEvent.change(input, { target: { value: ` ${FIRST_NAME} ` } })
+  fireEvent.change(screen.getByRole('textbox', { name: '招待する Discord ユーザー名（任意） 2 人目' }), { target: { value: SECOND_NAME } })
+  fireEvent.change(screen.getByRole('textbox', { name: '招待する Discord ユーザー名（任意） 3 人目' }), { target: { value: FIRST_NAME } })
   return { input }
 }
 
@@ -54,7 +56,7 @@ beforeEach(() => {
 })
 
 describe('EventCreatePage の招待付き作成', () => {
-  it('作成 API 一回に招待 ID と候補を含め、成功後にイベントへ移動する', async () => {
+  it('作成 API 一回に招待ユーザー名 と候補を含め、成功後にイベントへ移動する', async () => {
     renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
     await screen.findByText('作成したイベント')
@@ -63,14 +65,14 @@ describe('EventCreatePage の招待付き作成', () => {
     expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({
       title: '招待テスト',
       visibility: 'invite_only',
-      invitedDiscordUserIds: [FIRST_ID, SECOND_ID],
+      invitedDiscordUsernames: [FIRST_NAME, SECOND_NAME],
       discordChannelToken: 'test-channel-token',
       candidates: expect.arrayContaining([expect.objectContaining({ startAt: expect.any(String) })]),
     }))
     expect(addEventInvite).not.toHaveBeenCalled()
   })
 
-  it('公開へ戻した場合は作成 API に招待 ID を含めない', async () => {
+  it('公開へ戻した場合は作成 API に招待ユーザー名 を含めない', async () => {
     renderPage()
     fireEvent.click(screen.getByRole('radio', { name: /^公開 / }))
     fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
@@ -78,6 +80,7 @@ describe('EventCreatePage の招待付き作成', () => {
 
     expect(vi.mocked(createEvent).mock.calls[0]![0].visibility).toBe('public')
     expect(vi.mocked(createEvent).mock.calls[0]![0]).not.toHaveProperty('invitedDiscordUserIds')
+    expect(vi.mocked(createEvent).mock.calls[0]![0]).not.toHaveProperty('invitedDiscordUsernames')
   })
 
   it('失敗時は招待の下書きを維持し、同じ内容で再試行できる', async () => {
@@ -87,6 +90,7 @@ describe('EventCreatePage の招待付き作成', () => {
     fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
     await screen.findByText('イベントを作成できませんでした')
     expect(input.value).toBe(draft)
+    expect((screen.getByRole('textbox', { name: '招待する Discord ユーザー名（任意） 2 人目' }) as HTMLInputElement).value).toBe(SECOND_NAME)
     expect(screen.queryByText('作成したイベント')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))

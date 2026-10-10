@@ -7,10 +7,12 @@ import {
   applyDecisions,
   cancelDecisions,
   fetchPermissions,
+  ApiError,
   type TallyCandidate,
   type TallyVoteCell,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
+import { InviteLoginHint } from '../components/InviteLoginHint'
 import { Avatar, Badge, Button, Icon } from '../components/primitives'
 
 const WD = ['日', '月', '火', '水', '木', '金', '土']
@@ -56,7 +58,7 @@ export function EventTallyPage() {
   const [hoverCol, setHoverCol] = useState<string | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-  const { data: tallyData, isLoading: tallyLoading } = useQuery({
+  const { data: tallyData, isLoading: tallyLoading, error: tallyError } = useQuery({
     queryKey: ['tally', id],
     queryFn: () => fetchTally(id!),
     enabled: !!id,
@@ -147,12 +149,17 @@ export function EventTallyPage() {
     )
   }
 
-  if (!tallyData) {
+  if (tallyError || !tallyData) {
     return (
       <div>
         <AppHeader />
         <main style={{ maxWidth: 720, margin: '0 auto', padding: '48px 24px' }}>
-          <p style={{ color: 'var(--color-no-ink)' }}>イベントが見つかりません。</p>
+          <p style={{ color: 'var(--color-no-ink)' }}>
+            {tallyError instanceof ApiError && tallyError.status === 404
+              ? 'イベントが見つかりません。'
+              : 'エラーが発生しました。'}
+          </p>
+          {tallyError instanceof ApiError && tallyError.status === 404 && <InviteLoginHint />}
           <Button variant="ghost" onClick={() => navigate('/')} style={{ marginTop: 16 }}>
             ホームへ
           </Button>

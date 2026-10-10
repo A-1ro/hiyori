@@ -19,7 +19,7 @@ export function EventCreatePage() {
         defaultDurationMinutes: payload.defaultDurationMinutes,
         visibility: payload.visibility,
         ...(payload.visibility === 'invite_only'
-          ? { invitedDiscordUserIds: payload.invitedDiscordUserIds }
+          ? { invitedDiscordUsernames: payload.invitedDiscordUsernames }
           : {}),
         deadline: payload.deadline,
         timezone: payload.timezone,

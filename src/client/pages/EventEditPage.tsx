@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -13,6 +13,8 @@ import {
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
 import { Button } from '../components/primitives'
+import { DiscordInviteFields, useDiscordInviteDraft, validateDiscordInviteDraft } from '../components/events/DiscordInviteFields'
+import { normalizeDiscordUsername } from '../../shared/discord-invites'
 import {
   EventComposer,
   buildComposerInitial,
@@ -129,19 +131,23 @@ export function EventEditPage() {
 }
 
 function EventInviteManager({ eventId }: { eventId: string }) {
-  const [discordUserId, setDiscordUserId] = useState('')
+  const inviteDraft = useDiscordInviteDraft()
   const inviteInputId = useId()
   const queryClient = useQueryClient()
   const { data, isLoading, error } = useQuery({
     queryKey: ['eventInvites', eventId],
     queryFn: () => fetchEventInvites(eventId),
   })
+  const { usernames: discordUsernames, error: inviteError } = validateDiscordInviteDraft(inviteDraft, data?.invites)
   const addMutation = useMutation({
-    mutationFn: () => addEventInvite(eventId, discordUserId.trim()),
-    onSuccess: () => {
-      setDiscordUserId('')
-      queryClient.invalidateQueries({ queryKey: ['eventInvites', eventId] })
+    mutationFn: async (usernames: string[]) => {
+      // Existing edit behavior applies invitations immediately. Keep unsubmitted rows on failure.
+      for (const discordUsername of usernames) {
+        await addEventInvite(eventId, { discordUsername })
+        inviteDraft.usernameRows.removeSubmitted(discordUsername, normalizeDiscordUsername)
+      }
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['eventInvites', eventId] }),
   })
   const removeMutation = useMutation({
     mutationFn: (id: string) => removeEventInvite(eventId, id),
@@ -158,38 +164,45 @@ function EventInviteManager({ eventId }: { eventId: string }) {
       }}
     >
       <h3 style={{ margin: 0, fontSize: 17, color: 'var(--color-fg1)' }}>
-        <label htmlFor={inviteInputId}>招待する Discord ユーザー ID</label>
+        Discord アカウントを招待
       </h3>
       <p id={`${inviteInputId}-hint`} style={{ margin: '6px 0 14px', fontSize: 13, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
-        招待限定イベントでは、ここに登録した Discord user ID の本人だけが閲覧・回答できます。公開イベントでも先に登録しておけます。招待の追加・取消はすぐに反映されます。公開範囲の変更には「保存する」が必要です。DM は自動送信されないため、イベントの URL を共有してください。
+        1 欄に 1 人のユーザー名を入力すると、次の欄が表示されます（最大 500 人）。重複するユーザー名はまとめます。公開イベントでも先に登録しておけます。招待の追加・取消はすぐに反映されます。公開範囲の変更には「保存する」が必要です。ユーザー名で招待した相手には、イベントの URL を共有して Discord でログインしてもらってください。DM は自動送信されません。
       </p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        <input
+      <p style={{ margin: '6px 0 14px', fontSize: 12, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
+        ユーザー名の招待は、最初の受取り時にその名前を持つアカウントへ結び付きます。受取り前の名前変更や入力間違いに注意してください。受取り後は名前が変わっても同じアカウントの招待として扱い、取消時は同じアカウントへの招待をまとめて取り消します。
+      </p>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <DiscordInviteFields
           id={inviteInputId}
-          value={discordUserId}
-          onChange={(e) => setDiscordUserId(e.target.value)}
-          placeholder="Discord user ID（17〜20桁）"
-          inputMode="numeric"
-          aria-describedby={`${inviteInputId}-hint`}
-          style={{ flex: '1 1 180px', minWidth: 0, boxSizing: 'border-box', padding: '10px 12px', border: '1px solid var(--color-border-strong)', borderRadius: 'var(--radius-sm)', background: 'var(--color-surface)', color: 'var(--color-fg1)' }}
+          draft={inviteDraft}
+          describedBy={`${inviteInputId}-hint${inviteError ? ` ${inviteInputId}-error` : ''}`}
+          disabled={addMutation.isPending}
         />
         <Button
           variant="secondary"
-          onClick={() => addMutation.mutate()}
-          disabled={!/^\d{17,20}$/.test(discordUserId.trim()) || addMutation.isPending}
+          onClick={() => {
+            if (discordUsernames.length && !inviteError && !addMutation.isPending) addMutation.mutate(discordUsernames)
+          }}
+          disabled={!discordUsernames.length || Boolean(inviteError) || addMutation.isPending}
+          style={{ justifySelf: 'start' }}
         >
           追加
         </Button>
       </div>
-      {addMutation.error && <p style={{ margin: '8px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>招待の追加に失敗しました。</p>}
+      {inviteError && <p id={`${inviteInputId}-error`} role="alert" style={{ margin: '8px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>{inviteError}</p>}
+      {addMutation.error && <p role="alert" style={{ margin: '8px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>招待の追加に失敗しました。未登録の入力は残っています。</p>}
       {removeMutation.error && <p style={{ margin: '8px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>招待の取消に失敗しました。</p>}
       {error && <p style={{ margin: '12px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>招待一覧を読み込めません。</p>}
       {!isLoading && data?.invites.length === 0 && <p style={{ margin: '14px 0 0', color: 'var(--color-fg3)', fontSize: 13 }}>招待はまだありません。</p>}
       <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
         {data?.invites.map((invite) => (
           <div key={invite.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)' }}>
-            <code style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontSize: 13, color: 'var(--color-fg1)' }}>{invite.discordUserId}</code>
-            <Button variant="ghost" size="sm" onClick={() => removeMutation.mutate(invite.discordUserId)} disabled={removeMutation.isPending} style={{ flexShrink: 0 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <code style={{ minWidth: 0, overflowWrap: 'anywhere', fontSize: 13, color: 'var(--color-fg1)' }}>{invite.discordUsername ? `@${invite.discordUsername}` : '以前の招待'}</code>
+              {invite.discordUsername && <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: 'var(--color-fg3)' }}>{invite.discordUserId ? '受取り済み' : '受取り待ち · Discord ログイン時に確認'}</span>}
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => removeMutation.mutate(invite.id)} disabled={removeMutation.isPending} style={{ flexShrink: 0 }}>
               取消
             </Button>
           </div>

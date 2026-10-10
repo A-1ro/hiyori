@@ -13,6 +13,7 @@ import {
   type PutVoteInput,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
+import { InviteLoginHint } from '../components/InviteLoginHint'
 import {
   Avatar,
   Badge,
@@ -106,7 +107,7 @@ export function EventVotePage() {
   const { data: sessionData } = useSession()
   const sessionUser = sessionData?.user ?? null
 
-  const { data: eventData, isLoading: eventLoading } = useQuery({
+  const { data: eventData, isLoading: eventLoading, error: eventError } = useQuery({
     queryKey: ['event', id],
     queryFn: () => fetchEvent(id!),
     enabled: !!id,
@@ -323,12 +324,17 @@ export function EventVotePage() {
     )
   }
 
-  if (!eventData) {
+  if (eventError || !eventData) {
     return (
       <div>
         <AppHeader />
         <main style={{ maxWidth: 600, margin: '0 auto', padding: '48px 24px' }}>
-          <p style={{ color: 'var(--color-no-ink)' }}>イベントが見つかりません。</p>
+          <p style={{ color: 'var(--color-no-ink)' }}>
+            {eventError instanceof ApiError && eventError.status === 404
+              ? 'イベントが見つかりません。'
+              : 'エラーが発生しました。'}
+          </p>
+          {eventError instanceof ApiError && eventError.status === 404 && <InviteLoginHint />}
           <Link to="/" style={{ display: 'inline-block', marginTop: 16 }}>
             ホームへ
           </Link>

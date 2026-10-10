@@ -19,7 +19,9 @@ export const events = sqliteTable('events', {
 export const event_invites = sqliteTable('event_invites', {
   id: text('id').primaryKey().notNull(),
   eventId: text('eventId').notNull(),
-  discordUserId: text('discordUserId').notNull(),
+  discordUserId: text('discordUserId'),
+  discordUsername: text('discordUsername'),
+  claimedAt: integer('claimedAt', { mode: 'timestamp_ms' }),
   createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
 })
 

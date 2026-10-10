@@ -9,6 +9,7 @@ import {
   ApiError,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
+import { InviteLoginHint } from '../components/InviteLoginHint'
 import { Badge, Button, ConfirmDialog, DiscordMark, Icon } from '../components/primitives'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
 
@@ -82,6 +83,7 @@ export function EventDetailPage() {
               ? 'イベントが見つかりません。'
               : 'エラーが発生しました。'}
           </p>
+          {error instanceof ApiError && error.status === 404 && <InviteLoginHint />}
           <Button variant="ghost" onClick={() => navigate('/')} style={{ marginTop: 16 }}>
             ホームへ
           </Button>

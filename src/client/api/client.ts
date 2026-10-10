@@ -54,6 +54,7 @@ export interface CreateEventInput {
   defaultDurationMinutes: number
   visibility?: 'public' | 'invite_only'
   invitedDiscordUserIds?: string[]
+  invitedDiscordUsernames?: string[]
   deadline?: string
   timezone?: string
   // /hiyori new スラッシュコマンド由来の HMAC 署名トークン。手動入力は受け付けない。
@@ -97,7 +98,9 @@ export async function updateEvent(
 export interface EventInviteResponse {
   id: string
   eventId: string
-  discordUserId: string
+  discordUserId: string | null
+  discordUsername: string | null
+  claimedAt: string | null
   createdAt: string
 }
 
@@ -106,17 +109,19 @@ export async function fetchEventInvites(eventId: string): Promise<{ invites: Eve
   return handleResponse(res)
 }
 
-export async function addEventInvite(eventId: string, discordUserId: string): Promise<{ invite: EventInviteResponse }> {
+export type EventInviteTarget = string | { discordUsername: string }
+
+export async function addEventInvite(eventId: string, target: EventInviteTarget): Promise<{ invite: EventInviteResponse }> {
   const res = await api.api.events[':id'].invites.$post({
     param: { id: eventId },
-    json: { discordUserId },
+    json: typeof target === 'string' ? { discordUserId: target } : target,
   })
   return handleResponse(res)
 }
 
-export async function removeEventInvite(eventId: string, discordUserId: string): Promise<void> {
+export async function removeEventInvite(eventId: string, inviteId: string): Promise<void> {
   const res = await api.api.events[':id'].invites[':discordUserId'].$delete({
-    param: { id: eventId, discordUserId },
+    param: { id: eventId, discordUserId: inviteId },
   })
   return handleResponse(res)
 }
