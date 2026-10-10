@@ -1,11 +1,19 @@
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
-import { afterEach, beforeEach, describe, expect, inject, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, inject, it, vi } from 'vitest'
 import { loginAsBearer } from './test-helpers'
+import { claimPendingInvites, createInviteClaimer } from '../auth/claim-invites'
+
+vi.mock('../auth/claim-invites', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../auth/claim-invites')>()
+  return { ...actual, claimPendingInvites: vi.fn(actual.claimPendingInvites) }
+})
 
 const BASE = 'https://example.com'
 const db = (env as { DB: D1Database }).DB
-const mcpEnv = env as { MCP_ENABLED?: string }
+const mcpEnv = env as { MCP_ENABLED?: string; DISCORD_BOT_TOKEN?: string }
 let originalMcpEnabled: string | undefined
+let originalBotToken: string | undefined
+let nextFreshIdentity = 80000000000000000n
 
 type JsonRpc = { result?: unknown; error?: unknown }
 type ToolResult = { isError: boolean; data: unknown; text: string }
@@ -117,12 +125,18 @@ function counts() {
 }
 
 beforeEach(async () => {
+  vi.mocked(claimPendingInvites).mockImplementation(createInviteClaimer())
   await applyD1Migrations(db, inject('d1Migrations'))
   originalMcpEnabled = mcpEnv.MCP_ENABLED
   mcpEnv.MCP_ENABLED = 'true'
+  originalBotToken = mcpEnv.DISCORD_BOT_TOKEN
+  delete mcpEnv.DISCORD_BOT_TOKEN
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
+  if (originalBotToken === undefined) delete mcpEnv.DISCORD_BOT_TOKEN
+  else mcpEnv.DISCORD_BOT_TOKEN = originalBotToken
   if (originalMcpEnabled === undefined) delete mcpEnv.MCP_ENABLED
   else mcpEnv.MCP_ENABLED = originalMcpEnabled
 })
@@ -341,7 +355,7 @@ describe('MCP invitation management and isolation', () => {
     expect(await listInvites(owner, event.id)).toEqual(before)
   })
 
-  it('does not grant or claim pending username invitations through an existing authenticated MCP session', async () => {
+  it('does not grant from the cached MCP profile when a fresh Discord lookup is unavailable', async () => {
     const owner = await clientFor()
     const stale = await clientFor('23456789012345678', 'pending_name')
     const { event, candidates } = await createEvent(owner, { invitedDiscordUsernames: ['pending_name'] })
@@ -364,6 +378,51 @@ describe('MCP invitation management and isolation', () => {
     expect(listed.isError).toBe(false)
     expect(listed.text).not.toContain(event.id)
   })
+
+  it.each(['hiyori_get_event', 'hiyori_list_events', 'hiyori_tally', 'hiyori_get_my_votes', 'hiyori_vote'])(
+    'automatically claims a new invitation through %s using an already initialized MCP Bearer session', async (tool) => {
+      const owner = await clientFor()
+      const invitedId = String(++nextFreshIdentity)
+      // Initialize the real MCP transport before the invitation exists. Neither
+      // a fresh OAuth login nor reinitializing this transport is necessary.
+      const invited = await clientFor(invitedId, 'cached_previous_name')
+      // A different pending name keeps the global lookup precondition true even
+      // after this user's invitation is claimed by a tool's first API request.
+      await createEvent(owner, { invitedDiscordUsernames: ['not_this_invitee'] })
+      const { event, candidates } = await createEvent(owner, { invitedDiscordUsernames: ['current_invitee'] })
+      const before = await listInvites(owner, event.id)
+      expect(before[0]).toMatchObject({ discordUserId: null, claimedAt: null })
+      const sessionsBefore = (await db.prepare('SELECT id FROM sessions ORDER BY id').all()).results
+      mcpEnv.DISCORD_BOT_TOKEN = 'mcp-existing-session-test-bot'
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+        expect(url).toBe(`https://discord.com/api/v10/users/${invitedId}`)
+        expect(init?.method ?? 'GET').toBe('GET')
+        expect(new Headers(init?.headers).get('Authorization')).toBe('Bot mcp-existing-session-test-bot')
+        return Response.json({ id: invitedId, username: 'current_invitee', discriminator: '0', global_name: null, avatar: null })
+      })
+      const result = await invited.callTool(tool, tool === 'hiyori_list_events' ? {} : {
+        eventId: event.id,
+        ...(tool === 'hiyori_vote' ? { votes: [{ candidateId: candidates[0]!.id, choice: 'yes' }] } : {}),
+      })
+      expect(result.isError, result.text).toBe(false)
+      if (tool === 'hiyori_list_events' || tool === 'hiyori_get_event') expect(result.text).toContain(event.id)
+      const apiRequests = tool === 'hiyori_get_event' || tool === 'hiyori_vote' ? 2 : 1
+      expect(fetchSpy).toHaveBeenCalledTimes(apiRequests)
+      expect((await db.prepare('SELECT id FROM sessions ORDER BY id').all()).results).toEqual(sessionsBefore)
+      const bound = await listInvites(owner, event.id)
+      expect(bound).toEqual([expect.objectContaining({
+        id: before[0]!.id, discordUserId: invitedId, discordUsername: 'current_invitee', claimedAt: expect.any(String),
+      })])
+      if (tool === 'hiyori_vote') {
+        expect(await db.prepare('SELECT COUNT(*) AS count FROM participants WHERE eventId = ? AND discordUserId = ?')
+          .bind(event.id, invitedId).first()).toEqual({ count: 1 })
+        const votes = await invited.callTool('hiyori_get_my_votes', { eventId: event.id })
+        expect(votes.isError, votes.text).toBe(false)
+        expect(votes.data).toMatchObject({ votes: [expect.objectContaining({ choice: 'yes' })] })
+      }
+    },
+  )
 
   it('edits visibility through organizer authorization and preserves existing invitations', async () => {
     const owner = await clientFor()

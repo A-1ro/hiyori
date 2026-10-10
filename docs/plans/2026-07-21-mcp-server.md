@@ -94,7 +94,7 @@ CLI の全実行コマンドを MCP ツールへ写像する（§4）。認証�
 | `hiyori_add_invite` | `invite add --username` | `POST /api/events/:id/invites` | **主催者のみ**・write | `{ eventId, discordUsername }` → `{ invite }` |
 | `hiyori_revoke_invite` | `invite revoke` | `DELETE /api/events/:id/invites/:inviteId` | **主催者のみ**・write | `{ eventId, inviteId }` → `{ ok, eventId, inviteId }`（破壊的） |
 
-初期招待は create の `invitedDiscordUsernames`（CLI: 繰返し可能な `--invite-username`）を使い、`visibility: invite_only` を明示する。公開範囲は edit でも変更可能。招待は登録検索せずユーザー名で保存し、新しい Discord ログイン時に一度だけ固定 ID に紐付ける。取消の `inviteId` は一覧が返す UUID で、Discord ID 入力は新設しない。数字だけのユーザー名も名前として扱う。初期作成の原子性・合計 500 件上限・重複排除は共通 API で検証する。既存の数値 ID 用 DELETE ルートとの互換性は内部で維持する。
+初期招待は create の `invitedDiscordUsernames`（CLI: 繰返し可能な `--invite-username`）を使い、`visibility: invite_only` を明示する。公開範囲は edit でも変更可能。招待は登録検索せずユーザー名で保存し、ログイン済みのアクセス時に本人の固定 Discord ID を Bot 認証で Discord に問い合わせ、現在のユーザー名を確認して一度だけ固定 ID に紐付ける。CLI の既存 Bearer 認証・MCP の既存認可もそのまま使い、招待受取りのための再ログイン・再同意は不要。未ログイン・新規利用者は通常の Discord OAuth ログイン時にも照合する。キャッシュされたユーザー名は認可に使わず、一時的な照合失敗では未確定招待をそのまま保ち、既存セッションと受取り済み権限を維持する。アクセス不可は不存在と同じ 404 にし、少し待って同じ読み取りを再試行するよう案内する。取消の `inviteId` は一覧が返す UUID で、Discord ID 入力は新設しない。数字だけのユーザー名も名前として扱う。初期作成の原子性・合計 500 件上限・重複排除は共通 API で検証する。既存の数値 ID 用 DELETE ルートとの互換性は内部で維持する。
 
 ### 候補（日時スロット）
 

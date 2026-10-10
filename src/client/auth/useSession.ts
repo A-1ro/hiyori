@@ -15,6 +15,11 @@ export function useSession() {
     queryKey: ['session'],
     queryFn: async ({ signal }) => {
       const res = await fetch('/api/auth/me', { credentials: 'include', signal })
+      // 認証が無効と確認できた場合だけ未ログインにする。通信障害や 5xx は
+      // エラーとして扱い、既存のセッション情報を消してログインを要求しない。
+      if (!res.ok && res.status !== 401 && res.status !== 403) {
+        throw new Error('ログイン状態を確認できません')
+      }
       const next: { user: SessionUser | null } = res.ok ? await res.json() : { user: null }
       signal.throwIfAborted()
       const previous = qc.getQueryData<{ user: SessionUser | null }>(['session'])

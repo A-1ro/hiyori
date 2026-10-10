@@ -254,7 +254,7 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
             .describe('候補日時スロット'),
           description: z.string().max(2000).optional().describe('説明（任意）'),
           visibility: z.enum(['public', 'invite_only']).optional().describe('公開範囲。省略時は public。初期招待を指定する場合は invite_only が必須。'),
-          invitedDiscordUsernames: z.array(z.string().max(128)).max(500).optional().describe('初期招待の Discord ユーザー名（表示名・数値 ID ではない）。@ 接頭辞は任意。数字だけの名前もユーザー名として扱う。相手の新しい Discord ログインで受取りが確定する。最大 500 件。'),
+          invitedDiscordUsernames: z.array(z.string().max(128)).max(500).optional().describe('初期招待の Discord ユーザー名（表示名・数値 ID ではない）。@ 接頭辞は任意。数字だけの名前もユーザー名として扱う。ログイン済みの相手は通常の閲覧で現在の Discord ユーザー名を確認し、受取りが確定する。再ログインは不要。最大 500 件。'),
           deadline: z.string().datetime().optional().describe('投票締切（ISO8601, 任意）'),
           timezone: z.string().max(64).optional().describe('表示タイムゾーン（IANA, 任意）'),
         },
@@ -435,7 +435,7 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
       'hiyori_add_invite',
       {
         description:
-          '主催するイベントに Discord ユーザー名で招待を追加する。相手の登録有無を調べず未確定招待を保存し、相手の新しい Discord ログインで一度だけ受取りが確定する。初回照合時にその名前を持つアカウントが対象なので、入力間違い・改名に注意する。全招待の合計は最大 500 件。公開イベントでは招待しても閲覧は制限されない。',
+          '主催するイベントに Discord ユーザー名で招待を追加する。相手の登録有無を調べず未確定招待を保存する。ログイン済みの相手が閲覧すると現在の Discord ユーザー名を確認し、一度だけ固定 ID に紐付ける。再ログインは不要。照合の一時失敗時はログインしたまま時間をおいて再試行する。初回照合時にその名前を持つアカウントが対象なので、入力間違い・改名に注意する。全招待の合計は最大 500 件。公開イベントでは招待しても閲覧は制限されない。',
         inputSchema: {
           eventId: z.string().min(1).describe('イベント ID'),
           discordUsername: z.string().max(128).describe('Discord ユーザー名（表示名・数値 ID ではない）。@ 接頭辞は任意。数字だけの名前もユーザー名として扱う。'),

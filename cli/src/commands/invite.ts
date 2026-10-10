@@ -59,7 +59,7 @@ function inviteListCommand(): Command {
         printTable(['招待 ID（取消用）', '招待先', '状態'], data.invites.map((invite) => [
           invite.id,
           inviteLabel(invite),
-          invite.discordUserId ? '確定済み' : '未確定（Discord で再ログイン後に照合）',
+          invite.discordUserId ? '確定済み' : '未確定（アクセス時に現在のユーザー名を照合）',
         ]))
       } catch (err) {
         reportInviteError(err)
@@ -92,7 +92,7 @@ function inviteAddCommand(): Command {
         console.log(`招待 ID: ${data.invite.id}`)
         console.log('招待の追加だけでは公開範囲は変わりません（制限するには event edit --visibility invite_only を使用してください）')
         if (!data.invite.discordUserId) {
-          console.log('相手が Discord で新たにログインすると、現在のユーザー名を照合して招待を確定します')
+          console.log('相手にイベント URL を共有してください。ログイン済みならそのままアクセスして招待を受け取れます。未ログインの場合は Discord ログインが必要です')
         }
       } catch (err) {
         reportInviteError(err)

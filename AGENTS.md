@@ -16,7 +16,8 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 - Web (`src/client/`)、MCP (`src/server/mcp/agent.ts`)、CLI (`cli/src/`) は同じ Hono API のクライアントである。MCP は `internalApi`、CLI/Web は型付き API クライアントを通し、認可・検証・件数上限・原子的更新などの業務ロジックを API に集約する。クライアント側の表示/検証や MCP annotations を認可の代わりにしない。
 - 公開イベントは既定値で、既存のゲスト回答を維持する。招待限定は主催者と招待された Discord アカウントだけが閲覧・回答でき、招待一覧・追加・取消とイベント編集は主催者だけに許可する。詳細・集計・投票・個別 ICS・個人予定・MCP/CLI でも同じアクセス判定を使い、権限のない相手に非公開データや存在を明かさない。公開 Webcal/Discord 通知に招待限定の内容を流さない。
 - 新規招待の入力は全インターフェースで **Discord ユーザー名のみ**。表示名や数値 ID の入力/切替、登録ユーザー検索を追加しない。数字だけの名前もユーザー名として扱う。既存の数値 ID 招待は互換性を維持し、旧形式の識別用表示は読み取り専用とする。取消は一覧が返す安定した招待レコード ID を使う。
-- 招待は登録有無に依存せず未確定で保存し、新しい Discord OAuth ログインで取得した本人の現在のユーザー名から一度だけ固定 ID に紐付ける。セッションの古いプロフィールから確定/認可しない。全招待合計 500 件、重複排除、初期イベント/候補/招待の原子性、取消後に復活しない性質を維持する。
+- 招待は登録有無に依存せず未確定で保存する。ログイン済みのアクセス時は、認証済みセッションの不変の Discord ID を使って Bot 認証で Discord の現在のユーザー情報を新たに取得し、返された ID が本人と一致することを確認したうえで現在のユーザー名から一度だけ固定 ID に紐付ける。未ログイン・新規利用者は通常の Discord OAuth ログイン時に照合する。セッションや DB の古いプロフィールから確定/認可しない。全招待合計 500 件、重複排除、初期イベント/候補/招待の原子性、取消後に復活しない性質を維持する。
+- 新しい招待の受取りに再ログイン・ログアウト・OAuth リダイレクト・再同意を要求しない。Bot トークン未設定・429・5xx・タイムアウト等では未確定の招待に権限を付与せず、既存セッションと固定 ID による既存権限は維持する。アクセス不可は不存在と同じ 404 にし、ログイン済みには少し待って再試行、未ログインには通常のログインを案内する。認証自体が無効な 401 の案内とは区別する。
 - MCP の read/write スコープ、CLI の破壊的操作の確認と非対話/JSON 動作を維持する。ゲスト Cookie の回答や署名済み Discord チャンネル連携など、意図的に Web/Discord 限定の機能は `docs/plans/2026-07-21-mcp-server.md` の既定方針に従う。差異は理由を明記し、単なる実装漏れを例外にしない。
 
 ### Completion checklist
@@ -91,6 +92,7 @@ Discord OAuth2 + session cookie auth is implemented in `src/server/auth/`.
 - **`cookies.ts`**: Cookie constants (`hiyori_session`, `hiyori_oauth_state`), `generateSessionToken`, `hashToken` (SHA-256), `setSessionCookie` / `clearSessionCookie`, `setStateCookie` / `consumeStateCookie`.
 - **`session.ts`**: `loadSession(c, app, sessions, users)` — looks up session by token hash, checks expiry, returns `SessionUser | null`. `requireSession` — throws `HTTPException(401)` if no valid session.
 - **`discord.ts`**: `buildAuthorizeUrl`, `exchangeCodeForToken`, `fetchDiscordMe`.
+- **`claim-invites.ts`**: Authenticated event/personal-schedule requests refresh the current Discord username with Bot authentication and claim pending invitations without replacing the existing session. The immutable authenticated ID, never a client-provided username or cached profile, determines which account to look up. Temporary lookup failures leave pending invitations unclaimed and existing access intact.
 
 OAuth routes: `GET /api/auth/discord` (redirect), `GET /api/auth/discord/callback`, `POST /api/auth/logout`, `GET /api/auth/me`.
 

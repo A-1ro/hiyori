@@ -76,6 +76,8 @@ describe('invite list', () => {
     const output = vi.mocked(console.log).mock.calls.map(([line]) => line).join('\n')
     for (const value of [inviteId, claimedId, legacyId, '@alice', '@bob', '未確定', '確定済み', `Discord ID: ${discordUserId}`]) expect(output).toContain(value)
     expect(output).not.toContain('223456789012345678')
+    expect(output).toContain('アクセス時に現在のユーザー名を照合')
+    expect(output).not.toContain('再ログイン')
   })
 
   it('prints the original invitation response as JSON, including pending null IDs', async () => {
@@ -107,7 +109,11 @@ describe('invite add', () => {
   it('shows the pending record ID for later revocation', async () => {
     mockApi()
     await program().parseAsync(['invite', 'add', eventId, '--username', 'alice'], { from: 'user' })
-    expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(inviteId)
+    const output = vi.mocked(console.log).mock.calls.flat().join('\n')
+    expect(output).toContain(inviteId)
+    expect(output).toContain('ログイン済みならそのままアクセス')
+    expect(output).toContain('未ログインの場合は Discord ログインが必要')
+    expect(output).not.toContain('再ログイン')
   })
 
   it.each([[], ['--username', ''], ['--username', 'a..b'], ['--username', 'display name'], ['--user-id', discordUserId]].map((flags) => ({ flags })))('rejects missing/invalid/ID input without requests ($flags)', async ({ flags }) => {

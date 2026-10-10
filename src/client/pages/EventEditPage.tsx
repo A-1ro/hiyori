@@ -183,6 +183,7 @@ function AccountInviteManager({ eventId, discordUserId, sessionReady }: {
     const currentInvites = queryClient.getQueryState<InviteQueryData>(inviteQueryKey)
     return canManage &&
       currentSession?.user?.discordUserId === discordUserId &&
+      queryClient.getQueryState(['session'])?.status === 'success' &&
       queryClient.getQueryState(['session'])?.fetchStatus === 'idle' &&
       currentInvites?.status === 'success' &&
       currentInvites.fetchStatus === 'idle' &&
@@ -221,7 +222,7 @@ function AccountInviteManager({ eventId, discordUserId, sessionReady }: {
         Discord アカウントを招待
       </h3>
       <p id={`${inviteInputId}-hint`} style={{ margin: '6px 0 14px', fontSize: 13, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
-        1 欄に 1 人のユーザー名を入力すると、次の欄が表示されます（最大 500 人）。重複するユーザー名はまとめます。公開イベントでも先に登録しておけます。招待の追加・取消はすぐに反映されます。公開範囲の変更には「保存する」が必要です。ユーザー名で招待した相手には、イベントの URL を共有して Discord でログインしてもらってください。DM は自動送信されません。
+        1 欄に 1 人のユーザー名を入力すると、次の欄が表示されます（最大 500 人）。重複するユーザー名はまとめます。公開イベントでも先に登録しておけます。招待の追加・取消はすぐに反映されます。公開範囲の変更には「保存する」が必要です。ユーザー名で招待した相手には、イベントの URL を共有してください。ログイン済みならそのまま受け取れます。未ログインの場合は Discord でログインが必要です。DM は自動送信されません。
       </p>
       <p style={{ margin: '6px 0 14px', fontSize: 12, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
         ユーザー名の招待は、最初の受取り時にその名前を持つアカウントへ結び付きます。受取り前の名前変更や入力間違いに注意してください。受取り後は名前が変わっても同じアカウントの招待として扱い、取消時は同じアカウントへの招待をまとめて取り消します。
@@ -255,7 +256,7 @@ function AccountInviteManager({ eventId, discordUserId, sessionReady }: {
             <div style={{ flex: 1, minWidth: 0 }}>
               <code style={{ minWidth: 0, overflowWrap: 'anywhere', fontSize: 13, color: 'var(--color-fg1)' }}>{invite.discordUsername ? `@${invite.discordUsername}` : '以前の招待'}</code>
               {!invite.discordUsername && <span style={{ display: 'block', marginTop: 3, fontSize: 12, overflowWrap: 'anywhere', color: 'var(--color-fg3)' }}>Discord ID: {invite.discordUserId}</span>}
-              {invite.discordUsername && <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: 'var(--color-fg3)' }}>{invite.discordUserId ? '受取り済み' : '受取り待ち · Discord ログイン時に確認'}</span>}
+              {invite.discordUsername && <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: 'var(--color-fg3)' }}>{invite.discordUserId ? '受取り済み' : '受取り待ち · アクセス時に現在のユーザー名を確認'}</span>}
             </div>
             <Button variant="ghost" size="sm" aria-label={`${invite.discordUsername ? `@${invite.discordUsername}` : `Discord ID ${invite.discordUserId}`} の招待を取消`} onClick={() => removeMutation.mutate(invite.id)} disabled={removeMutation.isPending} style={{ flexShrink: 0 }}>
               取消

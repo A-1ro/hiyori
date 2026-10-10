@@ -9,9 +9,10 @@ const OTHER_ID = '34567890123456789'
 const TOKEN_URL = 'https://discord.com/api/oauth2/token'
 const ME_URL = 'https://discord.com/api/v10/users/@me'
 const db = (env as { DB: D1Database }).DB
-const oauthEnv = env as { DISCORD_CLIENT_ID?: string; DISCORD_CLIENT_SECRET?: string }
+const oauthEnv = env as { DISCORD_CLIENT_ID?: string; DISCORD_CLIENT_SECRET?: string; DISCORD_BOT_TOKEN?: string }
 let originalClientId: string | undefined
 let originalClientSecret: string | undefined
+let originalBotToken: string | undefined
 
 type Invite = {
   id: string
@@ -131,12 +132,16 @@ beforeEach(async () => {
   await applyD1Migrations(db, inject('d1Migrations'))
   originalClientId = oauthEnv.DISCORD_CLIENT_ID
   originalClientSecret = oauthEnv.DISCORD_CLIENT_SECRET
+  originalBotToken = oauthEnv.DISCORD_BOT_TOKEN
+  delete oauthEnv.DISCORD_BOT_TOKEN
   oauthEnv.DISCORD_CLIENT_ID = 'username-invite-test-client'
   oauthEnv.DISCORD_CLIENT_SECRET = 'username-invite-test-secret'
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  if (originalBotToken === undefined) delete oauthEnv.DISCORD_BOT_TOKEN
+  else oauthEnv.DISCORD_BOT_TOKEN = originalBotToken
   if (originalClientId === undefined) delete oauthEnv.DISCORD_CLIENT_ID
   else oauthEnv.DISCORD_CLIENT_ID = originalClientId
   if (originalClientSecret === undefined) delete oauthEnv.DISCORD_CLIENT_SECRET
@@ -291,7 +296,7 @@ describe('fresh OAuth username binding and authorization', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(4)
   })
 
-  it('does not claim from stale cookie or Bearer sessions, display names, query params, or cached profile data', async () => {
+  it('does not claim from stale cookie or Bearer profiles without a fresh lookup, or from display names and query params', async () => {
     const organizer = await loginAs(ORGANIZER_ID)
     const staleCookie = await loginAs(INVITED_ID, 'stale_name')
     const staleBearer = await loginAsBearer(OTHER_ID, 'stale_name')

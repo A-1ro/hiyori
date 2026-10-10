@@ -35,6 +35,7 @@ import { feedbackFields, feedbackTableName } from '../models/feedback'
 import { sessionTableName, sessionFields } from '../models/session'
 import { setSessionCookie, clearSessionCookie, getSessionToken, getBearerToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, isSecureRequest, SESSION_TTL_SECONDS, CLI_SESSION_TTL_SECONDS } from './auth/cookies'
 import { loadSession, requireSession } from './auth/session'
+import { claimPendingInvites } from './auth/claim-invites'
 import type { SessionUser } from './auth/session'
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/discord'
 import { generateDeviceCode, generateUserCode, normalizeUserCode } from './auth/cli-device'
@@ -393,6 +394,17 @@ export const buildApp = (env: Env) => {
     credentials: true,
   }))
 
+  // Verify pending username invitations before any event-existence branch. This
+  // common REST path also serves MCP internalApi and the CLI's Bearer requests.
+  // Claims are best-effort: stable-ID ACLs below remain authoritative on outages.
+  app.use('/api/*', async (c, next) => {
+    if (/^\/api\/(?:events|me)(?:\/|$)/.test(c.req.path)) {
+      const session = await loadSession(c, app, sessions, users)
+      if (session) await claimPendingInvites(c.env, session.discordUserId)
+    }
+    await next()
+  })
+
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
       return c.json({ error: err.message }, err.status)
@@ -567,7 +579,8 @@ window.__vite_plugin_react_preamble_installed__ = true
           expiresAt: new Date(now.getTime() + SESSION_TTL_SECONDS * 1000),
         }),
       ]
-      // Only this freshly authenticated /users/@me result can claim a username.
+      // This freshly authenticated /users/@me result can also claim a username.
+      // Already signed-in users are checked via the exact-ID Bot lookup on API reads.
       // Cached session profiles, display names and client-provided strings never can.
       // Legacy non-unique names fail closed. A bound or deleted record cannot be claimed
       // again, even if Discord later gives that username to a different account.

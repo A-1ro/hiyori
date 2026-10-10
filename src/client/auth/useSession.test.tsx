@@ -68,11 +68,11 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function renderPage(edit: boolean) {
+function renderPage(edit: boolean, seeded = true, initialUser: SessionUser | null = user) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   })
-  queryClient.setQueryData(['session'], { user })
+  if (seeded) queryClient.setQueryData(['session'], { user: initialUser })
   const router = createMemoryRouter([
     { path: '/events/:id', element: <EventDetailPage /> },
     { path: '/events/:id/edit', element: <EventEditPage /> },
@@ -178,5 +178,97 @@ describe.each([
     expect(queryClient.getQueryData(['event', 'private-event'])).toEqual(eventData)
     if (edit) expect(screen.getByText('@private_friend')).toBeTruthy()
     else expect(screen.getByText(eventData.event.title)).toBeTruthy()
+  })
+})
+
+
+describe('実際のセッション確認の一時失敗', () => {
+  it.each([500, 503, 429])('HTTP %s は既存セッションを消さず、ログインしたままイベントを再試行できる', async (status) => {
+    vi.mocked(fetchEvent).mockRejectedValue(new ApiError('Not Found', 404))
+    vi.mocked(fetchTally).mockRejectedValue(new ApiError('Not Found', 404))
+    const fetch = vi.fn(async () => new Response(null, { status }))
+    vi.stubGlobal('fetch', fetch)
+    const queryClient = renderPage(false)
+    await screen.findByRole('button', { name: '再試行する' })
+
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['session'], exact: true }) })
+    expect(queryClient.getQueryState(['session'])?.status).toBe('error')
+    expect(queryClient.getQueryData(['session'])).toEqual({ user })
+    expect(screen.queryByRole('link', { name: 'Discord でログイン' })).toBeNull()
+    expect(screen.getByRole('link', { name: user.displayName })).toBeTruthy()
+    const sessionCalls = fetch.mock.calls.length
+    vi.mocked(fetchEvent).mockResolvedValue(eventData)
+    vi.mocked(fetchTally).mockResolvedValue(tallyData)
+    fireEvent.click(screen.getByRole('button', { name: '再試行する' }))
+    await screen.findByText(eventData.event.title)
+    expect(fetch).toHaveBeenCalledTimes(sessionCalls)
+    expect(queryClient.getQueryData(['session'])).toEqual({ user })
+  })
+
+  it('初回の HTTP 500 は未ログインと断定せず OAuth を案内しない', async () => {
+    vi.mocked(fetchEvent).mockRejectedValue(new ApiError('Not Found', 404))
+    vi.mocked(fetchTally).mockRejectedValue(new ApiError('Not Found', 404))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 500 })))
+    const queryClient = renderPage(false, false)
+    await screen.findByText('ログイン状態を確認できません。時間をおいてページを再読み込みしてください。')
+    expect(queryClient.getQueryState(['session'])?.status).toBe('error')
+    expect(queryClient.getQueryData(['session'])).toBeUndefined()
+    expect(screen.queryByRole('link', { name: 'Discord でログイン' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'ログアウト' })).toBeNull()
+  })
+
+  it('未ログインのキャッシュがあっても、現在の HTTP 500 は確認不明としてログインを要求しない', async () => {
+    vi.mocked(fetchEvent).mockRejectedValue(new ApiError('Not Found', 404))
+    vi.mocked(fetchTally).mockRejectedValue(new ApiError('Not Found', 404))
+    const fetch = vi.fn(async () => new Response(null, { status: 500 }))
+    vi.stubGlobal('fetch', fetch)
+    const queryClient = renderPage(false, true, null)
+    await screen.findByText('招待を受け取っている場合は、招待された Discord アカウントでログインしてください。')
+
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['session'], exact: true }) })
+    await screen.findByText('ログイン状態を確認できません。時間をおいてページを再読み込みしてください。')
+    expect(queryClient.getQueryState(['session'])?.status).toBe('error')
+    expect(queryClient.getQueryData(['session'])).toEqual({ user: null })
+    expect(screen.queryByRole('link', { name: 'Discord でログイン' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'ログアウト' })).toBeNull()
+
+    fetch.mockResolvedValue(Response.json({ user: null }))
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['session'], exact: true }) })
+    await screen.findByText('招待を受け取っている場合は、招待された Discord アカウントでログインしてください。')
+    expect(screen.getAllByRole('link', { name: 'Discord でログイン' })).toHaveLength(2)
+  })
+
+  it('ネットワーク障害でも既存セッションは残る', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('Failed to fetch') }))
+    const queryClient = renderPage(false)
+    await screen.findByText(eventData.event.title)
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['session'], exact: true }) })
+    expect(queryClient.getQueryState(['session'])?.status).toBe('error')
+    expect(queryClient.getQueryData(['session'])).toEqual({ user })
+    expect(screen.getByRole('link', { name: user.displayName })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Discord でログイン' })).toBeNull()
+  })
+
+  it.each([401, 403])('HTTP %s の認証拒否では既存どおり未ログインにする', async (status) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status })))
+    const queryClient = renderPage(false)
+    await screen.findByText(eventData.event.title)
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['session'], exact: true }) })
+    expect(queryClient.getQueryData(['session'])).toEqual({ user: null })
+    expect(await screen.findByRole('link', { name: 'Discord でログイン' })).toBeTruthy()
+  })
+
+  it('セッション確認の 500 では招待管理を隠して編集を止めるが、ログイン状態は維持する', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 500 })))
+    const queryClient = renderPage(true)
+    await screen.findByText('@private_friend')
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['session'], exact: true }) })
+    expect(queryClient.getQueryData(['session'])).toEqual({ user })
+    expect(screen.getByRole('link', { name: user.displayName })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Discord でログイン' })).toBeNull()
+    await waitFor(() => expect(screen.queryByText('@private_friend')).toBeNull())
+    expect(screen.queryByRole('button', { name: /の招待を取消$/ })).toBeNull()
+    expect((screen.getByRole('textbox', { name: '招待する Discord ユーザー名' }) as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '追加' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

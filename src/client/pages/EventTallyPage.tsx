@@ -12,7 +12,7 @@ import {
   type TallyVoteCell,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
-import { InviteLoginHint } from '../components/InviteLoginHint'
+import { InviteAccessHint } from '../components/InviteAccessHint'
 import { Avatar, Badge, Button, Icon } from '../components/primitives'
 
 const WD = ['日', '月', '火', '水', '木', '金', '土']
@@ -159,7 +159,7 @@ export function EventTallyPage() {
               ? 'イベントが見つかりません。'
               : 'エラーが発生しました。'}
           </p>
-          {tallyError instanceof ApiError && tallyError.status === 404 && <InviteLoginHint />}
+          {tallyError instanceof ApiError && tallyError.status === 404 && <InviteAccessHint />}
           <Button variant="ghost" onClick={() => navigate('/')} style={{ marginTop: 16 }}>
             ホームへ
           </Button>

@@ -103,7 +103,7 @@ describe('EventEditPage の招待管理', () => {
     renderPage()
     const first = await screen.findByRole('textbox', { name: '招待する Discord ユーザー名' })
     await screen.findByText('@new_friend')
-    expect(screen.getByText('受取り待ち · Discord ログイン時に確認')).toBeTruthy()
+    expect(screen.getByText('受取り待ち · アクセス時に現在のユーザー名を確認')).toBeTruthy()
     fireEvent.change(first, { target: { value: ' @Another_Friend ' } })
     fireEvent.click(screen.getByRole('button', { name: '追加' }))
     await waitFor(() => expect(addEventInvite).toHaveBeenCalledWith('event1', { discordUsername: 'another_friend' }))
@@ -118,7 +118,7 @@ describe('EventEditPage の招待管理', () => {
     await screen.findByText('@friend')
     expect(screen.getByText('受取り済み')).toBeTruthy()
     expect(screen.queryByText(INVITED_ID)).toBeNull()
-    expect(screen.queryByText('受取り待ち · Discord ログイン時に確認')).toBeNull()
+    expect(screen.queryByText('受取り待ち · アクセス時に現在のユーザー名を確認')).toBeNull()
   })
 
   it('数字だけのユーザー名も名前として追加し、ID 入力への切替を表示しない', async () => {

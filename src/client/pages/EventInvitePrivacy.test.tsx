@@ -33,17 +33,19 @@ function setup() {
   const state: {
     user: SessionUser | null
     inviteStatus: number
+    sessionStatus: number
     sessionCalls: number
     inviteCalls: number
     mutationCalls: number
     inviteResponse?: () => Promise<Response>
     mutationResponse?: () => Promise<Response>
-  } = { user: organizer, inviteStatus: 200, sessionCalls: 0, inviteCalls: 0, mutationCalls: 0 }
+  } = { user: organizer, inviteStatus: 200, sessionStatus: 200, sessionCalls: 0, inviteCalls: 0, mutationCalls: 0 }
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'https://hiyori.test').pathname
     const method = init?.method ?? (input instanceof Request ? input.method : 'GET')
     if (path === '/api/auth/me') {
       state.sessionCalls++
+      if (state.sessionStatus !== 200) return Response.json({ error: 'Unavailable' }, { status: state.sessionStatus })
       return Response.json({ user: state.user })
     }
     if (path === '/api/announcements') return Response.json({ announcements: [] })
@@ -183,4 +185,29 @@ describe('公開イベントの非公開招待キャッシュ', () => {
     expectPrivateInvitesHidden(queryClient)
     expect(screen.queryByDisplayValue('second_friend')).toBeNull()
   })
+
+  it('追加処理中のセッション確認が 500 ならログインを保ったまま残りの送信を止める', async () => {
+    const { state, queryClient } = setup()
+    await screen.findByText('@private_friend')
+    const firstAdd = deferred<Response>()
+    state.mutationResponse = () => firstAdd.promise
+    fireEvent.change(screen.getByRole('textbox', { name: '招待する Discord ユーザー名' }), { target: { value: 'first_friend' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '招待する Discord ユーザー名 2 人目' }), { target: { value: 'second_friend' } })
+    fireEvent.click(screen.getByRole('button', { name: '追加' }))
+    await waitFor(() => { expect(state.mutationCalls).toBe(1) })
+
+    state.sessionStatus = 500
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['session'], exact: true }) })
+    await waitFor(() => { expect(screen.queryByText('@private_friend')).toBeNull() })
+    expect(queryClient.getQueryData(['session'])).toEqual({ user: organizer })
+    expect(queryClient.getQueryState(['session'])?.status).toBe('error')
+    expect(screen.getByRole('link', { name: organizer.displayName })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Discord でログイン' })).toBeNull()
+    await act(async () => { firstAdd.resolve(Response.json({ invite: invitation })) })
+    await waitFor(() => { expect(queryClient.isMutating()).toBe(0) })
+    expect(state.mutationCalls).toBe(1)
+    expect((screen.getByRole('button', { name: '追加' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByText('@private_friend')).toBeNull()
+  })
+
 })

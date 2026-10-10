@@ -13,7 +13,7 @@ import {
   type PutVoteInput,
 } from '../api/client'
 import { AppHeader } from '../components/AppHeader'
-import { InviteLoginHint } from '../components/InviteLoginHint'
+import { InviteAccessHint } from '../components/InviteAccessHint'
 import {
   Avatar,
   Badge,
@@ -334,7 +334,7 @@ export function EventVotePage() {
               ? 'イベントが見つかりません。'
               : 'エラーが発生しました。'}
           </p>
-          {eventError instanceof ApiError && eventError.status === 404 && <InviteLoginHint />}
+          {eventError instanceof ApiError && eventError.status === 404 && <InviteAccessHint />}
           <Link to="/" style={{ display: 'inline-block', marginTop: 16 }}>
             ホームへ
           </Link>
