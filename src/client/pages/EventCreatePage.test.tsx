@@ -57,7 +57,8 @@ beforeEach(() => {
 
 describe('EventCreatePage の招待付き作成', () => {
   it('作成 API 一回に招待ユーザー名 と候補を含め、成功後にイベントへ移動する', async () => {
-    renderPage()
+    const { input } = renderPage()
+    expect(input.placeholder).toBe('例）hiyori_friend')
     fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
     await screen.findByText('作成したイベント')
 

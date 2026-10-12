@@ -86,7 +86,7 @@ export function DiscordInviteInputs({
               autoComplete="off"
               autoCapitalize="none"
               spellCheck={false}
-              placeholder="例）@hiyori_friend"
+              placeholder="例）hiyori_friend"
               value={row.value}
               onChange={(event) => state.change(row.key, event.target.value)}
               onPaste={(event) => {

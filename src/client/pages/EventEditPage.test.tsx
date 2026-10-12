@@ -102,6 +102,7 @@ describe('EventEditPage の招待管理', () => {
     vi.mocked(fetchEventInvites).mockResolvedValue({ invites: [{ ...invite, id: 'pending1', discordUserId: null, discordUsername: 'new_friend' }] })
     renderPage()
     const first = await screen.findByRole('textbox', { name: '招待する Discord ユーザー名' })
+    expect(first.getAttribute('placeholder')).toBe('例）hiyori_friend')
     await screen.findByText('@new_friend')
     expect(screen.getByText('受取り待ち · アクセス時に現在のユーザー名を確認')).toBeTruthy()
     fireEvent.change(first, { target: { value: ' @Another_Friend ' } })

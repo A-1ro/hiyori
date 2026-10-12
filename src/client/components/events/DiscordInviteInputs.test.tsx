@@ -15,6 +15,21 @@ function inputs() {
 }
 
 describe('DiscordInviteInputs', () => {
+  it('最初と追加の入力欄に @ なしのユーザー名の例を表示する', () => {
+    render(<Harness />)
+    expect(inputs()[0]!.placeholder).toBe('例）hiyori_friend')
+
+    fireEvent.change(inputs()[0]!, { target: { value: FIRST_NAME } })
+    expect(inputs().map((input) => input.placeholder)).toEqual(['例）hiyori_friend', '例）hiyori_friend'])
+  })
+
+  it('@ を付けて入力したユーザー名も引き続き受け付ける', () => {
+    render(<Harness />)
+    const first = inputs()[0]!
+    fireEvent.change(first, { target: { value: `@${FIRST_NAME}` } })
+    expect(first.getAttribute('aria-invalid')).toBe('false')
+  })
+
   it('入力中のフォーカスと同じ DOM を保ち、次の空欄を一つずつ増やす', () => {
     render(<Harness />)
     const first = inputs()[0]!
