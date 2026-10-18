@@ -136,6 +136,7 @@ export function Button({
   iconRight,
   full,
   disabled,
+  'aria-label': ariaLabel,
   onClick,
   style,
 }: {
@@ -146,6 +147,7 @@ export function Button({
   iconRight?: ReactNode
   full?: boolean
   disabled?: boolean
+  'aria-label'?: string
   onClick?: () => void
   style?: CSSProperties
 }) {
@@ -188,6 +190,8 @@ export function Button({
   return (
     <button
       type="button"
+      disabled={disabled}
+      aria-label={ariaLabel}
       onClick={disabled ? undefined : onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => {

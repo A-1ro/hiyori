@@ -7,6 +7,7 @@ interface EventSummary {
   id: string
   title: string
   status: string
+  visibility?: string
   deadline?: string
 }
 
@@ -57,8 +58,8 @@ export function eventListCommand(): Command {
         console.log('(なし)')
       } else {
         printTable(
-          ['ID', 'Title', 'Status', 'Deadline'],
-          data.organized.map((e) => [shortId(e.id), e.title, e.status, formatDeadline(e.deadline)]),
+          ['ID', 'Title', 'Status', 'Visibility', 'Deadline'],
+          data.organized.map((e) => [shortId(e.id), e.title, e.status, e.visibility ?? 'public', formatDeadline(e.deadline)]),
         )
       }
 
@@ -68,8 +69,8 @@ export function eventListCommand(): Command {
         console.log('(なし)')
       } else {
         printTable(
-          ['ID', 'Title', 'Status', 'Deadline'],
-          data.participating.map((e) => [shortId(e.id), e.title, e.status, formatDeadline(e.deadline)]),
+          ['ID', 'Title', 'Status', 'Visibility', 'Deadline'],
+          data.participating.map((e) => [shortId(e.id), e.title, e.status, e.visibility ?? 'public', formatDeadline(e.deadline)]),
         )
       }
     })

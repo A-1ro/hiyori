@@ -10,6 +10,14 @@ export interface ParentOpts {
   json?: boolean
 }
 
+// 404 はイベント・招待の存在や Discord 照合の結果を区別しない。
+// 有効な認証がある場合、新しい招待の受取りにログインし直す必要はない。
+export function eventUnavailableHint(authenticated: boolean): string {
+  return authenticated
+    ? 'ログインしたまま、少し待って同じコマンドを再実行してください。'
+    : '招待を受け取っている場合は、招待された Discord アカウントで hiyori login を実行してください。'
+}
+
 export function resolveParent(cmd: Command): ParentOpts {
   const grandParent = cmd.parent?.parent?.opts<ParentOpts>() ?? {}
   const parent = cmd.parent?.opts<ParentOpts>() ?? {}

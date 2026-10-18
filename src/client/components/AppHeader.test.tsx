@@ -90,4 +90,16 @@ describe('AppHeader の導線', () => {
     // 未ログイン時にもベルが出る（ログイン非依存の公開情報）
     expect(screen.getByRole('button', { name: 'お知らせ' })).toBeTruthy()
   })
+
+  it.each([
+    { label: '確認中', error: null },
+    { label: '確認失敗', error: new Error('Network error') },
+  ])('ログイン状態が不明な $label はログイン済みとも未ログインとも断定しない', ({ error }) => {
+    vi.mocked(useSession).mockReturnValue({ data: undefined, error } as SessionResult)
+    renderHeader()
+    expect(screen.queryByRole('link', { name: /Discord でログイン/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'ログアウト' })).toBeNull()
+    expect(screen.getByText(error ? 'ログイン状態を確認できません' : 'ログイン状態を確認中...')).toBeTruthy()
+  })
+
 })

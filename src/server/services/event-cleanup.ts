@@ -10,7 +10,7 @@
  * イベントを消してしまうことはない。
  *
  * D1 には FK カスケードが無いため、子テーブル（votes / decisions / candidates /
- * participants）もこの関数内で明示的に削除する。
+ * participants / event_invites）もこの関数内で明示的に削除する。
  *
  * 安全設計:
  * - 候補 SELECT と DELETE の間にイベントが再オープンされる競合（applyDecisions は
@@ -133,6 +133,7 @@ export async function cleanupExpiredEvents(
       db.prepare(`DELETE FROM decisions WHERE eventId IN (${guard})`).bind(...guardBinds),
       db.prepare(`DELETE FROM candidates WHERE eventId IN (${guard})`).bind(...guardBinds),
       db.prepare(`DELETE FROM participants WHERE eventId IN (${guard})`).bind(...guardBinds),
+      db.prepare(`DELETE FROM event_invites WHERE eventId IN (${guard})`).bind(...guardBinds),
       db.prepare(`DELETE FROM events WHERE id IN (${guard})`).bind(...guardBinds),
     ])
     // 削除件数は events への DELETE（バッチ末尾）の meta.changes から集計する
