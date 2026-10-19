@@ -658,7 +658,7 @@ export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
       'hiyori_add_subscription',
       {
         description:
-          'あなたの確定予定をまとめて配信するカレンダー購読（webcal URL）を発行する。Apple カレンダー等に登録できる。',
+          'あなたが参加または主催する公開イベントの有効な確定日を配信するカレンダー購読（webcal URL）を発行する。主催者は回答不要。招待限定と取消済みは除外し、参加・主催が重なっても重複しない。発行済み URL に今後の確定日も反映される。Apple カレンダー等に登録できる。',
         inputSchema: {},
         annotations: {
           title: 'Add subscription',

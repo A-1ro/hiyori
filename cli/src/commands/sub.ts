@@ -71,7 +71,7 @@ function subListCommand(): Command {
 
 function subAddCommand(): Command {
   return new Command('add')
-    .description('Add a calendar subscription')
+    .description('Subscribe to active confirmed dates of public events you participate in or host (no host vote required; invite-only excluded)')
     .action(async (_opts, cmd: Command) => {
       const parentOpts = resolveParent(cmd)
       const authed = await requireAuthedApi(parentOpts)

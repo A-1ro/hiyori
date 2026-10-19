@@ -158,7 +158,7 @@ const GROUPS: CmdGroup[] = [
     rows: [
       { cmd: 'hiyori ics <id>', use: '確定済みイベントの .ics を出力する（-o <file> でファイル保存）' },
       { cmd: 'hiyori sub list', use: 'カレンダー購読（webcal）の一覧を表示する' },
-      { cmd: 'hiyori sub add', use: '確定予定をまとめて配信する webcal 購読 URL を発行する' },
+      { cmd: 'hiyori sub add', use: '参加・主催する公開イベントの有効な確定日を配信する webcal 購読 URL を発行する' },
       { cmd: 'hiyori sub rm <id>', destructive: true, use: 'カレンダー購読を削除する（--yes）。既存の webcal URL は無効に' },
       { cmd: 'hiyori sub regen <id>', destructive: true, use: '購読トークンを再生成する。旧 URL は無効になり新 URL を発行' },
     ],

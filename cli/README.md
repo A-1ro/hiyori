@@ -81,7 +81,8 @@ hiyori event create \
 hiyori vote EVENT_ID --vote CANDIDATE_ID=yes --vote OTHER_CANDIDATE_ID=maybe
 hiyori confirm EVENT_ID CANDIDATE_ID OTHER_CANDIDATE_ID
 
-# One subscription for your participating public events, not one per event
+# One subscription for active confirmed dates of public events you participate in or host
+# Hosts need not vote; invite-only events are excluded. Existing URLs include later confirmations.
 hiyori sub add
 ```
 

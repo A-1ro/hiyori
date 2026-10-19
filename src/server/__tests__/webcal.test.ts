@@ -40,21 +40,45 @@ const validEventBase = {
 
 let organizerCookie: string
 
-async function createEventAndDecide() {
-  const createRes = await post('/api/events', validEventBase, { Cookie: organizerCookie })
+async function createEventAndDecide({
+  cookie = organizerCookie,
+  participantDiscordId = ORGANIZER_ID as string | null,
+  visibility = 'public' as 'public' | 'invite_only',
+  title = validEventBase.title,
+  confirmBoth = false,
+} = {}) {
+  const createRes = await post('/api/events', { ...validEventBase, title, visibility }, { Cookie: cookie })
+  expect(createRes.status).toBe(201)
   const created = (await createRes.json()) as { event: { id: string }; candidates: Array<{ id: string }> }
   const eventId = created.event.id
   const candidateId = created.candidates[0]!.id
 
-  // DB に直接 participant を挿入（Discord 参加者）
-  const db = (env as { DB: D1Database }).DB
-  await db.prepare(
-    `INSERT INTO participants (id, eventId, kind, discordUserId, displayName, createdAt) VALUES (?, ?, ?, ?, ?, ?)`
-  ).bind(crypto.randomUUID(), eventId, 'discord', ORGANIZER_ID, 'Owner', Date.now()).run()
+  // Synthetic local fixture only; an organizer is not automatically a participant.
+  if (participantDiscordId) {
+    const db = (env as { DB: D1Database }).DB
+    await db.prepare(
+      `INSERT INTO participants (id, eventId, kind, discordUserId, displayName, createdAt) VALUES (?, ?, ?, ?, ?, ?)`
+    ).bind(crypto.randomUUID(), eventId, 'discord', participantDiscordId, 'Fixture participant', Date.now()).run()
+  }
 
-  await post(`/api/events/${eventId}/decision`, { candidateIds: [candidateId] }, { Cookie: organizerCookie })
+  const decisionRes = await post(`/api/events/${eventId}/decision`, {
+    candidateIds: confirmBoth ? created.candidates.map((c) => c.id) : [candidateId],
+  }, { Cookie: cookie })
+  expect(decisionRes.status).toBe(201)
+  const { decisions } = await decisionRes.json() as { decisions: Array<{ candidateId: string; icsUid: string }> }
 
-  return { eventId, candidateId }
+  return { eventId, candidateId, uids: decisions.map((d) => d.icsUid), firstUid: decisions.find((d) => d.candidateId === candidateId)!.icsUid }
+}
+
+async function subscribe() {
+  const res = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+  expect(res.status).toBe(201)
+  const body = await res.json() as { subscription: { id: string }; webcalUrl: string }
+  return { id: body.subscription.id, url: body.webcalUrl.replace('webcal://', 'https://') }
+}
+
+function feedUids(body: string) {
+  return body.replace(/\r\n[ \t]/g, '').split('\r\n').filter((line) => line.startsWith('UID:')).map((line) => line.slice(4)).sort()
 }
 
 describe('Webcal feed', () => {
@@ -62,8 +86,93 @@ describe('Webcal feed', () => {
     await applyMigrations()
     // ストレージはファイル内で共有されるため、前のテストの購読が残っていると
     // POST /api/subscriptions が既存扱い（webcalUrl: null）になる。毎回まっさらにする。
-    await (env as { DB: D1Database }).DB.prepare('DELETE FROM calendar_subscriptions').run()
+    const db = (env as { DB: D1Database }).DB
+    await db.batch(['votes', 'decisions', 'participants', 'event_invites', 'candidates', 'events', 'calendar_subscriptions']
+      .map((table) => db.prepare(`DELETE FROM ${table}`)))
     organizerCookie = await loginAs(ORGANIZER_ID)
+  })
+
+  it.each([
+    { relation: '回答なし主催', hosts: true, participates: false },
+    { relation: '参加のみ', hosts: false, participates: true },
+    { relation: '主催兼参加', hosts: true, participates: true },
+  ])('$relation: 公開イベントの複数確定日を各 UID で一度ずつ配信する', async ({ hosts, participates }) => {
+    const cookie = hosts ? organizerCookie : await loginAs('webcal-other-host')
+    const { eventId, uids } = await createEventAndDecide({
+      cookie,
+      participantDiscordId: participates ? ORGANIZER_ID : null,
+      confirmBoth: true,
+    })
+    const sub = await subscribe()
+    const res = await SELF.fetch(sub.url)
+    expect(res.status).toBe(200)
+    const body = await res.text()
+    expect(feedUids(body)).toEqual([...uids].sort())
+    expect(body.match(/BEGIN:VEVENT/g)).toHaveLength(2)
+
+    // Subscription reads must not synthesize participation or availability.
+    const db = (env as { DB: D1Database }).DB
+    const participants = await db.prepare('SELECT id FROM participants WHERE eventId = ?').bind(eventId).all()
+    expect(participants.results).toHaveLength(participates ? 1 : 0)
+    const votes = await db.prepare('SELECT id FROM votes').all()
+    expect(votes.results).toHaveLength(0)
+  })
+
+  it.each([
+    { relation: '無関係な公開イベント', hosts: false, participates: false, visibility: 'public' as const },
+    { relation: '主催した招待限定', hosts: true, participates: false, visibility: 'invite_only' as const },
+    { relation: '参加した招待限定', hosts: false, participates: true, visibility: 'invite_only' as const },
+    { relation: '主催兼参加の招待限定', hosts: true, participates: true, visibility: 'invite_only' as const },
+  ])('$relation: 公開フィードには含めない', async ({ hosts, participates, visibility }) => {
+    const included = await createEventAndDecide({ participantDiscordId: null })
+    await createEventAndDecide({
+      cookie: hosts ? organizerCookie : await loginAs('webcal-other-host'),
+      participantDiscordId: participates ? ORGANIZER_ID : null,
+      visibility,
+      title: 'Excluded fixture',
+    })
+    const sub = await subscribe()
+    const res = await SELF.fetch(sub.url)
+    const body = await res.text()
+    expect(feedUids(body)).toEqual(included.uids)
+    expect(body).not.toContain('Excluded fixture')
+  })
+
+  it('発行済み URL に後から確定した主催・参加予定が反映され、取消で ETag が更新される', async () => {
+    const sub = await subscribe()
+    const empty = await SELF.fetch(sub.url)
+    const emptyEtag = empty.headers.get('ETag')!
+    expect(feedUids(await empty.text())).toEqual([])
+
+    const hosted = await createEventAndDecide({ participantDiscordId: null, confirmBoth: true })
+    const participating = await createEventAndDecide({ cookie: await loginAs('webcal-other-host') })
+    const added = await SELF.fetch(sub.url, { headers: { 'If-None-Match': emptyEtag } })
+    expect(added.status).toBe(200)
+    const addedEtag = added.headers.get('ETag')!
+    expect(addedEtag).not.toBe(emptyEtag)
+    expect(feedUids(await added.text())).toEqual([...hosted.uids, ...participating.uids].sort())
+
+    // Cancel one of two hosted dates and all participating dates.
+    expect((await post(`/api/events/${hosted.eventId}/decision`, {
+      candidateIds: [hosted.candidateId],
+    }, { Cookie: organizerCookie })).status).toBe(200)
+    expect((await del(`/api/events/${participating.eventId}/decision`, {
+      Cookie: await loginAs('webcal-other-host'),
+    })).status).toBe(200)
+    const cancelled = await SELF.fetch(sub.url, { headers: { 'If-None-Match': addedEtag } })
+    expect(cancelled.status).toBe(200)
+    const cancelledEtag = cancelled.headers.get('ETag')!
+    expect(cancelledEtag).not.toBe(addedEtag)
+    expect(feedUids(await cancelled.text())).toEqual([hosted.firstUid])
+    expect((await SELF.fetch(sub.url, { headers: { 'If-None-Match': cancelledEtag } })).status).toBe(304)
+
+    // Reusing POST returns the same subscription without rotating the token.
+    const existing = await post('/api/subscriptions', {}, { Cookie: organizerCookie })
+    expect(existing.status).toBe(200)
+    const existingBody = await existing.json() as { subscription: { id: string }; webcalUrl: string | null }
+    expect(existingBody.subscription.id).toBe(sub.id)
+    expect(existingBody.webcalUrl === null).toBe(true)
+    expect((await SELF.fetch(sub.url, { headers: { 'If-None-Match': cancelledEtag } })).status).toBe(304)
   })
 
   it('W1: POST /api/subscriptions → 201 + webcalUrl + token 漏洩なし', async () => {

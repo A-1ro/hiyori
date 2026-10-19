@@ -1878,9 +1878,16 @@ window.__vite_plugin_react_preamble_installed__ = true
       if (subs.length === 0) return c.json({ error: 'Not Found' }, 404)
       const sub = subs[0]!
 
-      const myParticipants = await app.db.select().from(participants)
+      const myParticipants = await app.db.select({ eventId: participants.eventId }).from(participants)
         .where(eq(participants.discordUserId, sub.ownerDiscordId))
-      const eventIds = [...new Set(myParticipants.map((p) => p.eventId))]
+      const myHostedEvents = await app.db.select({ id: events.id }).from(events)
+        .where(eq(events.organizerDiscordId, sub.ownerDiscordId))
+      // Organizers need not submit availability. Include their events without
+      // creating participants or votes, and emit each decision only once.
+      const eventIds = [...new Set([
+        ...myParticipants.map((p) => p.eventId),
+        ...myHostedEvents.map((e) => e.id),
+      ])]
 
       const decisionRows = await selectInChunks(eventIds, (chunk) =>
         app.db.select().from(decisions)
