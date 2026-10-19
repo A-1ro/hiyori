@@ -15,6 +15,23 @@ installed and no project lifecycle scripts run in this job. Package names and
 versions are sent to the registry's advisory API; source code is not sent.
 The package manager is pnpm 10.33.2.
 
+Each workspace importer is audited separately as the root of a temporary
+lockfile. All package resolutions, snapshots and dependency edges are retained;
+only the importer key becomes `.`. The temporary manifest has no package name or
+version. This avoids pnpm 10.33.2 treating the workspace directory `cli` and the
+local manifest version as the unrelated npm package `cli`. No advisories or
+registry packages are filtered. A real direct or transitive `cli` dependency
+remains in the package graph and is still audited. The committed lockfile and
+manifests are never modified. Local workspace links are covered by auditing every
+importer, and CodeQL checks their source separately.
+
+The projection uses Ruby's standard YAML/JSON libraries, preinstalled on the
+GitHub Ubuntu runner, without adding scanner dependencies. Before the real audit,
+Node's test runner runs the pinned pnpm against a loopback mock registry. It
+checks the synthetic-node case, a real transitive `cli@0.1.0` finding, dev and
+optional coverage, an unchanged input lockfile, and fail-closed registry errors.
+See [pnpm's importer-to-audit conversion](https://github.com/pnpm/pnpm/blob/v10.33.2/lockfile/audit/src/lockfileToAuditTree.ts).
+
 Any low, moderate, high, or critical finding fails the job. The log includes
 advisory details and the job summary includes severity counts. The error title
 `Dependency vulnerabilities detected` means a completed scan found issues;

@@ -35,45 +35,11 @@ jobs:
         with:
           version: 10.33.2
           run_install: false
-      # Audit the committed lockfile without installing or executing project code.
+      - name: Test workspace audit isolation
+        run: node --test .github/scripts/audit-workspaces.test.mjs
+      # Project each importer to a temporary root without changing registry deps.
       - name: Audit dependencies and classify the result
-        shell: bash
-        run: |
-          set +e
-          pnpm audit --audit-level=low --json --registry=https://registry.npmjs.org > "$RUNNER_TEMP/dependency-audit.json"
-          audit_status=$?
-          set -e
-          export AUDIT_STATUS="$audit_status"
-          node <<'NODE'
-          const fs = require('node:fs');
-          const fail = (message) => {
-            console.error(`::error title=Dependency audit could not complete::${message}`);
-            process.exit(1);
-          };
-          let report;
-          try {
-            report = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/dependency-audit.json`, 'utf8'));
-          } catch {
-            fail('No valid audit report. Check the registry/network and audit command.');
-          }
-          const counts = report.metadata?.vulnerabilities;
-          const levels = ['info', 'low', 'moderate', 'high', 'critical'];
-          if (report.error || !counts || levels.some((level) => !Number.isInteger(counts[level]) || counts[level] < 0)) {
-            fail('The audit returned an error or an unsupported report format.');
-          }
-          const summary = levels.map((level) => `${level}: ${counts[level]}`).join(', ');
-          console.log(summary);
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Dependency audit\n${summary}\n`);
-          // Print advisory details only after validating this is a vulnerability report.
-          console.log(JSON.stringify(report.advisories ?? report.vulnerabilities ?? {}, null, 2));
-          if (levels.slice(1).some((level) => counts[level] > 0)) {
-            console.error('::error title=Dependency vulnerabilities detected::Review the advisory details above.');
-            process.exit(1);
-          }
-          if (process.env.AUDIT_STATUS !== '0') {
-            fail('The audit command exited unsuccessfully without a vulnerability finding.');
-          }
-          NODE
+        run: ruby .github/scripts/audit-workspaces.rb
 
   codeql:
     name: CodeQL (${{ matrix.language }})
