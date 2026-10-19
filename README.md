@@ -1,325 +1,89 @@
 # Hiyori
 
-Discord 連携の **日程調整 Web ツール**。複数人で候補日を出し合い、`○ / △ / ×` で投票して合意形成し、**確定した日程を Apple Calendar（および任意の iCalendar クライアント）へ自動配信** ＋ **Discord へ自動通知** するところまでを一気通貫で行う。
+**日程を決めて、知らせて、カレンダーに追加する。** Hiyori は Discord と連携した日程調整ツールです。候補日時への `○ / △ / ×` の回答を集め、主催者が開催日を確定し、Discord 通知やカレンダーへの追加まで進められます。
 
-調整さん・伝助・When2meet などと違い「決めた後の反映」までカバーするのが差別化点 — 確定日時を手でカレンダーに入れ直したり Discord にコピペで告知したりする手間をなくす。
+**[Hiyori を使う](https://hiyori-schedule.com)** · [使い方ガイド](https://hiyori-schedule.com/help)
 
-> 詳しい仕様・設計判断は [`docs/requirements.md`](docs/requirements.md)、開発時の注意点は [`CLAUDE.md`](CLAUDE.md) を参照。
+Web ブラウザからすぐに利用できます。自分で運用したい方向けに、Cloudflare Workers で動くソースコードも公開しています。
 
-## 主な機能（MVP: F-01〜F-08）
+## 主な機能
 
-- **イベント CRUD** — タイトル / 説明 / 既定所要時間 / 候補枠（開始時刻必須・終了時刻は省略時に自動補完）/ 締切
-- **投票** — 候補枠ごとに `○ / △ / ×`、一括入力（曜日・時間帯フィルタ）に対応
-- **集計** — 参加者 × 候補枠のマトリクスと合計スコア、最有力枠の提示
-- **確定** — オーガナイザーが確定日を選択
-- **Discord 通知** — 確定時に Hiyori Bot が指定チャンネルへ埋め込みメッセージを投稿（`.ics` 追加ボタン付き）
-- **認証 2 系統** — Discord OAuth2 ログイン（オーガナイザー必須）／ ゲスト投票（表示名のみ・匿名不可）
-- **カレンダー配信** — 確定時に `.ics` を生成して 1 タップ追加、さらにユーザー別 **Webcal 購読 URL** で以降の確定を自動反映
+- **イベント作成・編集**：タイトル、説明、所要時間、候補日時、回答締切を設定できます。
+- **回答と集計**：候補ごとに `○ / △ / ×` で回答し、参加者ごとの回答と候補ごとのスコアを確認できます。曜日・時間帯で絞った一括入力にも対応しています。
+- **開催日の確定・取消**：主催者が集計から候補を選び、複数の日程を確定することもできます。
+- **公開・招待限定**：公開イベントには表示名だけのゲスト回答が可能です。招待限定イベントは主催者と招待された Discord アカウントだけが閲覧・回答できます。招待には Discord のユーザー名を使います。
+- **Discord 通知**：Bot の `/hiyori new` からチャンネルに連携した公開イベントは、確定時にそのチャンネルへ通知します。
+- **カレンダー連携**：確定日を `.ics` ファイルで追加できます。Webcal を購読すると、自分が参加した公開イベントの確定日がカレンダー側の更新に合わせて反映されます。
 
-## 技術スタック
+**招待限定イベントは、公開 Discord 通知・公開 Webcal フィードの対象外です。** 個別の `.ics` は閲覧権限のあるログイン済みユーザーが取得できます。
 
-単一の **Cloudflare Worker** がフロント・API・静的アセットをすべて配信する。
+## 使い方
 
-| 領域 | 採用 |
-|---|---|
-| ランタイム | Cloudflare Workers（`nodejs_compat`） |
-| サーバー | Hono 4（API ＋ SSR シェル）、エントリ `src/server/index.tsx` |
-| クライアント | React 19（CSR）、React Router 8、TanStack Query |
-| ビルド | Vite 8 ＋ `@cloudflare/vite-plugin`（Worker をローカル miniflare で実行・HMR） |
-| DB | Cloudflare D1（SQLite）＋ Drizzle ORM |
-| モデル定義 | [`@nanokajs/core`](https://www.npmjs.com/package/@nanokajs/core)（`src/models/*.ts` から Drizzle スキーマを生成） |
-| スタイル | Tailwind CSS v4（`@tailwindcss/vite`） |
-| 型付き API | Hono RPC（`hc<AppType>`、サーバー型を type-only import） |
+1. [Hiyori](https://hiyori-schedule.com) で Discord にログインし、イベントを作成します。Discord 通知を使う場合は、Bot をサーバーに追加し、通知先チャンネルで `/hiyori new` を実行したリンクから作成します。
+2. 候補日時と公開範囲を設定し、参加者にイベントの URL を共有します。招待限定の場合は相手の Discord ユーザー名も登録します。
+3. 参加者が `○ / △ / ×` で回答します。ゲスト回答は公開イベントの Web 画面で利用できます。招待限定への参加には Discord ログインが必要です。
+4. 主催者が集計を確認して開催日を確定します。参加者は `.ics` のダウンロードや、公開イベント向けの Webcal 購読を利用できます。
 
-> アーキテクチャの要点（per-request `buildApp(env)`、React/Hono の JSX ランタイム混在、React Refresh preamble など）は [`CLAUDE.md`](CLAUDE.md) に詳述。
+招待の受取り・取消やカレンダーの詳しい条件は、[利用ガイド](docs/usage.md)を参照してください。
 
-## はじめに
+## CLI・ChatGPT / Claude との連携
 
-### 前提
+### CLI
 
-- Node.js **22.22.2+（22.x）、24.15+（24.x）、または26以降** / **pnpm 10.33.2**（`packageManager` 指定に従う）
-- Cloudflare アカウント（`wrangler` ログイン済み）
-
-### セットアップ
+端末からイベント、回答、集計、確定、招待、Webcal 購読を操作できます。以下はリポジトリからビルドする手順です。Node.js / pnpm の要件は[ローカル開発](#ローカル開発)と共通です。
 
 ```bash
-pnpm install
+git clone https://github.com/A-1ro/hiyori.git
+cd hiyori
+pnpm install --frozen-lockfile
+pnpm -C cli build
 
-# D1 データベースを作成し、返ってきた database_id を wrangler.jsonc に貼る
-wrangler d1 create hiyori
+node cli/dist/index.js --api-url https://hiyori-schedule.com login
+node cli/dist/index.js --api-url https://hiyori-schedule.com event list --json
+node cli/dist/index.js --api-url https://hiyori-schedule.com busy
+```
 
-# モデル定義 → Drizzle スキーマ → SQL マイグレーション を生成
-pnpm db:generate
+`busy` は引数なしで、自分が参加したイベントの確定済み開始日時を返します。CLI の既定 API URL はプレースホルダーなので、上のように接続先を明示してください。設定の保存、各コマンド、招待管理は [CLI README](cli/README.md) にまとめています。
 
-# ローカル D1 にマイグレーション適用
+### ChatGPT / Claude（MCP）
+
+リモート MCP を追加できるクライアントでは、接続先に **`https://hiyori-schedule.com/mcp`** を指定し、Discord ログインとアクセス許可を行います。読み取りと書き込みの権限は別で、作成・回答・確定などには書き込み権限が必要です。
+
+利用可能な接続設定はクライアント・プラン・組織設定によって異なります。[MCP 接続ガイド](docs/integrations.md)で接続の流れ、操作範囲、セルフホスト時の条件を確認してください。
+
+## ローカル開発
+
+Hiyori は単一の Cloudflare Worker で Web 画面・API・静的ファイルを配信します。主な構成は Hono、React 19、Vite 8、Cloudflare D1、Drizzle ORM、nanoka、Tailwind CSS v4 です。
+
+必要な環境は **Node.js 22.22.2 以降の 22.x、24.15.0 以降の 24.x、または 26 以降**と **pnpm 10.33.2** です。`package.json` と CI の検証対象に合わせています。
+
+```bash
+# リポジトリルートで実行
+pnpm install --frozen-lockfile
+# .dev.vars の設定は docs/development.md を参照
 pnpm db:migrate:local
-
-# 開発サーバー（Vite + miniflare、フロント/Worker 両方 HMR）
 pnpm dev
 ```
 
-ローカル開発用の環境変数・シークレットは **`.dev.vars`**（リポジトリ直下、Git 管理外）に記述する。本番のシークレットは `wrangler secret put` で登録する（[環境変数](#環境変数--シークレット) 参照）。
+初回はコミット済みの migration をローカル D1 に適用します。`pnpm db:generate` はモデル定義を変更したときに使います。Discord 認証の設定、D1 / `OAUTH_KV` の用意、セルフホスト、検証コマンドは[開発ガイド](docs/development.md)を参照してください。
 
-## コマンド
+## 詳細資料・貢献
 
-| コマンド | 内容 |
+| 資料 | 内容 |
 |---|---|
-| `pnpm dev` | Vite 開発サーバー（Worker をローカル実行・HMR） |
-| `pnpm build` | 本番ビルド（クライアント → `dist/client/`、Worker → `dist/hiyori/`） |
-| `pnpm deploy` | `vite build && wrangler deploy` |
-| `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm typecheck:tests` | サーバーテストの型チェック（`tsconfig.test.json`） |
-| `pnpm test:client` | React コンポーネントのテスト（jsdom） |
-| `pnpm lint` | Biome による静的チェック |
-| `pnpm test` | `vitest run`（Workers プールでテスト） |
-| `pnpm db:generate` | `nanoka generate`（モデル → `drizzle/schema.ts`）→ `drizzle-kit generate`（SQL マイグレーション）。**`src/models/*.ts` を変更したら必ず実行** |
-| `pnpm db:migrate:local` | ローカル D1 にマイグレーション適用 |
-| `pnpm db:migrate:remote` | リモート（本番）D1 にマイグレーション適用 |
-| `pnpm discord:register` | Discord スラッシュコマンドを登録（`.dev.vars` を読み込み） |
-
-## 環境変数 / シークレット
-
-`vars`（非機密）は `wrangler.jsonc` に、シークレットは `wrangler secret put <KEY>` で登録する。ローカル開発ではすべて `.dev.vars` に書けばよい。
-
-| キー | 区分 | 用途 |
-|---|---|---|
-| `ENVIRONMENT` | var | `development` / `production`。`production` 以外で dev 用 React Refresh preamble を注入 |
-| `DISCORD_CLIENT_ID` | var/secret | Discord Application ID（= OAuth2 Client ID） |
-| `DISCORD_CLIENT_SECRET` | secret | OAuth2 Client Secret |
-| `DISCORD_OAUTH_REDIRECT_URI` | var | OAuth コールバック URL（例: `https://{worker}.workers.dev/api/auth/discord/callback`） |
-| `DISCORD_BOT_TOKEN` | secret | Bot トークン（チャンネル通知・コマンド登録・ログイン済みユーザーの招待照合に使用） |
-| `DISCORD_PUBLIC_KEY` | secret | Interactions の署名検証用 公開鍵 |
-| `DISCORD_CHANNEL_TOKEN_SECRET` | secret | チャンネル連携トークン（HMAC-SHA256）の署名鍵。**未設定だと Discord 連携は無効化**（トークン提示時に 503） |
-| `EVENT_RETENTION_DAYS` | var | 完了済み（`closed` / `cancelled`）イベントを最終活動から N 日経過後に日次 cron で自動削除する保持日数（正の整数）。**未設定（デフォルト）は自動削除しない = 永久保持** |
-| `FEEDBACK_ADMIN_TOKEN` | secret | 不具合報告フォームの読み出しAPI（`GET` / `PATCH /api/feedback`）を保護する admin トークン。**未設定だと読み出しAPIは常に 403**（安全側・誤って全公開しない）。投稿フォーム（`POST /api/feedback`）は未設定でも動作し、報告は D1 に蓄積される（読み出しだけが無効） |
-| `ANNOUNCEMENTS_ADMIN_TOKEN` | secret | 運営お知らせの書き込み API（`POST` / `PATCH /api/announcements`）を保護する admin トークン。**未設定だと書き込みAPIは常に 403**（安全側）。公開 GET（`GET /api/announcements`）は未設定でも動作する。ローテーション手順は [`docs/ops.md`](docs/ops.md) 参照 |
-
-> `pnpm discord:register` は `DISCORD_APP_ID`（= `DISCORD_CLIENT_ID` と同値）と `DISCORD_BOT_TOKEN`、任意で `DISCORD_GUILD_ID`（ギルド限定登録）を `.dev.vars` から読む。
-
-### フィードバック / 不具合報告フォーム
-
-ヘッダーのフキダシアイコン、またはヘルプ画面下部からログイン不要で送信できる。送信時に現在のページ URL・イベント ID・User-Agent・ログイン状態を自動添付する。報告は D1 の `feedback` テーブルに保存される。
-
-読み出しは admin 保護の汎用 API（特定インフラ非依存・外部連携は「外部 → この API」の一方通行）:
-
-```
-# 一覧（新しい順）。FEEDBACK_ADMIN_TOKEN 未設定なら常に 403
-GET /api/feedback?status=new&since=<ISO8601>&limit=<1..500>
-Authorization: Bearer <FEEDBACK_ADMIN_TOKEN>
-
-# ステータス更新（new / triaged / resolved）
-PATCH /api/feedback/:id   { "status": "resolved" }
-Authorization: Bearer <FEEDBACK_ADMIN_TOKEN>
-```
-
-- `since` は ISO8601 の `createdAt`。`createdAt` がそれより新しい行だけ返すので、ポーラーは受信した最新 `createdAt` を次回の `since` に使えば新着だけ取得できる。
-- `wrangler secret put FEEDBACK_ADMIN_TOKEN` で登録（ローカルは `.dev.vars`）。未設定でもフォーム投稿は動き、報告は D1 に貯まる（読み出しのみ無効）。
-
-### 運営お知らせ（Announcements）
-
-ヘッダのベルアイコンからログイン不要で閲覧できる。公開 GET は `Cache-Control: no-store` で origin 直返し・レート制限（60 req/min per IP）付き。投稿は admin Bearer 保護（`ANNOUNCEMENTS_ADMIN_TOKEN`）で、CLI `scripts/announce.mjs`（Node 22 標準依存ゼロ）から行う。
-
-```
-# セットアップ: 秘密トークン生成 → wrangler secret に登録
-node -e "console.log(crypto.randomBytes(32).toString('hex'))"
-pnpm exec wrangler secret put ANNOUNCEMENTS_ADMIN_TOKEN
-# → 対話プロンプトに上で生成した値を貼る
-
-# 投稿（stdin から本文を渡す）
-echo "詳細:
-- 不具合内容を修正しました
-- 適用済み" | ANNOUNCEMENTS_ADMIN_TOKEN=xxx \
-  node scripts/announce.mjs \
-    --api-url https://hiyori-schedule.com \
-    --title "投票の重複バグを修正しました" \
-    --category bug_fix
-
-# 投稿（--body で直接指定）
-ANNOUNCEMENTS_ADMIN_TOKEN=xxx node scripts/announce.mjs \
-  --api-url https://hiyori-schedule.com \
-  --title "新機能: XXX を追加しました" \
-  --category new_feature \
-  --body "XXX の使い方は..." \
-  --yes
-
-# dry-run（送信せずリクエスト JSON を確認）
-ANNOUNCEMENTS_ADMIN_TOKEN=xxx node scripts/announce.mjs \
-  --api-url https://hiyori-schedule.com \
-  --title "test" --category notice --body "..." --dry-run
-
-# アーカイブ（誤投稿を取り下げ）
-ANNOUNCEMENTS_ADMIN_TOKEN=xxx node scripts/announce.mjs \
-  --api-url https://hiyori-schedule.com --archive <id> --yes
-```
-
-- カテゴリは `bug_fix` / `new_feature` / `notice` の 3 種類（`bug_fix` = 橙・`new_feature` = 緑・`notice` = 灰でバッジ表示）
-- 本文は 4000 字まで。プレーンテキスト＋改行のみ。クライアント側で `http://` / `https://` を自動リンク化（`javascript:` / `data:` 等は絶対にリンク化しない）
-- `--published-at`（ISO 8601）で公開日時を明示できる（未来不可・過去 30 日以内）
-- 未確認事項がある場合の運用ドキュメント（ローテ手順・PII 混入時の緊急対応・D1 Time Travel 注記）は [`docs/ops.md`](docs/ops.md) を参照
-
-### Discord Bot のセットアップ
-
-1. [Discord Developer Portal](https://discord.com/developers/applications) で Application と Bot を作成
-2. 上表のシークレットを `wrangler secret put` で登録（ローカルは `.dev.vars`）
-3. **OAuth2 → Redirects** に `DISCORD_OAUTH_REDIRECT_URI` と同じ URL を登録
-4. **Interactions Endpoint URL** に `https://{your-worker}.workers.dev/api/discord/interactions` を設定
-5. `pnpm discord:register` でスラッシュコマンドを登録
-6. Bot 招待 URL: `https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&scope=bot&permissions=2048`
-
-> セキュリティ上、`POST/PATCH /api/events` は raw な `discordChannelId` を受け付けず、`/hiyori new` 経由で発行された署名付き `discordChannelToken` のみを受理する（cross-tenant 投稿防止）。詳細は [`CLAUDE.md`](CLAUDE.md) 参照。
-
-## カレンダー連携
-
-- **`.ics` ダウンロード** — `GET /api/events/:id/decision.ics`（確定済みイベントの単発配信）
-- **Webcal 購読** — ユーザー別購読 URL を発行し、`GET /feeds/:filename` で ICS フィードを配信。Apple Calendar に一度購読すれば以降の確定が自動反映される
-
-## CLI
-
-Hiyori の **端末クライアント** (`hiyori` コマンド)。読み取り系（イベント一覧・詳細、投票集計、忙しい時間帯、`.ics` ダウンロード）と書き込み系（イベント作成・編集・削除、候補枠追加・削除、投票、確定・確定取消、Webcal 購読管理）をすべて端末から操作できます。すべてのコマンドが `--json` オプションで JSON 出力に対応しており、スクリプト・プログラムからの利用も可能です。
-
-### 招待限定イベント（Web / MCP / CLI 共通）
-
-- CLI は `event create --visibility invite_only --invite-username friend_one --invite-username @friend_two` で初期招待を指定できます（タイトル・所要時間・候補日時も指定）。`event edit <event-id> --visibility public|invite_only` で公開範囲を変更できます。
-- 招待管理は主催者のみ: `invite list <event-id>`、`invite add <event-id> --username @friend_three`、`invite revoke <event-id> <invite-id> --yes`。取消には一覧の招待 ID（UUID）を使います。詳細は [CLI README](cli/README.md) を参照してください。
-- MCP は `hiyori_create_event` の `visibility` と `invitedDiscordUsernames`、`hiyori_edit_event` の `visibility`、`hiyori_list_invites` / `hiyori_add_invite` / `hiyori_revoke_invite` で同じ操作に対応します。初期招待を指定する場合は `visibility: "invite_only"` が必須です。
-- 新規招待は Discord **ユーザー名**を指定します（表示名や数値 ID ではありません）。`@`・前後空白・大文字は正規化し、数字だけの名前もユーザー名として扱います。相手の登録有無を検索せず保存します。イベントの URL を共有すると、ログイン済みの相手はそのままアクセスして受け取れます。サーバーが本人の固定 Discord ID で現在のユーザー名を Discord に問い合わせ、一度だけ招待を結び付けます。未ログインの場合は通常の Discord ログインが必要です。受取り前の改名・入力間違いに注意してください。
-- Discord の一時的な障害・利用制限や Bot トークン未設定時も、既存のログインや受取り済みの権限は維持されます。新しい招待を安全に照合できなかった場合は、少し待って同じページで再試行してください。ログイン済みなら再ログインは不要です。アクセス不可の 404 はイベントの不存在・権限不足と同じ表示になり、招待の有無を明かしません。
-- 招待は最大 500 件。初期イベント・候補日時・招待は同時に保存します。公開範囲の既定値は `public` のままです。公開イベントで招待を追加/取消しても、閲覧は制限されません。
-
-これらの機能は対応する Worker と、このリビジョンからビルドした CLI の組合せで利用できます。プレビューへの反映だけでは本番 MCP やインストール済み CLI は更新されません。
-
-### インストール
-
-npm 実公開後（将来）：
-
-```bash
-npx hiyori login
-```
-
-**現在はローカルビルド経由**（実公開前）：
-
-```bash
-cd /path/to/hiyori
-pnpm -C cli build
-node cli/dist/index.js login
-```
-
-### ログイン
-
-```bash
-# デバイスコードフローでブラウザ承認
-hiyori login
-
-# 認証状態を確認
-hiyori whoami
-
-# ログアウト
-hiyori logout
-```
-
-RFC 8628 デバイスコード認証フローにより、ブラウザで Discord OAuth ログインを行い、セッショントークンを `~/.config/hiyori/credentials.json`（mode 600）に保存します。
-
-### セルフホスト時の接続先設定
-
-API 接続先の優先順位（高い順）：
-
-1. `--api-url <url>` フラグ
-2. `HIYORI_API_URL` 環境変数
-3. `hiyori config set api-url <url>` コマンドで保存した設定
-4. デフォルト値（`https://hiyori.example.workers.dev`）
-
-セルフホストして Worker を自分の URL にデプロイした場合、以下のいずれかで接続先を指定します：
-
-```bash
-# フラグで指定（1 回限り）
-hiyori --api-url https://my-hiyori.workers.dev event list
-
-# 環境変数で指定（セッション中）
-export HIYORI_API_URL=https://my-hiyori.workers.dev
-
-# 設定ファイルに保存（永続的）
-hiyori config set api-url https://my-hiyori.workers.dev
-```
-
-### 主要コマンド例
-
-**読み取り系：**
-
-```bash
-# イベント一覧を JSON で取得
-hiyori event list --json
-
-# イベント詳細を表示
-hiyori event show <event-id>
-
-# 投票集計を表示
-hiyori tally <event-id>
-
-# 忙しい時間帯を表示（複数参加者が× を投じた時間）
-hiyori busy <event-id>
-
-# 確定済みイベントを .ics として保存
-hiyori ics <event-id> -o event.ics
-```
-
-**書き込み系：**
-
-```bash
-# イベント作成（必須フラグが揃っていれば対話をスキップ。--yes でも対話スキップを明示できる）
-hiyori event create \
-  --title "チーム定例" \
-  --description "月 1 回の全体定例会" \
-  --duration 60 \
-  --candidate 2026-07-01T19:00:00Z \
-  --candidate 2026-07-08T19:00:00Z \
-  --candidate 2026-07-15T19:00:00Z \
-  --yes
-
-# 投票
-hiyori vote <event-id> --vote <candidate-id>=yes --vote <candidate-id2>=maybe
-
-# イベント確定（候補 ID は複数指定可）
-hiyori confirm <event-id> <candidate-id> [candidate-id...]
-
-# Webcal 購読を追加（自分の確定イベント全体の購読。イベント単位ではない）
-hiyori sub add
-```
-
-### 制約
-
-**重要：以下 2 点の制約があります。**
-
-1. **CLI で作成したイベントは Discord チャンネル未連携** — CLI の `event create` で作成したイベントは Discord チャンネルに通知されません。Discord への確定通知が必要な場合は、Discord 上で `/hiyori new` スラッシュコマンドを実行してイベントを作成してください。
-
-2. **ゲスト投票は CLI 非対応** — CLI 操作にはすべて Discord OAuth ログインが必須です。表示名のみで投票するゲスト投票は Web UI のみで利用可能です。
-
-## ディレクトリ構成
-
-```
-src/
-├── server/index.tsx       Hono エントリ（SSR シェル + API + AppType エクスポート）
-├── server/auth/           Discord OAuth・セッション Cookie・requireSession
-├── server/discord/        チャンネルトークン・Markdown エスケープ・Bot クライアント
-├── client/                React アプリ（entry: main.tsx, root: App.tsx）
-├── shared/api.ts          Hono RPC クライアントファクトリ（型のみのサーバー import）
-├── models/                nanoka モデル定義（1 テーブル 1 ファイル）
-└── styles.css             Tailwind v4 エントリ
-
-drizzle/
-├── schema.ts              nanoka 生成（手で編集しない）
-└── migrations/            drizzle-kit 生成の SQL
-
-docs/requirements.md       製品仕様・データモデル・未解決事項
-```
-
-## デプロイ
-
-```bash
-pnpm db:migrate:remote   # 本番 D1 にマイグレーション適用（初回・スキーマ変更時）
-pnpm deploy              # vite build && wrangler deploy
-```
-
-## ドキュメント
-
-- [`docs/requirements.md`](docs/requirements.md) — 製品判断のソース・オブ・トゥルース（スコープ、データモデル、未解決事項）
-- [`CLAUDE.md`](CLAUDE.md) — アーキテクチャの勘所と編集時の注意（JSX ランタイム混在、nanoka 派生、認証、Discord 連携のセキュリティ）
+| [利用ガイド](docs/usage.md) | 招待限定イベント、Discord 通知、ICS / Webcal の条件 |
+| [CLI README](cli/README.md) | ローカルビルド、接続先設定、コマンドと招待管理 |
+| [MCP 接続ガイド](docs/integrations.md) | ChatGPT / Claude 連携、権限、操作範囲 |
+| [開発ガイド](docs/development.md) | ローカル開発、セルフホスト、技術構成、コマンド |
+| [環境変数一覧](docs/environment.md) | Discord・MCP・運営用設定とシークレット |
+| [Discord Bot 構築](docs/discord-bot.md) | 自分の Application / Bot の設定とコマンド登録 |
+| [運用マニュアル](docs/ops.md) | フィードバック API、お知らせ投稿、トークン管理と緊急対応 |
+| [製品仕様](docs/requirements.md) | 製品判断、データモデル、設計上の決定事項 |
+| [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) | 開発時の規約とアーキテクチャ上の注意 |
+| [MCP 設計資料](docs/plans/2026-07-21-mcp-server.md) / [OAuth 移行資料](docs/oauth-provider-migration.md) | 設計の経緯と互換性に関する記録 |
+
+不具合や改善案は [Issues](https://github.com/A-1ro/hiyori/issues) へ、変更提案は Pull Request で受け付けています。開発前に `AGENTS.md` と製品仕様を確認し、変更に関係する Web / API / CLI / MCP と検証を揃えてください。サービス内のフィードバックフォームからも報告できます。認証情報や個人の予定は Issue・PR・画像に含めないでください。
+
+## ライセンス
+
+[MIT License](LICENSE) © 2026 A-1ro

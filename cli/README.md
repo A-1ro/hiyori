@@ -2,65 +2,88 @@
 
 Command-line client for **[Hiyori](https://github.com/A-1ro/hiyori)** — the Discord-integrated date-coordination tool. Create events, collect `○ / △ / ×` votes, inspect the tally, confirm a date, and pull the confirmed `.ics` — all from your terminal, scriptable with `--json`.
 
-> Hiyori is OSS and self-host-first (1 instance ≈ 1 Discord server). This CLI talks to **your** Hiyori instance over its typed API; point it at your own deployment with `--api-url` / `HIYORI_API_URL` / `hiyori config set api-url`.
+[日本語の概要](../README.md) · [招待・カレンダーの利用条件](../docs/usage.md)
 
-## Install
+## Build and quick start
 
-```bash
-npm install -g hiyori-cli
-# or run without installing
-npx hiyori-cli --help
-```
+Build from this repository so the CLI matches this revision. These instructions do not depend on npm publication. The package is named `hiyori-cli`; its executable is `hiyori`.
 
-Requires **Node.js >= 22.12** to run the CLI. Building or testing the full workspace requires **Node.js 22.22+ (22.x) or 24.11+** and **pnpm 10.33.2**, as specified by the root package.
-
-## Quick start
+Use **Node.js 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+** and **pnpm 10.33.2**, matching the root package and CI. The CLI package's runtime engine is `>=22.12`; building and testing this workspace uses the stricter root requirement.
 
 ```bash
-# 1. Point the CLI at your Hiyori instance
-hiyori config set api-url https://your-hiyori.example.workers.dev
+git clone https://github.com/A-1ro/hiyori.git
+cd hiyori
+pnpm install --frozen-lockfile
+pnpm -C cli build
+node cli/dist/index.js --help
 
-# 2. Log in (RFC 8628 device-code flow — opens a browser to approve)
-hiyori login
+# Explicitly select the production instance (the built-in URL is a placeholder)
+node cli/dist/index.js --api-url https://hiyori-schedule.com login
+node cli/dist/index.js --api-url https://hiyori-schedule.com whoami
+node cli/dist/index.js --api-url https://hiyori-schedule.com event list --json
+node cli/dist/index.js --api-url https://hiyori-schedule.com busy
 
-# 3. Who am I?
-hiyori whoami
-
-# 4. List your events
-hiyori event list
+# Optionally save the URL instead of passing --api-url every time
+node cli/dist/index.js config set api-url https://hiyori-schedule.com
 ```
+
+The examples below use `hiyori` as shorthand for `node cli/dist/index.js` from the repository root. They assume the API URL has been saved as above. For self-hosting, replace the production URL with your instance's URL. Device-code login opens a browser for Discord sign-in and approval.
 
 ## Configuration
 
-Settings and credentials live under `~/.config/hiyori/`:
+Settings and credentials live under `$XDG_CONFIG_HOME/hiyori/`, or `~/.config/hiyori/` when `XDG_CONFIG_HOME` is unset:
 
 - `config.json` — non-secret settings (e.g. `api-url`).
-- `credentials.json` — the session token (file mode `600`), scoped per `api-url`; expired tokens are ignored.
+- `credentials.json` — the session token (file mode `600`), valid only for the exact saved `api-url`; expired tokens are ignored. The file holds one login, so logging in to another instance replaces it.
 
 The API URL is resolved in this order:
 
 1. `--api-url <url>` flag
 2. `HIYORI_API_URL` environment variable
 3. `hiyori config set api-url <url>`
-4. built-in default (a placeholder — set your own)
+4. built-in default: `https://hiyori.example.workers.dev` (a placeholder — explicitly select production or your own instance)
 
 ## Commands
 
 | Command | Description |
 |---|---|
 | `hiyori login` / `logout` / `whoami` | Device-code auth against your instance |
-| `hiyori config get\|set\|list` | Manage local config (e.g. `api-url`) |
+| `hiyori config get\|set` | Manage local config (e.g. `api-url`) |
 | `hiyori event list\|show\|create\|edit\|rm` | Event CRUD |
 | `hiyori candidate ...` | Manage an event's candidate slots |
 | `hiyori invite list\|add\|revoke` | Manage an event's username invitations (organizer only) |
 | `hiyori vote <id>` | Vote `○ / △ / ×` on candidates |
 | `hiyori tally <id>` | Show the participant × slot tally matrix |
-| `hiyori busy` | Show your busy times |
+| `hiyori busy` | Show confirmed start times for events you participate in (no event ID argument) |
 | `hiyori confirm <id> <candidateId...>` / `unconfirm <id>` | Set / cancel the confirmed date |
 | `hiyori ics <id>` | Download the confirmed event's `.ics` |
 | `hiyori sub ...` | Manage calendar (Webcal) subscriptions |
 
-Global flags: `--api-url <url>`, `--json` (machine-readable output for scripting), `-V/--version`, `-h/--help`. Run `hiyori <command> --help` for per-command options.
+Global flags: `--api-url <url>`, `--json` (machine-readable output for scripting; `ics` always returns plain ICS text), `-V/--version`, `-h/--help`. Run `hiyori <command> --help` for per-command options.
+
+## Examples
+
+The IDs below are placeholders; use IDs returned by your instance.
+
+```bash
+hiyori event list --json
+hiyori event show EVENT_ID
+hiyori tally EVENT_ID
+hiyori busy
+hiyori ics EVENT_ID -o event.ics
+
+# Full creation flags skip interactive prompts
+hiyori event create \
+  --title "Team meeting" --description "Monthly meeting" --duration 60 \
+  --candidate 2030-01-15T10:00:00.000Z \
+  --candidate 2030-01-22T10:00:00.000Z --yes
+
+hiyori vote EVENT_ID --vote CANDIDATE_ID=yes --vote OTHER_CANDIDATE_ID=maybe
+hiyori confirm EVENT_ID CANDIDATE_ID OTHER_CANDIDATE_ID
+
+# One subscription for your participating public events, not one per event
+hiyori sub add
+```
 
 ## Invite-only events
 
@@ -95,7 +118,7 @@ hiyori --json invite revoke EVENT_ID INVITATION_UUID --yes
 
 ## Notes
 
-- Auth uses a `kind:"cli"` session token obtained via the device-code flow; the raw token is stored only in `~/.config/hiyori/credentials.json` (mode 600) and sent as `Authorization: Bearer`. It never leaves your machine except to your configured instance.
+- Auth uses a `kind:"cli"` session token obtained via the device-code flow; the raw token is stored in the credentials file described above (mode 600) and sent as `Authorization: Bearer`. Use a trusted instance URL; the CLI sends that token to the configured instance.
 - CLI-created events are not linked to a Discord channel, and guest voting is browser-only — both are by design (see the main repo).
 
 ## License
