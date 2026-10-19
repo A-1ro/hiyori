@@ -10,6 +10,8 @@
 // handler.ts / props の組み立てだけで済み、本ファイルのツール実装は無改造。
 
 import { McpAgent } from 'agents/mcp'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { MCP_AUTH_CONTEXT_HEADER, decodeMcpAuth } from './request-auth'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
@@ -40,15 +42,31 @@ function apiError(res: InternalResponse): CallToolResult {
 export class HiyoriMcpAgent extends McpAgent<Env, unknown, McpProps> {
   server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION })
 
+  private readonly requestAuth = new AsyncLocalStorage<McpProps>()
+
+  // The SDK keeps its initial props for a live MCP session. Tool authorization
+  // instead follows each authenticated HTTP request, including concurrent calls
+  // or a different token/user reusing that session. No shared props are mutated.
+  override async onConnect(...args: Parameters<McpAgent<Env, unknown, McpProps>['onConnect']>): Promise<void> {
+    const [connection, { request }] = args
+    const props = decodeMcpAuth(request.headers.get(MCP_AUTH_CONTEXT_HEADER))
+    if (!props) {
+      connection.close(1008, 'Missing request auth context')
+      return
+    }
+    await this.requestAuth.run(props, () => super.onConnect(...args))
+  }
+
   // ---- 内部ヘルパ ---------------------------------------------------------
 
   private requireProps(): McpProps {
-    if (!this.props) throw new Error('MCP auth context is missing (props not set)')
-    return this.props
+    const props = this.requestAuth.getStore()
+    if (!props) throw new Error('MCP request auth context is missing')
+    return props
   }
 
   private hasScope(scope: McpScope): boolean {
-    return this.props?.scopes?.includes(scope) ?? false
+    return this.requestAuth.getStore()?.scopes.includes(scope) ?? false
   }
 
   // スコープ不足なら CallToolResult(error) を返す。満たしていれば null。

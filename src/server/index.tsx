@@ -41,7 +41,7 @@ import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/
 import { generateDeviceCode, generateUserCode, normalizeUserCode } from './auth/cli-device'
 import { cli_auth_requests } from '../../drizzle/schema'
 import { tryLegacyBearerMcp, isMcpEnabled, MCP_ROUTE } from './mcp/handler'
-import { getOAuthProvider } from './mcp/provider'
+import { fetchOAuthProvider } from './mcp/provider'
 import { isDiscordUsername, normalizeDiscordUsername } from '../shared/discord-invites'
 
 export interface Env {
@@ -2229,6 +2229,13 @@ export default {
       return buildApp(env).fetch(req, env, ctx)
     }
 
+    // OAuth の resource は HTTPS（開発時の loopback HTTP を除く）が必須。
+    // 関係のない Web / API / Webcal リクエストに provider を構築しない。
+    // HTTP の購読フィードも既存 Hono ルートの認証・認可をそのまま通す。
+    if (!isMcpPath && !url.pathname.startsWith('/oauth/') && !url.pathname.startsWith('/.well-known/')) {
+      return buildApp(env).fetch(req, env, ctx)
+    }
+
     // MCP フラグ on（Phase 2）: 案 A（OAuth）を被せつつ、案 B（既存 Hiyori セッション Bearer）も
     // /mcp で引き続き受け付ける（Phase 1 互換・CLI/パワーユーザー経路）。セッション Bearer なら
     // tryLegacyBearerMcp が処理し、それ以外（OAuth アクセストークン / 未提示）は null を返すので
@@ -2237,7 +2244,7 @@ export default {
       const legacy = await tryLegacyBearerMcp(req, env, ctx)
       if (legacy) return legacy
     }
-    return getOAuthProvider().fetch(req, env, ctx)
+    return fetchOAuthProvider(req, env, ctx)
   },
   async scheduled(event, env, ctx) {
     ctx.waitUntil(cleanupExpiredCliAuthRequests(env.DB, new Date()))
