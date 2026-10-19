@@ -27,8 +27,8 @@ importers:
         specifier: ^1.32.1
         version: 1.32.1(@cfworker/json-schema@4.1.1)(zod@4.6.7)
       '@nanokajs/core':
-        specifier: 1.9.0
-        version: 1.9.0(@cloudflare/workers-types@4.20260702.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@4.20260702.1))(hono@4.13.13)(zod@4.6.7)
+        specifier: 2.0.1
+        version: 2.0.1(@cloudflare/workers-types@4.20260702.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@4.20260702.1))(hono@4.13.13)(zod@4.6.7)
       '@tanstack/react-query':
         specifier: ^5.104.2
         version: 5.104.2(react@19.3.0)
@@ -1243,13 +1243,13 @@ packages:
     resolution: {integrity: sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==}
     engines: {node: '>=20'}
 
-  '@nanokajs/core@1.9.0':
-    resolution: {integrity: sha512-flI3ImCdfCoF8J6eagiOi+gH5xYEmtGkVwQ3IHgKjD/fV/cCBW9hzhVaznZ6OZBKVwt8g+HuZC+sR/mu0Z939g==}
-    engines: {node: '>=20'}
+  '@nanokajs/core@2.0.1':
+    resolution: {integrity: sha512-f4l5zfQF5gD9J7mlzINqLIcLEa6bnv9xUoLIN+VNWS7krnZeS6Q5GDhUORO96Xj9zvjzVVAPtc5Ehy14COQmSg==}
+    engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
       '@cloudflare/workers-types': ^4.20240925.0
-      '@libsql/client': ^0.14.0
+      '@libsql/client': '>=0.14.0 <0.18.0'
       drizzle-orm: ^0.45.2
       hono: ^4.0.0
       zod: ^3.23.0 || ^4.0.0
@@ -4067,7 +4067,7 @@ snapshots:
       '@modelcontextprotocol/core': 2.3.1
       zod: 4.6.7
 
-  '@nanokajs/core@1.9.0(@cloudflare/workers-types@4.20260702.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@4.20260702.1))(hono@4.13.13)(zod@4.6.7)':
+  '@nanokajs/core@2.0.1(@cloudflare/workers-types@4.20260702.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@4.20260702.1))(hono@4.13.13)(zod@4.6.7)':
     dependencies:
       '@cloudflare/workers-types': 4.20260702.1
       '@hono/zod-validator': 0.4.3(hono@4.13.13)(zod@4.6.7)

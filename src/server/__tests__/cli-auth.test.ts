@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
 import { loginAs, loginAsBearer } from './test-helpers'
 import { cleanupExpiredCliAuthRequests } from '../services/cli-cleanup'
+import { buildApp, type Env } from '../index'
 
 async function applyMigrations() {
   const migrations = inject('d1Migrations')
@@ -332,21 +333,51 @@ describe('C15: Origin 検証 — 外部 origin で approve => 403', () => {
 })
 
 describe('C16: approve レート制限 — 11回目が 429', () => {
-  it('C16', async () => {
-    const ip = '9.9.9.9'
-    let lastStatus = 0
+  it('binding の判定と IP 別 key を使い、認証より先に 429 を返す', async () => {
+    const limit = vi.fn<RateLimit['limit']>()
+      .mockResolvedValue({ success: true })
+    const testEnv: Env = { ...(env as Env), CLI_AUTH_RATELIMIT: { limit } }
+    const app = buildApp(testEnv)
     for (let i = 0; i < 11; i++) {
-      const res = await SELF.fetch(`${BASE}/api/auth/cli/approve`, {
+      if (i === 10) limit.mockResolvedValue({ success: false })
+      const res = await app.request(`${BASE}/api/auth/cli/approve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'CF-Connecting-IP': ip,
+          'CF-Connecting-IP': '9.9.9.9',
         },
         body: JSON.stringify({ userCode: 'ZZZZ-9999' }),
-      })
-      lastStatus = res.status
+      }, testEnv)
+      expect(res.status).toBe(i < 10 ? 401 : 429)
+      if (i === 10) expect(await res.json()).toEqual({ error: 'Too many requests' })
     }
-    expect(lastStatus).toBe(429)
+    expect(limit).toHaveBeenCalledTimes(11)
+    for (const [options] of limit.mock.calls) {
+      expect(options).toEqual({ key: 'cli-approve:9.9.9.9' })
+    }
+  })
+
+  it('実際の binding も同一分内では 10 回許可し、11 回目を拒否する', async () => {
+    // Miniflare resets its bucket at wall-clock minute boundaries, not 60s
+    // after the first request. Retry only a burst that crossed that boundary;
+    // never retry an unexpected status within one window or skip assertions.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const ip = `c16-${crypto.randomUUID()}`
+      const startedMinute = Math.floor(Date.now() / 60_000)
+      const statuses: number[] = []
+      for (let i = 0; i < 11; i++) {
+        const res = await SELF.fetch(`${BASE}/api/auth/cli/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': ip },
+          body: JSON.stringify({ userCode: 'ZZZZ-9999' }),
+        })
+        statuses.push(res.status)
+      }
+      if (Math.floor(Date.now() / 60_000) !== startedMinute) continue
+      expect(statuses).toEqual([...Array<number>(10).fill(401), 429])
+      return
+    }
+    throw new Error('Could not complete the rate-limit burst within one minute')
   })
 })
 
