@@ -20,7 +20,7 @@
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
-    "@cloudflare/workers-oauth-provider": "^0.8.3",
+    "@cloudflare/workers-oauth-provider": "^1.2.3",
     "@hono/zod-validator": "^0.9.1",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@nanokajs/core": "2.0.1",
