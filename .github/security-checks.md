@@ -30,6 +30,8 @@ GitHub Ubuntu runner, without adding scanner dependencies. Before the real audit
 Node's test runner runs the pinned pnpm against a loopback mock registry. It
 checks the synthetic-node case, a real transitive `cli@0.1.0` finding, dev and
 optional coverage, an unchanged input lockfile, and fail-closed registry errors.
+Ambiguous YAML keys are rejected instead of being silently changed by Ruby's
+YAML 1.1 parser. Unsupported lockfile/report shapes also fail the check.
 See [pnpm's importer-to-audit conversion](https://github.com/pnpm/pnpm/blob/v10.33.2/lockfile/audit/src/lockfileToAuditTree.ts).
 
 Any low, moderate, high, or critical finding fails the job. The log includes
@@ -45,7 +47,7 @@ published advisory are outside this check.
 
 ## Code scanning
 
-CodeQL scans actions, javascript-typescript with the
+CodeQL scans actions, javascript-typescript, ruby with the
 `security-extended` query suite and `build-mode: none`. No application build or
 deployment is invoked. Results are uploaded to GitHub code scanning; database
 upload is disabled. A successful analysis/upload is not proof of zero alerts:

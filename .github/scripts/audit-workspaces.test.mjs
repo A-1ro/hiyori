@@ -126,3 +126,15 @@ test('registry error reports fail closed while still auditing both importers', a
   assert.equal(result.code, 1, result.output);
   assert.match(result.output, /Dependency audit could not complete/);
 });
+
+test('ambiguous YAML keys fail closed instead of dropping a dependency name', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'audit-yaml-regression-'));
+  try {
+    await writeFile(join(directory, 'pnpm-lock.yaml'), fixture(false).replaceAll('runtime-helper:', 'on:'));
+    const result = await command([scanner, directory], process.env);
+    assert.equal(result.code, 1, result.output);
+    assert.match(result.output, /Dependency audit could not complete/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

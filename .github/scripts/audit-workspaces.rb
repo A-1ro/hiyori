@@ -8,7 +8,20 @@ module WorkspaceAudit
   LEVELS = %w[info low moderate high critical].freeze
   REGISTRY = 'https://registry.npmjs.org'.freeze
 
+  def self.validate_keys(value)
+    case value
+    when Hash
+      # Psych uses YAML 1.1. Reject ambiguous keys (e.g. an unquoted `on`)
+      # instead of silently changing a YAML 1.2 dependency name.
+      raise ArgumentError, 'Non-string YAML key' unless value.keys.all? { |key| key.is_a?(String) }
+      value.each_value { |child| validate_keys(child) }
+    when Array
+      value.each { |child| validate_keys(child) }
+    end
+  end
+
   def self.projections(lockfile)
+    validate_keys(lockfile)
     unless lockfile.is_a?(Hash) && lockfile['lockfileVersion'] == '9.0' &&
            lockfile['importers'].is_a?(Hash) && !lockfile['importers'].empty? &&
            lockfile['packages'].is_a?(Hash) && lockfile['snapshots'].is_a?(Hash)
