@@ -37,7 +37,7 @@ Discord 連携の **日程調整 Web ツール**。複数人で候補日を出�
 
 ### 前提
 
-- Node.js **22.22+（22.x）または24.11以降** / **pnpm 10.33.2**（`packageManager` 指定に従う）
+- Node.js **22.22.2+（22.x）、24.15+（24.x）、または26以降** / **pnpm 10.33.2**（`packageManager` 指定に従う）
 - Cloudflare アカウント（`wrangler` ログイン済み）
 
 ### セットアップ

@@ -10,6 +10,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'jsdom',
+    // Node 25+ の native Web Storage が jsdom の Storage を隠すのを防ぐ。
+    // https://github.com/vitest-dev/vitest/issues/10867
+    execArgv: Number(process.versions.node.split('.')[0]) >= 25 ? ['--no-webstorage'] : [],
     globals: true,
     include: ['src/client/**/*.test.tsx'],
     setupFiles: ['./vitest.client.setup.ts'],
