@@ -134,8 +134,8 @@ docs/requirements.md       Product decisions, data model rationale, open questio
 
 ## Versioning notes
 
-- Workspace development requires Node **22.22+ (22.x) or 24.11+** and **pnpm 10.33.2**. Use the pinned package manager so dependency build-script permissions are honored.
-- Security overrides in `package.json` constrain affected transitive versions. The esbuild override intentionally updates legacy `@esbuild-kit/core-utils` (0.18.20), `tsx` (0.25.12), `tsup` (0.27.3), and 0.28.0 to 0.28.1; these are build-time tools, so verify both builds and `pnpm db:generate` as well as tests before changing it. Other overrides stay within the existing major (and sharp minor). Revalidate `pnpm audit` before changing or removing overrides.
+- Workspace development requires Node **22.22.2+ (22.x), 24.15+ (24.x), or 26+** and **pnpm 10.33.2**. Use the pinned package manager so dependency build-script permissions are honored.
+- Security overrides in `package.json` constrain affected transitive versions. The esbuild override intentionally updates legacy `@esbuild-kit/core-utils` (0.18.20), `tsx` (0.25.12), `tsup` (0.27.3), and 0.28.0 to 0.28.1; these are build-time tools, so verify both builds and `pnpm db:generate` as well as tests before changing it. The sharp override requires 0.35.5 to address GHSA-wq5f-xc86-pv6w. Other overrides stay within the existing major (and sharp minor). Revalidate `pnpm audit` before changing or removing overrides.
 
 - **Vite 8** (not 7) — `@vitejs/plugin-react@6` requires it. The requirements doc still says "Vite 7+" which 8 satisfies; don't downgrade.
 - **React 19**, **Tailwind v4** (`@tailwindcss/vite` plugin, no `tailwind.config.ts` needed — Tailwind v4 reads CSS-imported config).
