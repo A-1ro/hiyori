@@ -7,11 +7,11 @@
 3. **OAuth2 → Redirects** に `DISCORD_OAUTH_REDIRECT_URI` と同じ URL を登録
 4. **Interactions Endpoint URL** に `https://{your-worker}.workers.dev/api/discord/interactions` を設定
 5. `pnpm discord:register` でスラッシュコマンドを登録
-6. Bot 招待 URL: `https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&scope=bot%20applications.commands&permissions=2048`
+6. Bot 招待 URL: `https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&scope=bot%20applications.commands&integration_type=0&permissions=2147503104`
 
 > セキュリティ上、`POST/PATCH /api/events` は raw な `discordChannelId` を受け付けず、`/hiyori new` 経由で発行された署名付き `discordChannelToken` のみを受理する（cross-tenant 投稿防止）。詳細は [開発時の注意](../CLAUDE.md) 参照。
 
-チャンネルの「閲覧」と「メッセージ送信」の権限を確認する。上記 URL の `CLIENT_ID` と `your-worker` は自分の設定に置き換え、独自ドメインを利用する場合はそのホスト名を使う。
+チャンネルの「閲覧」「メッセージ送信」「埋め込みリンク」の権限を確認する。招待 URL のスコープと権限値は [`src/client/lib/discord.ts`](../src/client/lib/discord.ts) の設定に合わせている。上記 URL の `CLIENT_ID` と `your-worker` は自分の設定に置き換え、独自ドメインを利用する場合はそのホスト名を使う。
 
 `DISCORD_APP_ID` と `DISCORD_BOT_TOKEN` を `.dev.vars` に設定してから、リポジトリルートで `pnpm discord:register` を実行する。`DISCORD_GUILD_ID` を指定すればサーバー限定登録、未指定ならグローバル登録になる。
 

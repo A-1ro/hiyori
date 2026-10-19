@@ -1,6 +1,6 @@
 # 利用ガイド
 
-[本番サービス](https://hiyori-schedule.com) · [画面付きの使い方](https://hiyori-schedule.com/help)
+[本番サービス](https://hiyori-schedule.com) · [使い方ガイド](https://hiyori-schedule.com/help)
 
 ## イベントと候補日時
 
