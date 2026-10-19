@@ -74,7 +74,7 @@ export function LandingScreen() {
           </Button>
         </div>
         <p style={{ marginTop: 16, fontSize: 13, color: 'var(--color-fg3)' }}>
-          ログインなしでも、名前を入れればすぐ回答できます。
+          作成には Discord ログインが必要です。公開イベントへの回答は、ログインなしでも名前を入れればできます。
         </p>
         <div style={{ marginTop: 10 }}>
           <a

@@ -10,7 +10,7 @@ export interface AppHeaderBack {
   label?: string
 }
 
-export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: ReactNode }) {
+export function AppHeader({ back, right, loginInNewTab = false }: { back?: AppHeaderBack; right?: ReactNode; loginInNewTab?: boolean }) {
   const { data: sessionData, error: sessionError } = useSession()
   const logout = useLogout()
   const location = useLocation()
@@ -127,7 +127,10 @@ export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: React
           </>
         ) : sessionData?.user === null && !sessionError ? (
           <a
-            href={loginUrl(location.pathname)}
+            href={loginUrl(loginInNewTab ? '/me' : location.pathname + location.search)}
+            target={loginInNewTab ? '_blank' : undefined}
+            rel={loginInNewTab ? 'noopener noreferrer' : undefined}
+            aria-label={loginInNewTab ? 'Discord でログイン（別タブで開きます）' : undefined}
             style={{
               display: 'inline-flex',
               alignItems: 'center',

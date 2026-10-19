@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router'
@@ -26,7 +26,7 @@ const result: Awaited<ReturnType<typeof createEvent>> = {
   candidates: [],
 }
 
-function renderPage() {
+async function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   })
@@ -39,6 +39,7 @@ function renderPage() {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
+  await screen.findByPlaceholderText('例）年末の打ち上げ')
   fireEvent.change(screen.getByPlaceholderText('例）年末の打ち上げ'), { target: { value: '招待テスト' } })
   fireEvent.mouseDown(view.container.querySelector('button[data-ds]:not([disabled])')!)
   fireEvent.mouseUp(window)
@@ -53,11 +54,14 @@ function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(createEvent).mockResolvedValue(result)
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ user: { discordUserId: 'organizer' } })))
 })
+
+afterEach(() => { vi.unstubAllGlobals() })
 
 describe('EventCreatePage の招待付き作成', () => {
   it('作成 API 一回に招待ユーザー名 と候補を含め、成功後にイベントへ移動する', async () => {
-    const { input } = renderPage()
+    const { input } = await renderPage()
     expect(input.placeholder).toBe('例）hiyori_friend')
     fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
     await screen.findByText('作成したイベント')
@@ -74,7 +78,7 @@ describe('EventCreatePage の招待付き作成', () => {
   })
 
   it('公開へ戻した場合は作成 API に招待ユーザー名 を含めない', async () => {
-    renderPage()
+    await renderPage()
     fireEvent.click(screen.getByRole('radio', { name: /^公開 / }))
     fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
     await screen.findByText('作成したイベント')
@@ -86,7 +90,7 @@ describe('EventCreatePage の招待付き作成', () => {
 
   it('失敗時は招待の下書きを維持し、同じ内容で再試行できる', async () => {
     vi.mocked(createEvent).mockRejectedValueOnce(new Error('イベントを作成できませんでした'))
-    const { input } = renderPage()
+    const { input } = await renderPage()
     const draft = input.value
     fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
     await screen.findByText('イベントを作成できませんでした')
@@ -104,7 +108,7 @@ describe('EventCreatePage の招待付き作成', () => {
   it('作成待ちの間は送信ボタンを無効にして二重送信を防ぐ', async () => {
     let resolveCreate!: (value: typeof result) => void
     vi.mocked(createEvent).mockReturnValue(new Promise((resolve) => { resolveCreate = resolve }))
-    renderPage()
+    await renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
     const button = await screen.findByRole('button', { name: '作成中...' }) as HTMLButtonElement
     expect(button.disabled).toBe(true)
