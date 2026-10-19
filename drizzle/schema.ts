@@ -8,10 +8,20 @@ export const events = sqliteTable('events', {
   title: text('title').notNull(),
   description: text('description'),
   defaultDurationMinutes: integer('defaultDurationMinutes').notNull(),
+  visibility: text('visibility').notNull().default("public"),
   status: text('status').notNull().default("open"),
   deadline: integer('deadline', { mode: 'timestamp_ms' }),
   timezone: text('timezone').notNull().default("UTC"),
   discordChannelId: text('discordChannelId'),
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
+})
+
+export const event_invites = sqliteTable('event_invites', {
+  id: text('id').primaryKey().notNull(),
+  eventId: text('eventId').notNull(),
+  discordUserId: text('discordUserId'),
+  discordUsername: text('discordUsername'),
+  claimedAt: integer('claimedAt', { mode: 'timestamp_ms' }),
   createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
 })
 

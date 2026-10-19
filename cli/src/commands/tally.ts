@@ -2,6 +2,7 @@ import { Command } from 'commander'
 import { createCliApi, unwrap, HiyoriApiError } from '../api.js'
 import { resolveApiUrl, resolveToken } from '../config.js'
 import { printJson, fail } from '../output.js'
+import { eventUnavailableHint } from './_shared.js'
 
 interface Participant {
   id: string
@@ -71,7 +72,7 @@ export function tallyCommand(): Command {
         )
       } catch (err) {
         if (err instanceof HiyoriApiError && err.status === 404) {
-          fail(`イベントが見つかりません: ${id}`)
+          fail(`イベントが見つかりません: ${id}。${eventUnavailableHint(!!token)}`)
           return
         }
         fail(`エラー: ${err instanceof Error ? err.message : String(err)}`)

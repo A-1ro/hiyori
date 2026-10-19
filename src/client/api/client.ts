@@ -33,6 +33,7 @@ export interface EventResponse {
   title: string
   description?: string
   defaultDurationMinutes: number
+  visibility?: 'public' | 'invite_only'
   status: string
   deadline?: string
   timezone: string
@@ -51,6 +52,9 @@ export interface CreateEventInput {
   title: string
   description?: string
   defaultDurationMinutes: number
+  visibility?: 'public' | 'invite_only'
+  invitedDiscordUserIds?: string[]
+  invitedDiscordUsernames?: string[]
   deadline?: string
   timezone?: string
   // /hiyori new スラッシュコマンド由来の HMAC 署名トークン。手動入力は受け付けない。
@@ -63,6 +67,7 @@ export interface UpdateEventInput {
   description?: string
   deadline?: string | null
   defaultDurationMinutes?: number
+  visibility?: 'public' | 'invite_only'
   timezone?: string
   // 連携解除なら null、付け替えなら新しいトークン。
   discordChannelToken?: string | null
@@ -87,6 +92,37 @@ export async function updateEvent(
   input: UpdateEventInput,
 ): Promise<{ event: EventResponse }> {
   const res = await api.api.events[':id'].$patch({ param: { id }, json: input })
+  return handleResponse(res)
+}
+
+export interface EventInviteResponse {
+  id: string
+  eventId: string
+  discordUserId: string | null
+  discordUsername: string | null
+  claimedAt: string | null
+  createdAt: string
+}
+
+export async function fetchEventInvites(eventId: string): Promise<{ invites: EventInviteResponse[] }> {
+  const res = await api.api.events[':id'].invites.$get({ param: { id: eventId } })
+  return handleResponse(res)
+}
+
+export type EventInviteTarget = string | { discordUsername: string }
+
+export async function addEventInvite(eventId: string, target: EventInviteTarget): Promise<{ invite: EventInviteResponse }> {
+  const res = await api.api.events[':id'].invites.$post({
+    param: { id: eventId },
+    json: typeof target === 'string' ? { discordUserId: target } : target,
+  })
+  return handleResponse(res)
+}
+
+export async function removeEventInvite(eventId: string, inviteId: string): Promise<void> {
+  const res = await api.api.events[':id'].invites[':discordUserId'].$delete({
+    param: { id: eventId, discordUserId: inviteId },
+  })
   return handleResponse(res)
 }
 

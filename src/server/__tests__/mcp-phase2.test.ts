@@ -299,6 +299,19 @@ describe('MCP Phase 2: OAuth フロー（authorize→consent→token→/mcp）',
   it('read のみ同意なら write ツールはスコープ不足で拒否される', async () => {
     await withMcpEnabled(async () => {
       const cookie = await loginAs('oauth-user-ro')
+      const eventResponse = await SELF.fetch(`${BASE}/api/events`, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Read-only invitation fixture',
+          visibility: 'invite_only',
+          invitedDiscordUsernames: ['pending_name'],
+          defaultDurationMinutes: 60,
+          candidates: [{ startAt: '2026-11-01T09:00:00.000Z' }],
+        }),
+      })
+      expect(eventResponse.status).toBe(201)
+      const eventId = ((await eventResponse.json()) as { event: { id: string } }).event.id
       const clientId = await registerClient()
       const accessToken = await obtainAccessToken(clientId, cookie, ['hiyori:read'])
 
@@ -317,6 +330,23 @@ describe('MCP Phase 2: OAuth フロー（authorize→consent→token→/mcp）',
       })
       expect(created.isError).toBe(true)
       expect(created.text).toContain('scope')
+
+      const invitations = await client.callTool('hiyori_list_invites', { eventId })
+      expect(invitations.isError).toBe(false)
+      const rows = (invitations.data as { invites: { id: string; discordUsername: string }[] }).invites
+      expect(rows).toHaveLength(1)
+      expect(rows[0]!.discordUsername).toBe('pending_name')
+      for (const [name, input] of [
+        ['hiyori_add_invite', { discordUsername: 'blocked_name' }],
+        ['hiyori_revoke_invite', { inviteId: rows[0]!.id }],
+        ['hiyori_edit_event', { visibility: 'public' }],
+      ] as const) {
+        const result = await client.callTool(name, { eventId, ...input })
+        expect(result.isError).toBe(true)
+        expect(result.text).toContain('hiyori:write')
+      }
+      expect((await client.callTool('hiyori_list_invites', { eventId })).data).toEqual(invitations.data)
+      expect((await SELF.fetch(`${BASE}/api/events/${eventId}`)).status).toBe(404)
     })
   })
 })
@@ -448,7 +478,7 @@ describe('MCP Phase 2: スコープ要求の解決（権限過剰付与の防止
 })
 
 describe('MCP Phase 2: 残りツール（案 B Bearer 経路で権限確認）', () => {
-  it('tools/list に Phase 2 の全 19 ツールが並ぶ', async () => {
+  it('tools/list に招待管理を含む全 22 ツールが並ぶ', async () => {
     await withMcpEnabled(async () => {
       const client = new McpTestClient(await loginAsBearer('p2-list'))
       await client.initialize()
@@ -473,10 +503,13 @@ describe('MCP Phase 2: 残りツール（案 B Bearer 経路で権限確認）',
         'hiyori_add_subscription',
         'hiyori_remove_subscription',
         'hiyori_regen_subscription',
+        'hiyori_list_invites',
+        'hiyori_add_invite',
+        'hiyori_revoke_invite',
       ]) {
         expect(tools).toContain(name)
       }
-      expect(tools.length).toBe(19)
+      expect(tools.length).toBe(22)
     })
   })
 

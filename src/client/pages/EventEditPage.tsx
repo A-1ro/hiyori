@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -6,9 +7,16 @@ import {
   addCandidate,
   deleteCandidate,
   ApiError,
+  fetchEventInvites,
+  addEventInvite,
+  removeEventInvite,
+  type EventInviteResponse,
 } from '../api/client'
+import { useSession, type SessionUser } from '../auth/useSession'
 import { AppHeader } from '../components/AppHeader'
 import { Button } from '../components/primitives'
+import { DiscordInviteFields, useDiscordInviteDraft, validateDiscordInviteDraft } from '../components/events/DiscordInviteFields'
+import { normalizeDiscordUsername } from '../../shared/discord-invites'
 import {
   EventComposer,
   buildComposerInitial,
@@ -33,6 +41,7 @@ export function EventEditPage() {
         title: payload.title,
         description: payload.description,
         defaultDurationMinutes: payload.defaultDurationMinutes,
+        visibility: payload.visibility,
         deadline: payload.deadline ?? null,
         timezone: payload.timezone,
         // Discord 連携の付け替え/解除は編集 UI から行わない（/hiyori new 経由で再作成）
@@ -111,6 +120,7 @@ export function EventEditPage() {
           mode="edit"
           initial={initial}
           linkedDiscordChannelId={data.event.discordChannelId}
+          inviteManager={<EventInviteManager eventId={id!} />}
           submitLabel="保存する"
           submittingLabel="保存中..."
           isSubmitting={mutation.isPending}
@@ -119,5 +129,141 @@ export function EventEditPage() {
         />
       </main>
     </div>
+  )
+}
+
+function EventInviteManager({ eventId }: { eventId: string }) {
+  const session = useSession()
+  const discordUserId = session.data?.user?.discordUserId ?? null
+  return (
+    <AccountInviteManager
+      key={`${eventId}:${discordUserId ?? 'anonymous'}`}
+      eventId={eventId}
+      discordUserId={discordUserId}
+      sessionReady={!session.isFetching && !session.isError}
+    />
+  )
+}
+
+type InviteQueryData = { invites: EventInviteResponse[]; denied?: boolean }
+
+function AccountInviteManager({ eventId, discordUserId, sessionReady }: {
+  eventId: string
+  discordUserId: string | null
+  sessionReady: boolean
+}) {
+  const inviteDraft = useDiscordInviteDraft()
+  const inviteInputId = useId()
+  const queryClient = useQueryClient()
+  const inviteQueryKey = ['eventInvites', eventId, discordUserId] as const
+  const { data, error, isFetching } = useQuery<InviteQueryData>({
+    queryKey: inviteQueryKey,
+    enabled: !!discordUserId,
+    queryFn: async ({ signal }) => {
+      try {
+        const result = await fetchEventInvites(eventId)
+        signal.throwIfAborted()
+        return result
+      } catch (error) {
+        signal.throwIfAborted()
+        if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+          // 公開イベント本体が読めても招待一覧は非公開。旧データを空に置き換え、
+          // セッションの期限切れ・他タブの切替も確認する。権限エラーは再試行しない。
+          void queryClient.invalidateQueries({ queryKey: ['session'], exact: true })
+          return { invites: [], denied: true }
+        }
+        throw error
+      }
+    },
+  })
+  const canManage = !!discordUserId && sessionReady && !!data && !data.denied && !error && !isFetching
+  const visibleInvites = canManage ? data.invites : undefined
+  const hasCurrentAccess = () => {
+    const currentSession = queryClient.getQueryData<{ user: SessionUser | null }>(['session'])
+    const currentInvites = queryClient.getQueryState<InviteQueryData>(inviteQueryKey)
+    return canManage &&
+      currentSession?.user?.discordUserId === discordUserId &&
+      queryClient.getQueryState(['session'])?.status === 'success' &&
+      queryClient.getQueryState(['session'])?.fetchStatus === 'idle' &&
+      currentInvites?.status === 'success' &&
+      currentInvites.fetchStatus === 'idle' &&
+      !currentInvites.data?.denied
+  }
+  const { usernames: discordUsernames, error: inviteError } = validateDiscordInviteDraft(inviteDraft, visibleInvites)
+  const addMutation = useMutation({
+    mutationFn: async (usernames: string[]) => {
+      // Existing edit behavior applies invitations immediately. Keep unsubmitted rows on failure.
+      for (const discordUsername of usernames) {
+        if (!hasCurrentAccess()) throw new Error('招待を管理する権限を確認してください')
+        await addEventInvite(eventId, { discordUsername })
+        inviteDraft.usernameRows.removeSubmitted(discordUsername, normalizeDiscordUsername)
+      }
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: inviteQueryKey, exact: true }),
+  })
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => {
+      if (!hasCurrentAccess()) throw new Error('招待を管理する権限を確認してください')
+      return removeEventInvite(eventId, id)
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: inviteQueryKey, exact: true }),
+  })
+
+  return (
+    <section
+      style={{
+        padding: 20,
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      <h3 style={{ margin: 0, fontSize: 17, color: 'var(--color-fg1)' }}>
+        Discord アカウントを招待
+      </h3>
+      <p id={`${inviteInputId}-hint`} style={{ margin: '6px 0 14px', fontSize: 13, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
+        1 欄に 1 人のユーザー名を入力すると、次の欄が表示されます（最大 500 人）。重複するユーザー名はまとめます。公開イベントでも先に登録しておけます。招待の追加・取消はすぐに反映されます。公開範囲の変更には「保存する」が必要です。ユーザー名で招待した相手には、イベントの URL を共有してください。ログイン済みならそのまま受け取れます。未ログインの場合は Discord でログインが必要です。DM は自動送信されません。
+      </p>
+      <p style={{ margin: '6px 0 14px', fontSize: 12, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
+        ユーザー名の招待は、最初の受取り時にその名前を持つアカウントへ結び付きます。受取り前の名前変更や入力間違いに注意してください。受取り後は名前が変わっても同じアカウントの招待として扱い、取消時は同じアカウントへの招待をまとめて取り消します。
+      </p>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <DiscordInviteFields
+          id={inviteInputId}
+          draft={inviteDraft}
+          describedBy={`${inviteInputId}-hint${inviteError ? ` ${inviteInputId}-error` : ''}`}
+          disabled={!canManage || addMutation.isPending}
+        />
+        <Button
+          variant="secondary"
+          onClick={() => {
+            if (hasCurrentAccess() && discordUsernames.length && !inviteError && !addMutation.isPending) addMutation.mutate(discordUsernames)
+          }}
+          disabled={!canManage || !discordUsernames.length || Boolean(inviteError) || addMutation.isPending}
+          style={{ justifySelf: 'start' }}
+        >
+          追加
+        </Button>
+      </div>
+      {inviteError && <p id={`${inviteInputId}-error`} role="alert" style={{ margin: '8px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>{inviteError}</p>}
+      {addMutation.error && <p role="alert" style={{ margin: '8px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>招待の追加に失敗しました。未登録の入力は残っています。</p>}
+      {removeMutation.error && <p style={{ margin: '8px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>招待の取消に失敗しました。</p>}
+      {(error || data?.denied || !discordUserId) && <p style={{ margin: '12px 0 0', color: 'var(--color-no-ink)', fontSize: 13 }}>招待一覧を読み込めません。</p>}
+      {visibleInvites?.length === 0 && <p style={{ margin: '14px 0 0', color: 'var(--color-fg3)', fontSize: 13 }}>招待はまだありません。</p>}
+      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+        {visibleInvites?.map((invite) => (
+          <div key={invite.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <code style={{ minWidth: 0, overflowWrap: 'anywhere', fontSize: 13, color: 'var(--color-fg1)' }}>{invite.discordUsername ? `@${invite.discordUsername}` : '以前の招待'}</code>
+              {!invite.discordUsername && <span style={{ display: 'block', marginTop: 3, fontSize: 12, overflowWrap: 'anywhere', color: 'var(--color-fg3)' }}>Discord ID: {invite.discordUserId}</span>}
+              {invite.discordUsername && <span style={{ display: 'block', marginTop: 3, fontSize: 12, color: 'var(--color-fg3)' }}>{invite.discordUserId ? '受取り済み' : '受取り待ち · アクセス時に現在のユーザー名を確認'}</span>}
+            </div>
+            <Button variant="ghost" size="sm" aria-label={`${invite.discordUsername ? `@${invite.discordUsername}` : `Discord ID ${invite.discordUserId}`} の招待を取消`} onClick={() => removeMutation.mutate(invite.id)} disabled={removeMutation.isPending} style={{ flexShrink: 0 }}>
+              取消
+            </Button>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }

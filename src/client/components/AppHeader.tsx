@@ -11,7 +11,7 @@ export interface AppHeaderBack {
 }
 
 export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: ReactNode }) {
-  const { data: sessionData } = useSession()
+  const { data: sessionData, error: sessionError } = useSession()
   const logout = useLogout()
   const location = useLocation()
   const user = sessionData?.user ?? null
@@ -125,7 +125,7 @@ export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: React
               ログアウト
             </Button>
           </>
-        ) : (
+        ) : sessionData?.user === null && !sessionError ? (
           <a
             href={loginUrl(location.pathname)}
             style={{
@@ -142,6 +142,10 @@ export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: React
             <DiscordMark size={16} color="var(--color-blurple)" />
             {isNarrow ? 'ログイン' : 'Discord でログイン'}
           </a>
+        ) : (
+          <span style={{ fontSize: 12, color: 'var(--color-fg3)' }}>
+            {sessionError ? 'ログイン状態を確認できません' : 'ログイン状態を確認中...'}
+          </span>
         )}
       </div>
     </header>

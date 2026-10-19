@@ -1,6 +1,7 @@
-import { useState, type CSSProperties } from 'react'
+import { useId, useState, type CSSProperties, type ReactNode } from 'react'
 import { Button, Field, Icon, Input } from '../primitives'
 import { MonthCalendar, WD } from '../MonthCalendar'
+import { DiscordInviteFields, useDiscordInviteDraft, validateDiscordInviteDraft } from './DiscordInviteFields'
 
 const HOUR_OPTS = Array.from({ length: 13 }, (_, i) => i) // 0〜12 時間
 const MIN_OPTS = [0, 10, 20, 30, 40, 50] // 10 分刻み
@@ -265,6 +266,7 @@ export interface ComposerInitial {
   title: string
   description: string
   defaultDurationMinutes: number
+  visibility: 'public' | 'invite_only'
   deadline: string
   timezone: string
   dates: Set<string>
@@ -277,6 +279,8 @@ export interface ComposerPayload {
   title: string
   description?: string
   defaultDurationMinutes: number
+  visibility: 'public' | 'invite_only'
+  invitedDiscordUsernames?: string[]
   deadline?: string
   timezone: string
   // Discord 連携は /hiyori new スラッシュコマンド由来の HMAC 署名トークン経由のみ。
@@ -291,6 +295,8 @@ export interface EventComposerProps {
   linkedDiscordChannelId?: string
   // /hiyori new から渡された HMAC 署名済みトークン。指定時はチャンネル連携付きで作成。
   discordChannelToken?: string
+  // 編集時の招待管理を公開範囲の直下に配置する。
+  inviteManager?: ReactNode
   submitLabel: string
   submittingLabel: string
   isSubmitting: boolean
@@ -308,6 +314,7 @@ export function buildComposerInitial(
     title: string
     description?: string
     defaultDurationMinutes: number
+    visibility?: 'public' | 'invite_only'
     deadline?: string
     timezone: string
   },
@@ -337,6 +344,7 @@ export function buildComposerInitial(
     title: event.title,
     description: event.description ?? '',
     defaultDurationMinutes: event.defaultDurationMinutes,
+    visibility: event.visibility ?? 'public',
     deadline: event.deadline ? event.deadline.replace('Z', '').slice(0, 16) : '',
     timezone: event.timezone,
     dates,
@@ -351,6 +359,7 @@ export function EventComposer({
   initial,
   linkedDiscordChannelId,
   discordChannelToken,
+  inviteManager,
   submitLabel,
   submittingLabel,
   isSubmitting,
@@ -360,6 +369,9 @@ export function EventComposer({
   const [title, setTitle] = useState(initial?.title ?? '')
   const [memo, setMemo] = useState(initial?.description ?? '')
   const [dur, setDur] = useState(initial?.defaultDurationMinutes ?? 90)
+  const [visibility, setVisibility] = useState<'public' | 'invite_only'>(initial?.visibility ?? 'public')
+  const inviteDraft = useDiscordInviteDraft()
+  const inviteInputId = useId()
   const [durOpen, setDurOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(initial?.dates ?? new Set())
   const [activeBands, setActiveBands] = useState<Set<BandKey>>(
@@ -387,7 +399,11 @@ export function EventComposer({
     ]),
   ].sort()
   const totalSlots = dates.length * bandTimes.length
-  const valid = title.trim() && dates.length > 0 && bandTimes.length > 0
+  const { usernames: invitedDiscordUsernames, error: inviteValidationError } = validateDiscordInviteDraft(inviteDraft)
+  const inviteError = mode !== 'create' || visibility !== 'invite_only'
+    ? undefined
+    : inviteValidationError
+  const valid = title.trim() && dates.length > 0 && bandTimes.length > 0 && !inviteError
 
   const removeDate = (ds: string) =>
     setSelected((s) => {
@@ -408,6 +424,7 @@ export function EventComposer({
   const removeCustom = (t: string) => setCustomTimes((arr) => arr.filter((x) => x !== t))
 
   const handleSubmit = () => {
+    if (!valid || isSubmitting) return
     const candidates = dates.flatMap((ds) =>
       bandTimes.map((t) => buildLocalISO(ds, t, durOf(ds, t))),
     )
@@ -415,6 +432,8 @@ export function EventComposer({
       title: title.trim() || '無題のイベント',
       description: memo || undefined,
       defaultDurationMinutes: dur,
+      visibility,
+      ...(mode === 'create' && visibility === 'invite_only' ? { invitedDiscordUsernames } : {}),
       deadline: deadline ? new Date(deadline).toISOString() : undefined,
       timezone,
       discordChannelToken,
@@ -458,6 +477,69 @@ export function EventComposer({
         <Field label="ひとことメモ（任意）">
           <Input value={memo} onChange={setMemo} placeholder="場所や持ち物など" />
         </Field>
+
+        <Field
+          label="公開範囲"
+          hint="公開は URL を知っている人が閲覧できます。招待限定は招待した Discord アカウントだけが閲覧・回答できます。"
+        >
+          <div style={{ display: 'grid', gap: 8 }}>
+            {([
+              ['public', '公開', 'URL を知っている人が閲覧・回答できます。ゲスト参加も使えます。'],
+              ['invite_only', '招待限定', '主催者または招待済みの Discord アカウントだけが閲覧・回答できます。ゲスト参加はできません。'],
+            ] as const).map(([value, label, description]) => (
+              <label
+                key={value}
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'flex-start',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: `1px solid ${visibility === value ? 'var(--color-ink)' : 'var(--color-border-strong)'}`,
+                  background: visibility === value ? 'var(--color-ink-soft)' : 'var(--color-surface)',
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="event-visibility"
+                  value={value}
+                  checked={visibility === value}
+                  onChange={() => setVisibility(value)}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  <span style={{ display: 'block', fontWeight: 700, color: 'var(--color-fg1)' }}>{label}</span>
+                  <span style={{ display: 'block', marginTop: 2, fontSize: 12.5, color: 'var(--color-fg3)' }}>{description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        {mode === 'create' && visibility === 'invite_only' && (
+          <div>
+            <DiscordInviteFields
+              id={inviteInputId}
+              draft={inviteDraft}
+              optional
+              describedBy={`${inviteInputId}-hint${inviteError ? ` ${inviteInputId}-error` : ''}`}
+              disabled={isSubmitting}
+            />
+            <p id={`${inviteInputId}-hint`} style={{ margin: '6px 0 0', fontSize: 12, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
+              1 欄に 1 人のユーザー名を入力すると、次の欄が表示されます（最大 500 人）。重複するユーザー名はまとめます。招待はイベント作成と同時に登録され、作成後も編集できます。ユーザー名で招待した相手には、イベントの URL を共有してください。ログイン済みならそのまま受け取れます。未ログインの場合は Discord でログインが必要です。DM は自動送信されません。
+            </p>
+            <p style={{ margin: '6px 0 0', fontSize: 12, lineHeight: 1.6, color: 'var(--color-fg3)' }}>
+              ユーザー名の招待は、最初の受取り時にその名前を持つアカウントへ結び付きます。受取り前の名前変更や入力間違いに注意してください。受取り後は名前が変わっても同じアカウントの招待として扱います。
+            </p>
+            {inviteError && (
+              <p id={`${inviteInputId}-error`} role="alert" style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--color-no-ink)' }}>
+                {inviteError}
+              </p>
+            )}
+          </div>
+        )}
+        {mode === 'edit' && inviteManager}
 
         <div style={{ width: 200 }}>
           <Field label="所要時間" hint="各枠の初期値（枠ごとに変更できます）">

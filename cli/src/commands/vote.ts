@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import * as clack from '@clack/prompts'
-import { unwrap, HiyoriApiError, resolveParent, requireAuthedApi } from './_shared.js'
+import { unwrap, HiyoriApiError, resolveParent, requireAuthedApi, eventUnavailableHint } from './_shared.js'
 import { printJson, fail } from '../output.js'
 
 interface Candidate {
@@ -58,7 +58,7 @@ export function voteCommand(): Command {
         eventData = await unwrap<EventResponse>(await api.api.events[':id'].$get({ param: { id } }))
       } catch (err) {
         if (err instanceof HiyoriApiError && err.status === 404) {
-          fail(`イベントが見つかりません: ${id}`)
+          fail(`イベントが見つかりません: ${id}。${eventUnavailableHint(true)}`)
           return
         }
         fail(`エラー: ${err instanceof Error ? err.message : String(err)}`)

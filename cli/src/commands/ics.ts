@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises'
 import { Command } from 'commander'
 import { resolveApiUrl, resolveToken } from '../config.js'
 import { fail } from '../output.js'
+import { eventUnavailableHint } from './_shared.js'
 
 export function icsCommand(): Command {
   return new Command('ics')
@@ -20,7 +21,7 @@ export function icsCommand(): Command {
       const res = await fetch(url, { headers })
 
       if (res.status === 404) {
-        fail('確定がありません（decision.ics not found）')
+        fail(`イベントまたは確定済みの日程が見つかりません。${eventUnavailableHint(!!token)}`)
         return
       }
 

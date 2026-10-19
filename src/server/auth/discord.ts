@@ -36,6 +36,8 @@ export async function exchangeCodeForToken(env: Env, code: string, redirectUri: 
 export type DiscordMe = {
   id: string
   username: string
+  // Only "0" denotes Discord's modern unique username, safe for invitation claims.
+  discriminator?: string
   global_name: string | null
   avatar: string | null
 }

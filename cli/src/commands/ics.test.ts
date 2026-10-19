@@ -75,7 +75,7 @@ describe('ics コマンド', () => {
     consoleSpy.mockRestore()
   })
 
-  it('404: 確定がありませんメッセージと非0終了', async () => {
+  it('404: 存在を明かさないメッセージと非0終了', async () => {
     vi.stubGlobal('fetch', async () => {
       return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: { 'Content-Type': 'application/json' } })
     })

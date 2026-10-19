@@ -18,6 +18,7 @@ import { candidateCommand } from './commands/candidate.js'
 import { voteCommand } from './commands/vote.js'
 import { confirmCommand, unconfirmCommand } from './commands/confirm.js'
 import { subCommand } from './commands/sub.js'
+import { inviteCommand } from './commands/invite.js'
 
 const program = new Command()
 
@@ -46,6 +47,7 @@ program.addCommand(busyCommand())
 program.addCommand(icsCommand())
 
 program.addCommand(candidateCommand())
+program.addCommand(inviteCommand())
 program.addCommand(voteCommand())
 program.addCommand(confirmCommand())
 program.addCommand(unconfirmCommand())

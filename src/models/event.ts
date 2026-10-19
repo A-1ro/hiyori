@@ -7,6 +7,8 @@ export const eventFields = {
   title: t.string().min(1).max(200),
   description: t.string().optional(),
   defaultDurationMinutes: t.integer().min(1).max(60 * 24),
+  // Existing and newly created events remain public unless the organizer explicitly selects invite-only.
+  visibility: t.string().default('public'),
   status: t.string().default('open'),
   deadline: t.timestamp().optional(),
   timezone: t.string().default('UTC'),
