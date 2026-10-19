@@ -173,6 +173,23 @@ describe('作成画面のログインガード', () => {
     expectDraft(true)
   })
 
+  it.each(['network', 'other-account'])('送信前の %s がフォーカス再確認で復旧した後は古い認証エラーを残さない', async (state) => {
+    const { container, queryClient } = renderPage()
+    await fillDraft(container)
+    if (state === 'network') fetchMock.mockRejectedValue(new Error('Failed to fetch'))
+    else fetchMock.mockImplementation(async () => Response.json({ user: { ...user, discordUserId: '98765432109876543' } }))
+    fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
+    await screen.findByText(state === 'network'
+      ? 'ログイン状態を確認できません。通信状況を確認して再試行してください。'
+      : '入力を始めた Discord アカウントと異なります。元のアカウントでログインし直してください。')
+    fetchMock.mockImplementation(async () => Response.json({ user }))
+    // フォーカス時の再取得と同じ経路。再確認ボタンの mutation.reset() に依存しない。
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['session'], exact: true }) })
+    await waitFor(() => expectDraft(false))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(createEvent).not.toHaveBeenCalled()
+  })
+
   it('認証確認の後の POST が 401 でも再送せず、入力を残して再ログインを案内する', async () => {
     vi.mocked(createEvent).mockRejectedValue(new ApiError('Authentication required', 401))
     const { container, queryClient } = renderPage()

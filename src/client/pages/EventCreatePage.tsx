@@ -7,6 +7,9 @@ import { Button } from '../components/primitives'
 import { AppHeader } from '../components/AppHeader'
 import { EventComposer, type ComposerPayload } from '../components/events/EventComposer'
 
+// 認証確認の失敗は現在のセッション表示で案内し、復旧後のフォームに古いエラーを残さない。
+class SessionCheckError extends Error {}
+
 export function EventCreatePage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -32,10 +35,10 @@ export function EventCreatePage() {
     mutationFn: async (payload: ComposerPayload) => {
       // クリック直前の失効・他タブの切替も再確認する。保存時の最終認可は API に任せる。
       const current = await session.refetch()
-      if (!current.isSuccess) throw new Error('ログイン状態を確認できません。再確認してください。')
+      if (!current.isSuccess) throw new SessionCheckError('ログイン状態を確認できません。再確認してください。')
       if (!current.data.user) throw new ApiError('ログインが必要です', 401)
       if (current.data.user.discordUserId !== composerOwner) {
-        throw new Error('入力を始めた Discord アカウントでログインしてください。')
+        throw new SessionCheckError('入力を始めた Discord アカウントでログインしてください。')
       }
       return createEvent({
         title: payload.title,
@@ -62,6 +65,10 @@ export function EventCreatePage() {
       navigate('/events/' + result.event.id)
     },
   })
+
+  const formError = mutation.error instanceof SessionCheckError ||
+    (mutation.error instanceof ApiError && mutation.error.status === 401)
+    ? undefined : mutation.error?.message
 
   return (
     <div>
@@ -130,7 +137,7 @@ export function EventCreatePage() {
               submitLabel="この内容でつくる"
               submittingLabel="作成中..."
               isSubmitting={mutation.isPending}
-              errorMessage={canCreate && !(mutation.error instanceof ApiError && mutation.error.status === 401) ? mutation.error?.message : undefined}
+              errorMessage={canCreate ? formError : undefined}
               onSubmit={(payload) => { if (canCreate && !mutation.isPending) mutation.mutate(payload) }}
             />
           </fieldset>
