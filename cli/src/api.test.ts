@@ -27,6 +27,7 @@ describe('createCliApi — Authorization ヘッダ付与', () => {
       ? headers.get('Authorization')
       : (headers as Record<string, string> | undefined)?.Authorization
     expect(authHeader).toBe('Bearer my-secret-token')
+    expect(capturedInit?.redirect).toBe('error')
   })
 
   it('token なし: Authorization ヘッダが送信されない', async () => {
@@ -38,6 +39,21 @@ describe('createCliApi — Authorization ヘッダ付与', () => {
       : (headers as Record<string, string> | undefined)?.Authorization
     expect(authHeader).toBeFalsy()
   })
+
+  it('rejects non-local HTTP even before login has a token', () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    expect(() => createCliApi('http://example.com')).toThrow('HTTPS')
+    expect(() => createCliApi('http://example.com', 'fixture-token')).toThrow('HTTPS')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each(['http://localhost:8787', 'http://127.0.0.1:8787', 'http://[::1]:8787'])(
+    'allows loopback development at %s', async (apiUrl) => {
+      await createCliApi(apiUrl, 'fixture-token').api.health.$get()
+      expect(capturedInit?.redirect).toBe('error')
+    },
+  )
 })
 
 describe('unwrap', () => {

@@ -1,6 +1,7 @@
 import { Command } from 'commander'
 import { readConfig, writeConfig, DEFAULT_API_URL } from '../config.js'
 import { fail } from '../output.js'
+import { assertSecureUrl } from '../transport.js'
 
 export function configCommand(): Command {
   const cmd = new Command('config').description('Manage configuration')
@@ -46,15 +47,10 @@ export function configCommand(): Command {
     .argument('<value>', 'Value to set')
     .action(async (key: string, value: string) => {
       if (key === 'api-url') {
-        let u: URL
         try {
-          u = new URL(value)
-        } catch {
-          fail(`無効な URL: ${value}`)
-          return
-        }
-        if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-          fail(`http(s) URL のみ対応: ${value}`)
+          assertSecureUrl(value)
+        } catch (err) {
+          fail(err instanceof Error ? err.message : '無効な URL です')
           return
         }
         const config = await readConfig()

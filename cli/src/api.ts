@@ -1,5 +1,6 @@
 import { hc } from 'hono/client'
 import type { AppType } from '../../src/server/index'
+import { assertSecureUrl, cliFetch } from './transport.js'
 
 export class HiyoriApiError extends Error {
   constructor(
@@ -11,27 +12,10 @@ export class HiyoriApiError extends Error {
   }
 }
 
-function isLocalHost(hostname: string): boolean {
-  return (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1' ||
-    hostname.endsWith('.local')
-  )
-}
-
 export const createCliApi = (apiUrl: string, token?: string) => {
-  if (token) {
-    try {
-      const u = new URL(apiUrl)
-      if (u.protocol === 'http:' && !isLocalHost(u.hostname)) {
-        console.error('警告: 平文 HTTP に認証トークンを送信します')
-      }
-    } catch {
-      // ignore invalid URL
-    }
-  }
+  assertSecureUrl(apiUrl)
   return hc<AppType>(apiUrl, {
+    fetch: cliFetch,
     headers: () => (token ? { Authorization: `Bearer ${token}` } : ({ } as Record<string, string>)),
   })
 }

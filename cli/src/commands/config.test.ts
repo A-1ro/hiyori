@@ -76,8 +76,31 @@ describe('config set api-url バリデーション', () => {
     await program.parseAsync(['config', 'set', 'api-url', 'ftp://example.com'], { from: 'user' })
 
     expect(process.exitCode).toBe(1)
-    expect(errOutput.some((l) => l.includes('http(s)'))).toBe(true)
+    expect(errOutput.some((l) => l.includes('HTTPS'))).toBe(true)
 
+    vi.restoreAllMocks()
+  })
+
+  it.each(['http://example.com', 'http://printer.local', 'http://192.168.1.1'])(
+    'does not save insecure URL %s', async (url) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const { Command } = await import('commander')
+      const { configCommand } = await import('./config.js')
+      const program = new Command().addCommand(configCommand())
+      await program.parseAsync(['config', 'set', 'api-url', url], { from: 'user' })
+      expect(process.exitCode).toBe(1)
+      expect((await readConfig()).apiUrl).toBeUndefined()
+      vi.restoreAllMocks()
+    },
+  )
+
+  it('saves localhost HTTP for development', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const { Command } = await import('commander')
+    const { configCommand } = await import('./config.js')
+    const program = new Command().addCommand(configCommand())
+    await program.parseAsync(['config', 'set', 'api-url', 'http://localhost:8787'], { from: 'user' })
+    expect((await readConfig()).apiUrl).toBe('http://localhost:8787')
     vi.restoreAllMocks()
   })
 })

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises'
 import { Command } from 'commander'
 import { resolveApiUrl, resolveToken } from '../config.js'
+import { cliFetch } from '../transport.js'
 import { fail } from '../output.js'
 import { eventUnavailableHint } from './_shared.js'
 
@@ -18,7 +19,7 @@ export function icsCommand(): Command {
       const headers: Record<string, string> = {}
       if (token) headers.Authorization = `Bearer ${token}`
 
-      const res = await fetch(url, { headers })
+      const res = await cliFetch(url, { headers })
 
       if (res.status === 404) {
         fail(`イベントまたは確定済みの日程が見つかりません。${eventUnavailableHint(!!token)}`)

@@ -23,6 +23,7 @@ afterEach(async () => {
   delete process.env.XDG_CONFIG_HOME
   delete process.env.HIYORI_API_URL
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
   process.exitCode = undefined
   await fs.rm(tmpDir, { recursive: true, force: true })
 })
@@ -37,39 +38,75 @@ const startResponse = {
 }
 
 describe('login コマンド', () => {
-  it('approved: token が保存される', async () => {
-    let pollCount = 0
-    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/api/auth/cli/start')) {
-        return new Response(JSON.stringify(startResponse), { status: 201, headers: { 'Content-Type': 'application/json' } })
-      }
-      if (url.includes('/api/auth/cli/poll')) {
-        pollCount++
-        if (pollCount < 2) {
-          return new Response(JSON.stringify({ status: 'pending' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-        }
-        return new Response(
-          JSON.stringify({ status: 'approved', token: 'cli-token-abc', expiresAt: '2999-01-01T00:00:00.000Z' }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        )
-      }
-      return new Response('Not found', { status: 404 })
-    })
-
+  it('rejects non-local HTTP before starting device authorization', async () => {
+    process.env.HIYORI_API_URL = 'http://test.example.com'
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
     const { Command } = await import('commander')
     const { loginCommand } = await import('./login.js')
-    const program = new Command()
-    program.addCommand(loginCommand())
-    await program.parseAsync(['login'], { from: 'user' })
-
-    const credFile = path.join(tmpDir, 'hiyori', 'credentials.json')
-    const raw = await fs.readFile(credFile, 'utf-8')
-    const creds = JSON.parse(raw)
-    expect(creds.token).toBe('cli-token-abc')
-    expect(process.exitCode).toBeFalsy()
-    vi.unstubAllGlobals()
+    const program = new Command().addCommand(loginCommand())
+    await expect(program.parseAsync(['login'], { from: 'user' })).rejects.toThrow('HTTPS')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it.each(['verificationUri', 'verificationUriComplete'])(
+    'rejects insecure %s before opening a browser or polling', async (field) => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        ...startResponse, [field]: 'http://remote.example.com/cli',
+      }), { status: 201 }))
+      vi.stubGlobal('fetch', fetchMock)
+      const { default: open } = await import('open')
+      const { Command } = await import('commander')
+      const { loginCommand } = await import('./login.js')
+      const program = new Command().addCommand(loginCommand())
+      await expect(program.parseAsync(['login'], { from: 'user' })).rejects.toThrow('HTTPS')
+      expect(open).not.toHaveBeenCalled()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      await expect(fs.access(path.join(tmpDir, 'hiyori', 'credentials.json'))).rejects.toThrow()
+    },
+  )
+
+  it.each(['https://test.example.com', 'http://localhost:8787', 'http://[::1]:8787'])(
+    'approved: token が保存される (%s)', async (apiUrl) => {
+      process.env.HIYORI_API_URL = apiUrl
+      let pollCount = 0
+      vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/auth/cli/start')) {
+          return new Response(JSON.stringify({
+            ...startResponse,
+            verificationUri: `${apiUrl}/cli`,
+            verificationUriComplete: `${apiUrl}/cli?code=USER-CODE`,
+          }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+        }
+        if (url.includes('/api/auth/cli/poll')) {
+          pollCount++
+          if (pollCount < 2) {
+            return new Response(JSON.stringify({ status: 'pending' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+          }
+          return new Response(
+            JSON.stringify({ status: 'approved', token: 'cli-token-abc', expiresAt: '2999-01-01T00:00:00.000Z' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        return new Response('Not found', { status: 404 })
+      })
+
+      const { Command } = await import('commander')
+      const { loginCommand } = await import('./login.js')
+      const program = new Command()
+      program.addCommand(loginCommand())
+      await program.parseAsync(['login'], { from: 'user' })
+
+      const credFile = path.join(tmpDir, 'hiyori', 'credentials.json')
+      const raw = await fs.readFile(credFile, 'utf-8')
+      const creds = JSON.parse(raw)
+      expect(creds.token).toBe('cli-token-abc')
+      expect(creds.apiUrl).toBe(apiUrl)
+      expect(process.exitCode).toBeFalsy()
+      vi.unstubAllGlobals()
+    },
+  )
 
   it('slow_down: バックオフ後 approved', async () => {
     let pollCount = 0
