@@ -84,12 +84,6 @@ function mockIdentity(invitedId: string, identity: Profile = profile(invitedId))
   return mockBot((id) => Response.json(id === invitedId ? identity : profile(id, 'organizer')))
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
-}
-
 function advanceClock(milliseconds = 5_001) {
   const next = Date.now() + milliseconds
   vi.spyOn(Date, 'now').mockReturnValue(next)
@@ -381,20 +375,25 @@ describe('one-time binding and revocation with already signed-in users', () => {
   it('does not resurrect a pending invitation revoked while identity lookup is in flight', async () => {
     const f = await fixture()
     const row = (await rows(f.event.id))[0]!
-    const started = deferred<void>()
-    const release = deferred<void>()
-    mockBot(async (id) => {
+    let revocationStatus: number | undefined
+    mockBot(async (id, signal) => {
       if (id === f.invitedId) {
-        started.resolve()
-        await release.promise
+        expect(signal).toBeDefined()
+        signal!.throwIfAborted()
+        // Perform the real revocation while this lookup is still in flight.
+        // Keep its I/O in the originating request's continuation instead of
+        // sharing an externally resolved deferred across SELF request contexts.
+        const revoked = await request(`/api/events/${f.event.id}/invites/${row.id}`, f.owner, { method: 'DELETE' })
+        await revoked.text()
+        revocationStatus = revoked.status
+        signal!.throwIfAborted()
       }
       return Response.json(profile(id, id === f.invitedId ? 'invited_current' : 'organizer'))
     })
-    const access = request(`/api/events/${f.event.id}`, f.auth)
-    await started.promise
-    expect((await request(`/api/events/${f.event.id}/invites/${row.id}`, f.owner, { method: 'DELETE' })).status).toBe(204)
-    release.resolve()
-    expect((await access).status).toBe(404)
+    const access = await request(`/api/events/${f.event.id}`, f.auth)
+    await access.text()
+    expect(revocationStatus).toBe(204)
+    expect(access.status).toBe(404)
     expect(await rows(f.event.id)).toEqual([])
   })
 
