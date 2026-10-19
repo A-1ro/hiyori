@@ -314,43 +314,82 @@ describe('GET /api/announcements', () => {
   })
 })
 
+// Miniflare uses wall-clock minute buckets. A burst straddling a boundary
+// belongs to two windows, so retry only that case with a fresh key/token.
+// Return unchanged results within one minute; assertions must never be retried.
+async function withinRateLimitMinute<T>(run: () => Promise<T>, now = Date.now): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const startedMinute = Math.floor(now() / 60_000)
+    const result = await run()
+    if (Math.floor(now() / 60_000) === startedMinute) return result
+  }
+  throw new Error('Could not complete the rate-limit burst within one minute')
+}
+
+describe('Rate limit window guard', () => {
+  it('retries a burst crossing 59,999ms → 60,000ms, then uses the stable window', async () => {
+    const times = [59_999, 60_000, 60_001, 60_002]
+    let attempts = 0
+    const result = await withinRateLimitMinute(async () => ++attempts, () => times.shift()!)
+    expect(result).toBe(2)
+    expect(attempts).toBe(2)
+  })
+
+  it('returns unexpected same-window statuses unchanged without retrying', async () => {
+    let attempts = 0
+    const statuses = await withinRateLimitMinute(async () => {
+      attempts++
+      return [200, 200]
+    }, () => 60_001)
+    expect(statuses).toEqual([200, 200])
+    expect(attempts).toBe(1)
+  })
+
+  it('fails after three boundary crossings instead of silently passing', async () => {
+    let time = 0
+    let attempts = 0
+    await expect(withinRateLimitMinute(async () => ++attempts, () => time += 60_000))
+      .rejects.toThrow('Could not complete the rate-limit burst within one minute')
+    expect(attempts).toBe(3)
+  })
+})
+
 describe('Rate limit', () => {
   it('GET エンドポイントの IP 単位 rate limit にヒットで 429', async () => {
-    // ANNOUNCE_GET_RATELIMIT を復元して発動確認（limit=60, period=60）。
+    // Keep the real binding and verify its exact configured threshold (60/min).
     ;(env as Record<string, unknown>).ANNOUNCE_GET_RATELIMIT = originalGetRatelimit
-    let lastStatus = 200
-    let hits = 0
-    for (let i = 0; i < 80; i += 1) {
-      const res = await get('/api/announcements', { 'CF-Connecting-IP': '203.0.113.1' })
-      lastStatus = res.status
-      if (res.status === 429) {
-        hits += 1
-        break
+    const statuses = await withinRateLimitMinute(async () => {
+      const suffix = Array.from(crypto.getRandomValues(new Uint16Array(6)), (value) => value.toString(16)).join(':')
+      const ip = `2001:db8:${suffix}`
+      const results: number[] = []
+      for (let i = 0; i < 61; i++) {
+        const res = await get('/api/announcements', { 'CF-Connecting-IP': ip })
+        await res.text()
+        results.push(res.status)
       }
-    }
-    expect(lastStatus).toBe(429)
-    expect(hits).toBe(1)
+      return results
+    })
+    expect(statuses).toEqual([...Array<number>(60).fill(200), 429])
   })
 
   it('POST の token 単位 rate limit にヒットで 429（別 IP から連発した想定）', async () => {
-    ;(env as Record<string, unknown>).ANNOUNCEMENTS_ADMIN_TOKEN = ADMIN_TOKEN
     ;(env as Record<string, unknown>).ANNOUNCE_POST_TOKEN_RATELIMIT = originalTokenRatelimit
-    // limit=2/60s なので、3 回目で 429（token 単位・IP を変えても同じトークンなら詰まる）
-    const s1 = await post('/api/announcements', VALID, {
-      ...authHeader(ADMIN_TOKEN),
-      'CF-Connecting-IP': '203.0.113.11',
+    const statuses = await withinRateLimitMinute(async () => {
+      // A fresh admin token also creates a fresh rate-limit key after a rollover.
+      const token = `test-admin-${crypto.randomUUID()}`
+      ;(env as Record<string, unknown>).ANNOUNCEMENTS_ADMIN_TOKEN = token
+      const results: number[] = []
+      for (const ip of ['203.0.113.11', '203.0.113.12', '203.0.113.13']) {
+        const res = await post('/api/announcements', VALID, {
+          ...authHeader(token),
+          'CF-Connecting-IP': ip,
+        })
+        await res.text()
+        results.push(res.status)
+      }
+      return results
     })
-    const s2 = await post('/api/announcements', VALID, {
-      ...authHeader(ADMIN_TOKEN),
-      'CF-Connecting-IP': '203.0.113.12',
-    })
-    const s3 = await post('/api/announcements', VALID, {
-      ...authHeader(ADMIN_TOKEN),
-      'CF-Connecting-IP': '203.0.113.13',
-    })
-    expect(s1.status).toBe(201)
-    expect(s2.status).toBe(201)
-    expect(s3.status).toBe(429)
+    expect(statuses).toEqual([201, 201, 429])
   })
 })
 
