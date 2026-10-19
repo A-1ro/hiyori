@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env, applyD1Migrations } from 'cloudflare:test'
 import { inject } from 'vitest'
-import { loginAs } from './test-helpers'
+import { loginAs, loginAsBearer } from './test-helpers'
 
 async function applyMigrations() {
   const migrations = inject('d1Migrations')
@@ -66,6 +66,74 @@ describe('POST /api/events — 認証ガード', () => {
       candidates: [{ startAt: '2026-07-01T10:00:00.000Z' }],
     }, { Cookie: cookie })
     expect(res.status).toBe(201)
+  })
+})
+
+describe('POST /api/events — 入力を始めた主催者との一致条件', () => {
+  const body = {
+    title: 'A の入力と招待',
+    description: '架空の非公開メモ',
+    visibility: 'invite_only',
+    defaultDurationMinutes: 60,
+    invitedDiscordUsernames: ['fictional_friend'],
+    candidates: [{ startAt: '2026-07-01T10:00:00.000Z' }],
+  }
+
+  async function counts() {
+    const counts: number[] = []
+    for (const table of ['events', 'candidates', 'event_invites']) {
+      const row = await (env as { DB: D1Database }).DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first<{ count: number }>()
+      counts.push(row!.count)
+    }
+    return counts
+  }
+
+  it('A として処理された /me の返答を受け取る間に Cookie が B へ変わっても A の下書きを B の所有物として書き込まない', async () => {
+    const cookieA = await loginAs(ORGANIZER_ID)
+    const checkedAsA = await SELF.fetch(`${BASE}/api/auth/me`, { headers: { Cookie: cookieA } })
+    // A の応答をまだクライアントで消費していない間に、別タブ相当で B に切り替える。
+    const cookieB = await loginAs(OTHER_ID)
+    const checked = await checkedAsA.json() as { user: { discordUserId: string } }
+    const before = await counts()
+    const res = await post('/api/events', {
+      ...body, expectedOrganizerDiscordId: checked.user.discordUserId,
+    }, { Cookie: cookieB })
+    expect(res.status).toBe(412)
+    expect(await res.json()).toEqual({ error: 'ログイン中のアカウントが変わりました。元の Discord アカウントでログインしてください。' })
+    expect(await counts()).toEqual(before)
+  })
+
+  it('期待 ID だけを送っても認証できず、一切書き込まない', async () => {
+    const before = await counts()
+    const res = await post('/api/events', { ...body, expectedOrganizerDiscordId: ORGANIZER_ID })
+    expect(res.status).toBe(401)
+    expect(await counts()).toEqual(before)
+  })
+
+  it('既存 CLI 型 Bearer のリクエストは一致条件を省略しても互換性を維持する', async () => {
+    const authorization = await loginAsBearer(OTHER_ID)
+    const res = await post('/api/events', body, { Authorization: authorization })
+    expect(res.status).toBe(201)
+    const { event } = await res.json() as { event: { id: string } }
+    const row = await (env as { DB: D1Database }).DB.prepare('SELECT organizerDiscordId FROM events WHERE id = ?').bind(event.id).first<{ organizerDiscordId: string }>()
+    expect(row?.organizerDiscordId).toBe(OTHER_ID)
+  })
+
+  it.each(['invalid', '123', null])('不正な一致条件 %s は 400 で拒否し、書き込まない', async (expectedOrganizerDiscordId) => {
+    const cookie = await loginAs(ORGANIZER_ID)
+    const before = await counts()
+    const res = await post('/api/events', { ...body, expectedOrganizerDiscordId }, { Cookie: cookie })
+    expect(res.status).toBe(400)
+    expect(await counts()).toEqual(before)
+  })
+
+  it('期待 ID がセッション本人と一致する場合だけ、その認証済み本人を主催者として作成する', async () => {
+    const cookie = await loginAs(ORGANIZER_ID)
+    const res = await post('/api/events', { ...body, expectedOrganizerDiscordId: ORGANIZER_ID }, { Cookie: cookie })
+    expect(res.status).toBe(201)
+    const { event } = await res.json() as { event: { id: string } }
+    const row = await (env as { DB: D1Database }).DB.prepare('SELECT organizerDiscordId FROM events WHERE id = ?').bind(event.id).first<{ organizerDiscordId: string }>()
+    expect(row?.organizerDiscordId).toBe(ORGANIZER_ID)
   })
 })
 

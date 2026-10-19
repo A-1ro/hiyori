@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { ApiError, createEvent } from '../api/client'
 import type { SessionUser } from '../auth/useSession'
@@ -63,6 +63,7 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const client of clients.splice(0)) client.clear()
+  onlineManager.setOnline(true)
   vi.unstubAllGlobals()
 })
 
@@ -104,6 +105,47 @@ describe('作成画面のログインガード', () => {
     expect(screen.queryByPlaceholderText('例）年末の打ち上げ')).toBeNull()
     await act(async () => { resolve(Response.json({ user: null })) })
     await screen.findByRole('link', { name: 'Discord でログインして作成する' })
+  })
+
+  it.each([
+    { cached: user, next: user, name: 'ログイン済み→ログイン済み' },
+    { cached: user, next: null, name: 'ログイン済み→期限切れ' },
+    { cached: null, next: user, name: '未ログイン→ログイン済み' },
+    { cached: null, next: null, name: '未ログイン→未ログイン' },
+  ])('オフラインで入場した $name は確認停止を示し、再接続で確認成功するまでフォームもログイン要求も出さない', async ({ cached, next }) => {
+    let resolve!: (response: Response) => void
+    fetchMock.mockReturnValue(new Promise<Response>((r) => { resolve = r }))
+    onlineManager.setOnline(false)
+    const { queryClient } = renderPage({ cachedUser: cached })
+    await waitFor(() => expect(queryClient.getQueryState(['session'])?.fetchStatus).toBe('paused'))
+    expect(screen.queryByPlaceholderText('例）年末の打ち上げ')).toBeNull()
+    expect(screen.queryByRole('link', { name: /Discord でログイン/ })).toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('オフラインのためログイン状態の確認を待っています。接続が戻ると再確認します。')
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    act(() => { onlineManager.setOnline(true) })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    expect(screen.getByRole('status').textContent).toBe('ログイン状態を確認中です…')
+    expect(screen.queryByPlaceholderText('例）年末の打ち上げ')).toBeNull()
+    await act(async () => { resolve(Response.json({ user: next })) })
+    if (next) await screen.findByPlaceholderText('例）年末の打ち上げ')
+    else await screen.findByRole('link', { name: 'Discord でログインして作成する' })
+    expect(createEvent).not.toHaveBeenCalled()
+  })
+
+  it('入力中の再確認がオフラインで停止した場合も入力を残して止め、再接続後に同じ入力を再開する', async () => {
+    const { queryClient, container } = renderPage()
+    await fillDraft(container)
+    act(() => {
+      onlineManager.setOnline(false)
+      void queryClient.refetchQueries({ queryKey: ['session'], exact: true })
+    })
+    await screen.findByText('オフラインのためログイン状態の確認を待っています。接続が戻ると再確認します。')
+    expectDraft(true)
+    expect(createEvent).not.toHaveBeenCalled()
+    act(() => { onlineManager.setOnline(true) })
+    await waitFor(() => expectDraft(false))
+    expect(createEvent).not.toHaveBeenCalled()
   })
 
   it.each(['500', '429', 'network'])('通信失敗 %s は未ログインと区別し、再確認成功後に入力できる', async (failure) => {
@@ -188,6 +230,71 @@ describe('作成画面のログインガード', () => {
     await waitFor(() => expectDraft(false))
     expect(screen.queryByRole('alert')).toBeNull()
     expect(createEvent).not.toHaveBeenCalled()
+  })
+
+  it('A の /me 応答が遅れている間に B へ切り替わった POST を所有者条件で拒否し、入力保持と A での再開まで行う', async () => {
+    // 実際の Hono API クライアントと HTTP エラー変換を通して、JSON の伝播まで確認する。
+    const actual = await vi.importActual<typeof import('../api/client')>('../api/client')
+    vi.mocked(createEvent).mockImplementation(actual.createEvent)
+    const otherUser = { ...user, discordUserId: '98765432109876543' }
+    let cookieUser = user
+    let delayNextCheck = false
+    let resolveCheck!: (response: Response) => void
+    const posts: Array<Record<string, unknown>> = []
+    const writes: string[] = []
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.pathname : input.url
+      if (url === '/api/auth/me') {
+        if (delayNextCheck) {
+          delayNextCheck = false
+          return new Promise<Response>((resolve) => { resolveCheck = resolve })
+        }
+        return Response.json({ user: cookieUser })
+      }
+      if (url === '/api/events') {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+        posts.push(body)
+        // 旧 API と同じく省略は受理する。ブラウザーが条件を付け忘れるとこのテストは失敗する。
+        if (body.expectedOrganizerDiscordId !== undefined && body.expectedOrganizerDiscordId !== cookieUser.discordUserId) {
+          return Response.json({ error: 'Account changed' }, { status: 412 })
+        }
+        writes.push(cookieUser.discordUserId)
+        return Response.json({ event: { id: 'created' }, candidates: [] }, { status: 201 })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    const { container, queryClient } = renderPage()
+    await fillDraft(container)
+    delayNextCheck = true
+    fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
+    await waitFor(() => expect(resolveCheck).toBeTypeOf('function'))
+    cookieUser = otherUser
+    await act(async () => { resolveCheck(Response.json({ user })) })
+    await screen.findByText('入力を始めた Discord アカウントと異なります。元のアカウントでログインし直してください。')
+    expectDraft(true)
+    expect(writes).toEqual([])
+    expect(posts).toHaveLength(1)
+    expect(posts[0]).toMatchObject({ expectedOrganizerDiscordId: user.discordUserId, title: '架空の作成下書き', invitedDiscordUsernames: ['fictional_friend'] })
+    // /me キャッシュはまだ A でも、412 を見た後に再送できない。
+    expect(queryClient.getQueryData(['session'])).toEqual({ user })
+    fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
+    expect(posts).toHaveLength(1)
+    const login = screen.getByRole('link', { name: 'Discord で再ログイン（別タブで開きます）' })
+    expect(login.getAttribute('target')).toBe('_blank')
+
+    // B のままの再確認では停止を維持する。
+    fireEvent.click(screen.getByRole('button', { name: 'ログイン状態を再確認' }))
+    await waitFor(() => expect(queryClient.getQueryData(['session'])).toEqual({ user: otherUser }))
+    expectDraft(true)
+    // 元の A に戻り、明示的に再確認した後だけ同じ入力を保存できる。
+    cookieUser = user
+    fireEvent.click(screen.getByRole('button', { name: 'ログイン状態を再確認' }))
+    await waitFor(() => expectDraft(false))
+    fireEvent.click(screen.getByRole('button', { name: 'この内容でつくる' }))
+    await screen.findByText('作成完了')
+    expect(posts).toHaveLength(2)
+    expect(posts[1]).toEqual(posts[0])
+    expect(writes).toEqual([user.discordUserId])
   })
 
   it('認証確認の後の POST が 401 でも再送せず、入力を残して再ログインを案内する', async () => {

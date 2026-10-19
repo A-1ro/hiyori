@@ -11,7 +11,7 @@ export interface AppHeaderBack {
 }
 
 export function AppHeader({ back, right, loginInNewTab = false }: { back?: AppHeaderBack; right?: ReactNode; loginInNewTab?: boolean }) {
-  const { data: sessionData, error: sessionError } = useSession()
+  const { data: sessionData, error: sessionError, isFetching, isPaused } = useSession()
   const logout = useLogout()
   const location = useLocation()
   const user = sessionData?.user ?? null
@@ -125,7 +125,7 @@ export function AppHeader({ back, right, loginInNewTab = false }: { back?: AppHe
               ログアウト
             </Button>
           </>
-        ) : sessionData?.user === null && !sessionError ? (
+        ) : sessionData?.user === null && !sessionError && !isFetching && !isPaused ? (
           <a
             href={loginUrl(loginInNewTab ? '/me' : location.pathname + location.search)}
             target={loginInNewTab ? '_blank' : undefined}
@@ -147,7 +147,7 @@ export function AppHeader({ back, right, loginInNewTab = false }: { back?: AppHe
           </a>
         ) : (
           <span style={{ fontSize: 12, color: 'var(--color-fg3)' }}>
-            {sessionError ? 'ログイン状態を確認できません' : 'ログイン状態を確認中...'}
+            {isPaused ? 'オフラインのため確認待ちです' : sessionError ? 'ログイン状態を確認できません' : 'ログイン状態を確認中...'}
           </span>
         )}
       </div>

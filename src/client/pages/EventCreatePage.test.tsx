@@ -54,7 +54,7 @@ async function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(createEvent).mockResolvedValue(result)
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ user: { discordUserId: 'organizer' } })))
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ user: { discordUserId: '12345678901234567' } })))
 })
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -69,6 +69,7 @@ describe('EventCreatePage の招待付き作成', () => {
     expect(createEvent).toHaveBeenCalledOnce()
     expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({
       title: '招待テスト',
+      expectedOrganizerDiscordId: '12345678901234567',
       visibility: 'invite_only',
       invitedDiscordUsernames: [FIRST_NAME, SECOND_NAME],
       discordChannelToken: 'test-channel-token',
