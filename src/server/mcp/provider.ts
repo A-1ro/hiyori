@@ -14,6 +14,7 @@ import { buildApp } from '../index'
 import { MCP_ROUTE, jsonRpcError, serveAuthenticatedMcp } from './handler'
 import { MCP_AUTHORIZE_PATH, MCP_REGISTER_PATH, MCP_SCOPES, MCP_TOKEN_PATH, handleAuthorize } from './oauth'
 import type { McpProps } from './types'
+import { addSupportedResourceScopes } from './resource-metadata'
 import type { Env } from '../index'
 
 // /mcp の apiHandler。provider がアクセストークンを検証し ctx.props（McpProps）を注入した後に呼ばれる。
@@ -68,4 +69,10 @@ export function getOAuthProvider(requestUrl: string): OAuthProvider<Env> {
   })
   cached = { origin, provider }
   return provider
+}
+
+export async function fetchOAuthProvider(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  // Keep injected helpers request-local: env may be reused on another hostname.
+  const response = await getOAuthProvider(request.url).fetch(request, { ...env, OAUTH_PROVIDER: undefined }, ctx)
+  return addSupportedResourceScopes(request, response, `${new URL(request.url).origin}${MCP_ROUTE}`, MCP_SCOPES)
 }

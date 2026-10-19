@@ -151,7 +151,7 @@ async function registerClient(): Promise<string> {
 }
 
 // authorize（同意）→ token を通してアクセストークンを得る。cookie は既存 Web セッション（Discord ログインの代役）。
-async function obtainTokens(clientId: string, cookie: string, scopes: string[]): Promise<{
+async function obtainTokens(clientId: string, cookie: string, scopes: string[], grantedScopes = scopes): Promise<{
   access_token: string; refresh_token: string
 }> {
   const { verifier, challenge } = await makePkce()
@@ -175,7 +175,7 @@ async function obtainTokens(clientId: string, cookie: string, scopes: string[]):
   const form = new URLSearchParams()
   form.set('oauth_req', query)
   form.set('action', 'approve')
-  for (const s of scopes) form.append('scope', s)
+  for (const s of grantedScopes) form.append('scope', s)
   const approve = await SELF.fetch(`${BASE}/oauth/authorize`, {
     method: 'POST',
     headers: { cookie, origin: BASE, 'content-type': 'application/x-www-form-urlencoded' },
@@ -187,6 +187,7 @@ async function obtainTokens(clientId: string, cookie: string, scopes: string[]):
   const code = new URL(loc).searchParams.get('code')!
   expect(code).toBeTruthy()
   expect(new URL(loc).searchParams.get('state')).toBe('st-123')
+  expect(new URL(loc).searchParams.get('iss')).toBe(BASE)
 
   // POST /oauth/token（PKCE 交換）
   const tokenBody = new URLSearchParams({
@@ -262,8 +263,9 @@ describe('MCP Phase 2: OAuth ディスカバリ / ゲート', () => {
         const metadata = await res.json() as { resource: string; authorization_servers: string[]; scopes_supported?: string[] }
         expect(metadata.resource).toBe(`${origin}/mcp`)
         expect(metadata.authorization_servers).toEqual([origin])
-        // The transport must not require both scopes: read-only consent stays valid.
-        expect(metadata.scopes_supported ?? []).toEqual([])
+        // Supported capabilities are discoverable, without a baseline scope challenge.
+        expect(metadata.scopes_supported).toEqual(['hiyori:read', 'hiyori:write'])
+        expect(unauthorized.headers.get('www-authenticate')).not.toMatch(/(?:^|[, ])scope=/)
       }
     })
   })
@@ -361,6 +363,37 @@ describe('MCP Phase 2: OAuth フロー（authorize→consent→token→/mcp）',
     })
   })
 
+  it.each([BASE, 'https://preview.example.com'])('denial returns the canonical issuer for %s, not a supplied iss', async (origin) => {
+    await withMcpEnabled(async () => {
+      const cookie = await loginAs('oauth-denied-issuer')
+      const clientId = await registerClient()
+      const { challenge } = await makePkce()
+      const query = new URLSearchParams({
+        response_type: 'code', client_id: clientId, redirect_uri: REDIRECT_URI,
+        scope: 'hiyori:read', resource: `${origin}/mcp`, state: 'denied-state',
+        code_challenge: challenge, code_challenge_method: 'S256',
+        iss: 'https://untrusted.example',
+      })
+      const metadataResponse = await SELF.fetch(`${origin}/.well-known/oauth-authorization-server`)
+      const metadata = await metadataResponse.json() as {
+        issuer: string; authorization_response_iss_parameter_supported: boolean
+      }
+      expect(metadata.authorization_response_iss_parameter_supported).toBe(true)
+      expect(metadata.issuer).toBe(origin)
+      const res = await SELF.fetch(`${origin}/oauth/authorize`, {
+        method: 'POST', headers: { cookie, origin }, redirect: 'manual',
+        body: new URLSearchParams({ oauth_req: query.toString(), action: 'deny', iss: 'https://untrusted.example' }),
+      })
+      expect(res.status).toBe(302)
+      const location = new URL(res.headers.get('location')!)
+      expect(location.origin + location.pathname).toBe(REDIRECT_URI)
+      expect(location.searchParams.get('error')).toBe('access_denied')
+      expect(location.searchParams.get('state')).toBe('denied-state')
+      expect(location.searchParams.get('iss')).toBe(metadata.issuer)
+      expect(location.searchParams.get('code')).toBeNull()
+    })
+  })
+
   it('read+write 同意で全ツールが本人権限で動く', async () => {
     await withMcpEnabled(async () => {
       const cookie = await loginAs('oauth-user-rw')
@@ -428,6 +461,35 @@ describe('MCP Phase 2: OAuth フロー（authorize→consent→token→/mcp）',
         'oauth-downscope', 'oauth-downscope-other', 'oauth-downscope', 'oauth-downscope-other',
       ])
       expect((await reader.callTool('hiyori_create_event', event)).isError).toBe(true)
+    })
+  })
+
+  it('discovered read/write capabilities still require explicit consent, including after refresh and session reuse', async () => {
+    await withMcpEnabled(async () => {
+      const discovery = await SELF.fetch(`${BASE}/.well-known/oauth-protected-resource/mcp`)
+      const { scopes_supported: scopes } = await discovery.json() as { scopes_supported: string[] }
+      expect(scopes).toEqual(['hiyori:read', 'hiyori:write'])
+      const cookie = await loginAs('oauth-discovered-readonly')
+      const clientId = await registerClient()
+      const tokens = await obtainTokens(clientId, cookie, scopes, ['hiyori:read'])
+      const reader = new McpTestClient(`Bearer ${tokens.access_token}`)
+      await reader.initialize()
+      const event = { title: 'must not write', defaultDurationMinutes: 60, candidates: [{ startAt: '2026-11-01T09:00:00.000Z' }] }
+      expect((await reader.callTool('hiyori_list_events')).isError).toBe(false)
+      expect((await reader.callTool('hiyori_create_event', event)).isError).toBe(true)
+      const refreshed = await SELF.fetch(`${BASE}/oauth/token`, {
+        method: 'POST', body: new URLSearchParams({
+          grant_type: 'refresh_token', client_id: clientId, refresh_token: tokens.refresh_token,
+          resource: `${BASE}/mcp`, scope: scopes.join(' '),
+        }),
+      })
+      expect(refreshed.status).toBe(200)
+      const replacement = await refreshed.json() as { access_token: string; scope: string }
+      expect(replacement.scope).toBe('hiyori:read')
+      const refreshedReader = new McpTestClient(`Bearer ${replacement.access_token}`)
+      refreshedReader.sessionId = reader.sessionId
+      expect((await refreshedReader.callTool('hiyori_list_events')).isError).toBe(false)
+      expect((await refreshedReader.callTool('hiyori_create_event', event)).isError).toBe(true)
     })
   })
 
@@ -515,6 +577,8 @@ describe('MCP Phase 2: スコープ要求の解決（権限過剰付与の防止
       // クライアントの redirect_uri へ invalid_scope で戻る（同意画面を出さない）
       expect(loc.origin + loc.pathname).toBe(REDIRECT_URI)
       expect(loc.searchParams.get('error')).toBe('invalid_scope')
+      expect(loc.searchParams.get('iss')).toBe(BASE)
+      expect(loc.searchParams.get('state')).toBe('st-scope')
       expect(loc.searchParams.get('code')).toBeNull()
     })
   })
@@ -539,6 +603,8 @@ describe('MCP Phase 2: スコープ要求の解決（権限過剰付与の防止
       expect(res.status).toBe(302)
       const loc = new URL(res.headers.get('location')!)
       expect(loc.searchParams.get('error')).toBe('invalid_scope')
+      expect(loc.searchParams.get('iss')).toBe(BASE)
+      expect(loc.searchParams.get('state')).toBe('st-scope')
       expect(loc.searchParams.get('code')).toBeNull()
     })
   })

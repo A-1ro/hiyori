@@ -41,7 +41,7 @@ import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/
 import { generateDeviceCode, generateUserCode, normalizeUserCode } from './auth/cli-device'
 import { cli_auth_requests } from '../../drizzle/schema'
 import { tryLegacyBearerMcp, isMcpEnabled, MCP_ROUTE } from './mcp/handler'
-import { getOAuthProvider } from './mcp/provider'
+import { fetchOAuthProvider } from './mcp/provider'
 import { isDiscordUsername, normalizeDiscordUsername } from '../shared/discord-invites'
 
 export interface Env {
@@ -2244,9 +2244,7 @@ export default {
       const legacy = await tryLegacyBearerMcp(req, env, ctx)
       if (legacy) return legacy
     }
-    // The library injects OAUTH_PROVIDER onto env only when absent. Keep that
-    // mutation request-local so a reused env cannot retain another origin's helpers.
-    return getOAuthProvider(req.url).fetch(req, { ...env, OAUTH_PROVIDER: undefined }, ctx)
+    return fetchOAuthProvider(req, env, ctx)
   },
   async scheduled(event, env, ctx) {
     ctx.waitUntil(cleanupExpiredCliAuthRequests(env.DB, new Date()))

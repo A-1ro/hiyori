@@ -36,11 +36,24 @@ single production-only migration resource.
 ## Scope and client compatibility
 
 `scopesSupported` remains the authorization server's catalogue (`hiyori:read`,
-`hiyori:write`). Do not copy it into `requiredScopes`: that would require both
-permissions for every MCP request and break read-only consent. Tools continue
-to enforce their individual permissions. Protected-resource metadata therefore
-has no transport-wide required scopes; the authorization metadata still lists
-both available permissions.
+`hiyori:write`). Do not copy it into `requiredScopes`: upstream uses that field
+for the baseline scope challenge. Hiyori does not require both permissions for
+every MCP request, and tools enforce their individual permissions.
+
+A narrow response adapter publishes these optional capabilities as
+`scopes_supported` in the successful canonical GET protected-resource metadata
+response. It preserves the resource and authorization-server identities and
+other fields. The provider's internal `requiredScopes` stays unset, and the
+unauthenticated challenge has no `scope` parameter. A client can discover and
+request both capabilities, but users still choose their consent; omitted scope
+still defaults to read-only and a rejected write scope cannot return on refresh.
+Actual ChatGPT/Claude connector interoperability has not been verified by these
+synthetic tests.
+
+Authorization errors use the provider's helper with the freshly validated
+request, so denial and invalid-scope redirects include the canonical `iss`
+advertised by authorization-server metadata, alongside the original state.
+Client-supplied issuer values are ignored.
 
 The API handler now intersects the original consent scopes with the verified
 access-token scopes (`ctx.auth.scope`). This also fixes a pre-existing bug:

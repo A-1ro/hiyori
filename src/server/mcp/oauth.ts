@@ -15,7 +15,7 @@ import { internalApi } from './internal'
 import { SESSION_COOKIE_NAME, generateSessionToken, hashToken } from '../auth/cookies'
 import type { McpProps, McpScope } from './types'
 import type { Env } from '../index'
-import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider'
+import { authorizationErrorRedirect, type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 
 export const MCP_AUTHORIZE_PATH = '/oauth/authorize'
 export const MCP_TOKEN_PATH = '/oauth/token'
@@ -166,11 +166,13 @@ function redirectToLogin(url: URL): Response {
 
 // 認可失敗をクライアントの redirect_uri へ OAuth エラーとして戻す（access_denied / invalid_scope 等）。
 // redirect_uri はこの時点で lookupClient 済み = 検証済みなので、error を付けて戻すのが RFC 6749 §4.1.2.1 の作法。
-function errorRedirect(redirectUri: string, state: string, error: string): Response {
-  const u = new URL(redirectUri)
-  u.searchParams.set('error', error)
-  if (state) u.searchParams.set('state', state)
-  return new Response(null, { status: 302, headers: { location: u.toString() } })
+function errorRedirect(
+  request: Awaited<ReturnType<OAuthHelpers['parseAuthRequest']>>,
+  error: 'access_denied' | 'invalid_scope',
+): Response {
+  // Use the issuer recorded by parseAuthRequest, never a client-supplied iss.
+  // The provider advertises RFC 9207 support, including error responses.
+  return new Response(null, { status: 302, headers: { location: authorizationErrorRedirect(request, error) } })
 }
 
 // GET /oauth/authorize（同意画面 or Discord ログインへ）
@@ -190,7 +192,7 @@ async function handleAuthorizeGet(request: Request, env: Env, url: URL): Promise
 
   // スコープ検証はログイン強制の前に行う（無効要求のためにログインさせない）。
   const resolved = resolveRequestedScopes(oauthReq.scope)
-  if (!resolved.ok) return errorRedirect(oauthReq.redirectUri, oauthReq.state, 'invalid_scope')
+  if (!resolved.ok) return errorRedirect(oauthReq, 'invalid_scope')
 
   const user = await getWebUser(request, env)
   if (!user) return redirectToLogin(url)
@@ -228,12 +230,12 @@ async function handleAuthorizePost(request: Request, env: Env, url: URL): Promis
   if (!user) return redirectToLogin(new URL(rebuilt.url))
 
   if (action !== 'approve') {
-    return errorRedirect(oauthReq.redirectUri, oauthReq.state, 'access_denied')
+    return errorRedirect(oauthReq, 'access_denied')
   }
 
   // 無効スコープのみの要求は承認時点でも拒否（GET と同じ判定・フル権限に落とさない）。
   const resolved = resolveRequestedScopes(oauthReq.scope)
-  if (!resolved.ok) return errorRedirect(oauthReq.redirectUri, oauthReq.state, 'invalid_scope')
+  if (!resolved.ok) return errorRedirect(oauthReq, 'invalid_scope')
 
   // 許可スコープ = 解決済み提示スコープ ∩ ユーザーが選択したスコープ。
   // （提示スコープを超える chosen は無視されるので、フォーム改竄で write を足すことはできない）
