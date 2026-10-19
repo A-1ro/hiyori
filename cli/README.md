@@ -59,7 +59,7 @@ The API URL is resolved in this order:
 | `hiyori ics <id>` | Download the confirmed event's `.ics` |
 | `hiyori sub ...` | Manage calendar (Webcal) subscriptions |
 
-Global flags: `--api-url <url>`, `--json` (machine-readable output for scripting; `ics` always returns plain ICS text), `-V/--version`, `-h/--help`. Run `hiyori <command> --help` for per-command options.
+Global flags: `--api-url <url>`, `--json` (machine-readable output for scripting; `ics` always returns plain ICS text), `-V/--version`, `-h/--help`. `login`, `logout`, and `config` print human-readable text even with `--json`. Run `hiyori <command> --help` for per-command options.
 
 ## Examples
 
