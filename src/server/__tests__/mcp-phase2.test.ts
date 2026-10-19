@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env, applyD1Migrations } from 'cloudflare:test'
+import { SELF, env, applyD1Migrations, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { OAuthProvider as LegacyOAuthProvider } from '@cloudflare/workers-oauth-provider-legacy'
+import type { OAuthHelpers as LegacyOAuthHelpers } from '@cloudflare/workers-oauth-provider-legacy'
+import type { McpProps } from '../mcp/types'
 import { inject } from 'vitest'
 import { loginAs, loginAsBearer } from './test-helpers'
 
@@ -63,10 +66,11 @@ type JsonRpc = { jsonrpc: '2.0'; id?: number; result?: unknown; error?: unknown 
 class McpTestClient {
   sessionId: string | null = null
   private nextId = 1
-  constructor(private authorization: string) {}
+  constructor(private authorization: string, private extraHeaders: Record<string, string> = {}) {}
 
   private async post(body: unknown): Promise<Response> {
     const headers: Record<string, string> = {
+      ...this.extraHeaders,
       'content-type': 'application/json',
       accept: 'application/json, text/event-stream',
       authorization: this.authorization,
@@ -147,7 +151,9 @@ async function registerClient(): Promise<string> {
 }
 
 // authorize（同意）→ token を通してアクセストークンを得る。cookie は既存 Web セッション（Discord ログインの代役）。
-async function obtainAccessToken(clientId: string, cookie: string, scopes: string[]): Promise<string> {
+async function obtainTokens(clientId: string, cookie: string, scopes: string[]): Promise<{
+  access_token: string; refresh_token: string
+}> {
   const { verifier, challenge } = await makePkce()
   const query = new URLSearchParams({
     response_type: 'code',
@@ -155,6 +161,7 @@ async function obtainAccessToken(clientId: string, cookie: string, scopes: strin
     redirect_uri: REDIRECT_URI,
     scope: scopes.join(' '),
     state: 'st-123',
+    resource: `${BASE}/mcp`,
     code_challenge: challenge,
     code_challenge_method: 'S256',
   }).toString()
@@ -188,6 +195,7 @@ async function obtainAccessToken(clientId: string, cookie: string, scopes: strin
     redirect_uri: REDIRECT_URI,
     client_id: clientId,
     code_verifier: verifier,
+    resource: `${BASE}/mcp`,
   })
   const tokenRes = await SELF.fetch(`${BASE}/oauth/token`, {
     method: 'POST',
@@ -195,9 +203,14 @@ async function obtainAccessToken(clientId: string, cookie: string, scopes: strin
     body: tokenBody.toString(),
   })
   expect(tokenRes.status).toBe(200)
-  const tok = (await tokenRes.json()) as { access_token: string }
+  const tok = (await tokenRes.json()) as { access_token: string; refresh_token: string }
   expect(tok.access_token).toBeTruthy()
-  return tok.access_token
+  expect(tok.refresh_token).toBeTruthy()
+  return tok
+}
+
+async function obtainAccessToken(clientId: string, cookie: string, scopes: string[]): Promise<string> {
+  return (await obtainTokens(clientId, cookie, scopes)).access_token
 }
 
 function res_ct(r: Response): string {
@@ -233,6 +246,60 @@ describe('MCP Phase 2: OAuth ディスカバリ / ゲート', () => {
       expect(meta.authorization_endpoint).toContain('/oauth/authorize')
       expect(meta.token_endpoint).toContain('/oauth/token')
       expect(meta.scopes_supported).toEqual(expect.arrayContaining(['hiyori:read', 'hiyori:write']))
+    })
+  })
+
+  it('protected resource discovery uses the exact /mcp audience and follows the request origin', async () => {
+    await withMcpEnabled(async () => {
+      for (const origin of [BASE, 'https://preview.example.com', BASE, 'http://localhost:8787']) {
+        const unauthorized = await SELF.fetch(`${origin}/mcp`)
+        expect(unauthorized.status).toBe(401)
+        expect(unauthorized.headers.get('www-authenticate')).toContain(
+          `resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
+        )
+        const res = await SELF.fetch(`${origin}/.well-known/oauth-protected-resource/mcp`)
+        expect(res.status).toBe(200)
+        const metadata = await res.json() as { resource: string; authorization_servers: string[]; scopes_supported?: string[] }
+        expect(metadata.resource).toBe(`${origin}/mcp`)
+        expect(metadata.authorization_servers).toEqual([origin])
+        // The transport must not require both scopes: read-only consent stays valid.
+        expect(metadata.scopes_supported ?? []).toEqual([])
+      }
+    })
+  })
+
+  it('keeps alternating-origin authorization requests bound to their own resource', async () => {
+    await withMcpEnabled(async () => {
+      const fetch = (request: Request) => SELF.fetch(request)
+      for (const origin of [BASE, 'https://preview.example.com', BASE]) {
+        const registered = await fetch(new Request(`${origin}/oauth/register`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: 'none' }),
+        }))
+        expect(registered.status).toBe(201)
+        const { client_id: clientId } = await registered.json() as { client_id: string }
+        const { challenge } = await makePkce()
+        const query = new URLSearchParams({
+          response_type: 'code', client_id: clientId, redirect_uri: REDIRECT_URI,
+          scope: 'hiyori:read', resource: `${origin}/mcp`,
+          code_challenge: challenge, code_challenge_method: 'S256',
+        })
+        const consent = await fetch(new Request(`${origin}/oauth/authorize?${query}`, { redirect: 'manual' }))
+        expect(consent.status).toBe(302)
+        expect(consent.headers.get('location')).toContain('/api/auth/discord')
+      }
+    })
+  })
+
+  it('an OAuth token is not accepted on another origin', async () => {
+    await withMcpEnabled(async () => {
+      const cookie = await loginAs('oauth-audience')
+      const accessToken = await obtainAccessToken(await registerClient(), cookie, ['hiyori:read'])
+      const res = await SELF.fetch('https://other.example.com/mcp', {
+        headers: { authorization: `Bearer ${accessToken}` },
+      })
+      expect(res.status).toBe(401)
+      expect(await res.json()).toMatchObject({ error: 'invalid_token' })
     })
   })
 
@@ -274,6 +341,26 @@ describe('MCP Phase 2: OAuth フロー（authorize→consent→token→/mcp）',
     })
   })
 
+  it.each([
+    { response_type: 'token', code_challenge_method: 'S256' },
+    { response_type: 'code', code_challenge_method: 'plain' },
+  ])('rejects unsupported OAuth flow %j before consent', async (flow) => {
+    await withMcpEnabled(async () => {
+      const clientId = await registerClient()
+      const cookie = await loginAs('oauth-unsupported-flow')
+      const { challenge } = await makePkce()
+      const query = new URLSearchParams({
+        ...flow, client_id: clientId, redirect_uri: REDIRECT_URI,
+        scope: 'hiyori:read', code_challenge: challenge,
+      })
+      const res = await SELF.fetch(`${BASE}/oauth/authorize?${query}`, {
+        headers: { cookie }, redirect: 'manual',
+      })
+      expect(res.status).toBe(400)
+      expect(res.headers.get('location')).toBeNull()
+    })
+  })
+
   it('read+write 同意で全ツールが本人権限で動く', async () => {
     await withMcpEnabled(async () => {
       const cookie = await loginAs('oauth-user-rw')
@@ -293,6 +380,54 @@ describe('MCP Phase 2: OAuth フロー（authorize→consent→token→/mcp）',
       })
       expect(created.isError).toBe(false)
       expect((created.data as { event: { id: string } }).event.id).toBeTruthy()
+    })
+  })
+
+  it('enforces refresh-token downscoping without widening the original consent', async () => {
+    await withMcpEnabled(async () => {
+      const cookie = await loginAs('oauth-downscope')
+      const clientId = await registerClient()
+      const tokens = await obtainTokens(clientId, cookie, ['hiyori:read', 'hiyori:write'])
+      const original = new McpTestClient(`Bearer ${tokens.access_token}`)
+      await original.initialize()
+      const event = {
+        title: 'scope regression', defaultDurationMinutes: 60,
+        candidates: [{ startAt: '2026-11-01T09:00:00.000Z' }],
+      }
+      expect((await original.callTool('hiyori_create_event', event)).isError).toBe(false)
+      const refreshed = await SELF.fetch(`${BASE}/oauth/token`, {
+        method: 'POST', body: new URLSearchParams({
+          grant_type: 'refresh_token', client_id: clientId, refresh_token: tokens.refresh_token,
+          resource: `${BASE}/mcp`, scope: 'hiyori:read',
+        }),
+      })
+      expect(refreshed.status).toBe(200)
+      const narrowed = await refreshed.json() as { access_token: string; scope: string }
+      expect(narrowed.scope).toBe('hiyori:read')
+      const reader = new McpTestClient(`Bearer ${narrowed.access_token}`, {
+        'x-hiyori-internal-mcp-auth': btoa(JSON.stringify({ scopes: ['hiyori:read', 'hiyori:write'] })),
+      })
+      await reader.initialize()
+      expect((await reader.callTool('hiyori_list_events')).isError).toBe(false)
+      const denied = await reader.callTool('hiyori_create_event', event)
+      expect(denied.isError).toBe(true)
+      expect(denied.text).toContain('scope')
+      // Reusing the old MCP session must not recover the broader permission.
+      reader.sessionId = original.sessionId
+      const reused = await reader.callTool('hiyori_create_event', event)
+      expect(reused.isError).toBe(true)
+      expect(reused.text).toContain('scope')
+      // The legacy Bearer route must also replace the old session's identity.
+      const other = new McpTestClient(await loginAsBearer('oauth-downscope-other'))
+      other.sessionId = original.sessionId
+      const identities = await Promise.all([
+        original.callTool('hiyori_whoami'), other.callTool('hiyori_whoami'),
+        reader.callTool('hiyori_whoami'), other.callTool('hiyori_whoami'),
+      ])
+      expect(identities.map((result) => (result.data as { discordUserId: string }).discordUserId)).toEqual([
+        'oauth-downscope', 'oauth-downscope-other', 'oauth-downscope', 'oauth-downscope-other',
+      ])
+      expect((await reader.callTool('hiyori_create_event', event)).isError).toBe(true)
     })
   })
 
@@ -610,6 +745,95 @@ describe('MCP Phase 2: 残りツール（案 B Bearer 経路で権限確認）',
       const got = await client.callTool('hiyori_get_event', { eventId })
       expect(got.isError).toBe(true)
       expect(got.text).toContain('404')
+    })
+  })
+})
+
+// Generate real 0.8.3 encrypted KV records at test time; never copy production
+// credentials or rewrite stored grants to simulate compatibility. This dev-only
+// alias deliberately stays pinned to the version deployed before the migration.
+describe('MCP OAuth 0.8.3 → 1.x stored-grant migration', () => {
+  it.each([undefined, `${BASE}/mcp`])('keeps access and refresh for legacy resource %s', async (resource) => {
+    await withMcpEnabled(async () => {
+      const discordUserId = `legacy-${resource ? 'bound' : 'unbound'}`
+      const bearer = await loginAsBearer(discordUserId)
+      const me = await SELF.fetch(`${BASE}/api/auth/me`, { headers: { authorization: bearer } })
+      const { user } = await me.json() as { user: Pick<McpProps, 'userId' | 'discordUserId' | 'username' | 'globalName' | 'avatar' | 'displayName'> }
+      const props: McpProps = { ...user, apiToken: bearer.slice('Bearer '.length), scopes: ['hiyori:read'] }
+      const legacyEnv = { OAUTH_KV: (env as { OAUTH_KV: KVNamespace }).OAUTH_KV } as {
+        OAUTH_KV: KVNamespace; OAUTH_PROVIDER?: LegacyOAuthHelpers
+      }
+      const legacy = new LegacyOAuthProvider<typeof legacyEnv>({
+        apiRoute: '/mcp',
+        apiHandler: { fetch: () => new Response('unused') },
+        defaultHandler: {
+          async fetch(request, e) {
+            const authRequest = await e.OAUTH_PROVIDER!.parseAuthRequest(request)
+            const result = await e.OAUTH_PROVIDER!.completeAuthorization({
+              request: authRequest, userId: discordUserId,
+              metadata: { migrationTest: true }, scope: ['hiyori:read'], props,
+            })
+            return Response.redirect(result.redirectTo, 302)
+          },
+        },
+        authorizeEndpoint: '/oauth/authorize',
+        tokenEndpoint: '/oauth/token',
+        clientRegistrationEndpoint: '/oauth/register',
+        scopesSupported: ['hiyori:read', 'hiyori:write'],
+      })
+      const legacyFetch = async (request: Request) => {
+        const ctx = createExecutionContext()
+        const response = await legacy.fetch(request, legacyEnv, ctx)
+        await waitOnExecutionContext(ctx)
+        return response
+      }
+      const registration = await legacyFetch(new Request(`${BASE}/oauth/register`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: 'none' }),
+      }))
+      expect(registration.status).toBe(201)
+      const { client_id: clientId } = await registration.json() as { client_id: string }
+      const { verifier, challenge } = await makePkce()
+      const query = new URLSearchParams({
+        response_type: 'code', client_id: clientId, redirect_uri: REDIRECT_URI,
+        scope: 'hiyori:read', code_challenge: challenge, code_challenge_method: 'S256',
+      })
+      if (resource) query.set('resource', resource)
+      const consent = await legacyFetch(new Request(`${BASE}/oauth/authorize?${query}`))
+      expect(consent.status).toBe(302)
+      const code = new URL(consent.headers.get('location')!).searchParams.get('code')!
+      const exchange = new URLSearchParams({
+        grant_type: 'authorization_code', client_id: clientId, redirect_uri: REDIRECT_URI,
+        code, code_verifier: verifier,
+      })
+      if (resource) exchange.set('resource', resource)
+      const tokenResponse = await legacyFetch(new Request(`${BASE}/oauth/token`, {
+        method: 'POST', body: exchange,
+      }))
+      expect(tokenResponse.status).toBe(200)
+      const tokens = await tokenResponse.json() as { access_token: string; refresh_token: string }
+      const assertReadOnly = async (token: string) => {
+        const client = new McpTestClient(`Bearer ${token}`)
+        await client.initialize()
+        const who = await client.callTool('hiyori_whoami')
+        expect(who.isError).toBe(false)
+        expect(who.data).toMatchObject({ discordUserId })
+        const write = await client.callTool('hiyori_create_event', {
+          title: 'must stay read-only', defaultDurationMinutes: 60,
+          candidates: [{ startAt: '2026-11-01T09:00:00.000Z' }],
+        })
+        expect(write.isError).toBe(true)
+        expect(write.text).toContain('scope')
+      }
+      await assertReadOnly(tokens.access_token)
+      const refresh = new URLSearchParams({
+        grant_type: 'refresh_token', client_id: clientId, refresh_token: tokens.refresh_token,
+      })
+      if (resource) refresh.set('resource', resource)
+      const refreshed = await SELF.fetch(`${BASE}/oauth/token`, { method: 'POST', body: refresh })
+      expect(refreshed.status).toBe(200)
+      const replacement = await refreshed.json() as { access_token: string }
+      await assertReadOnly(replacement.access_token)
     })
   })
 })

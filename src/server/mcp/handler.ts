@@ -12,13 +12,23 @@
 
 import { HiyoriMcpAgent } from './agent'
 import { internalApi } from './internal'
+import { MCP_AUTH_CONTEXT_HEADER, encodeMcpAuth } from './request-auth'
 import type { McpProps } from './types'
 import type { Env } from '../index'
 
 export const MCP_ROUTE = '/mcp'
 
 // serve ハンドラはリクエストのたびに new する必要はないのでモジュールレベルで 1 度だけ生成。
-export const mcpServeHandler = HiyoriMcpAgent.serve(MCP_ROUTE)
+const mcpServeHandler = HiyoriMcpAgent.serve(MCP_ROUTE)
+
+// Forward verified request identity/scopes separately from the SDK's persisted
+// session props. Never forward a public caller's claimed internal auth context.
+export function serveAuthenticatedMcp(request: Request, env: Env, ctx: ExecutionContext, props: McpProps): Promise<Response> {
+  const headers = new Headers(request.headers)
+  headers.set(MCP_AUTH_CONTEXT_HEADER, encodeMcpAuth(props))
+  ;(ctx as ExecutionContext & { props?: McpProps }).props = props
+  return mcpServeHandler.fetch(new Request(request, { headers }), env, ctx)
+}
 
 export function isMcpEnabled(env: Env): boolean {
   return env.MCP_ENABLED === 'true' || env.MCP_ENABLED === '1'
@@ -79,7 +89,5 @@ export async function tryLegacyBearerMcp(
     // 案 B は full セッション = read/write 両方。案 A では同意スコープに応じて絞る。
     scopes: ['hiyori:read', 'hiyori:write'],
   }
-  ;(ctx as ExecutionContext & { props?: McpProps }).props = props
-
-  return mcpServeHandler.fetch(request, env, ctx)
+  return serveAuthenticatedMcp(request, env, ctx, props)
 }
