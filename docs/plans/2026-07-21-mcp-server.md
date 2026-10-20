@@ -129,6 +129,8 @@ CLI の全実行コマンドを MCP ツールへ写像する（§4）。認証�
 | `hiyori_remove_subscription` | `sub rm` | `DELETE /api/subscriptions/:id` | 認証必須（本人分） | `{ subscriptionId }` → `{ ok }`（破壊的） |
 | `hiyori_regen_subscription` | `sub regen` | `POST /api/subscriptions/:id/regenerate` | 認証必須（本人分） | `{ subscriptionId }` → `{ subscription, webcalUrl }` |
 
+Web / REST / MCP / CLI の購読発行は共通の API とフィードを使う。配信対象は参加または主催する公開イベントの有効な確定日（主催者の回答不要、重複なし）。招待限定と取消済みは除外する。発行済み URL は以降の確定も反映し、再発行は不要。入力・レスポンス・スコープに変更はない。`my_busy` / `busy` は参加予定を返す別機能であり、この購読範囲の変更対象ではない。
+
 ### 棚卸しサマリ
 
 - **CLI leaf コマンド総数: 25**（login, logout, whoami, config get, config set, event list/show/create/edit/rm, candidate add/rm, vote, tally, busy, ics, confirm, unconfirm, sub list/add/rm/regen, invite list/add/revoke）。

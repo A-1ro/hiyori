@@ -393,7 +393,9 @@ function SubscriptionsSection() {
           lineHeight: 1.55,
         }}
       >
-        Webcal URL を 1 つカレンダーアプリに登録すると、参加イベントの確定日がすべて自動で同期されます。
+        Webcal URL を 1 つカレンダーアプリに登録すると、参加または主催する公開イベントの有効な確定日が同期されます。
+        主催者は候補日への回答不要です。招待限定と取消済みは含まれません。
+        発行済み URL に今後の確定日も反映され、反映時期はカレンダーアプリの更新間隔によります。
       </p>
       {isLoading ? (
         <div style={{ fontSize: 13, color: 'var(--color-fg3)' }}>読み込み中...</div>

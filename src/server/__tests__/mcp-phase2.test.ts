@@ -784,6 +784,28 @@ describe('MCP Phase 2: 残りツール（案 B Bearer 経路で権限確認）',
       const subId = (added.data as { subscription: { id: string }; webcalUrl: string }).subscription.id
       expect((added.data as { webcalUrl: string }).webcalUrl).toContain('webcal')
 
+      // A subscription issued through MCP includes later confirmations by its
+      // owner even when they never register as a participant or submit votes.
+      const created = await client.callTool('hiyori_create_event', {
+        title: 'MCP hosted calendar fixture',
+        defaultDurationMinutes: 60,
+        candidates: [{ startAt: '2026-11-01T09:00:00.000Z' }],
+      })
+      expect(created.isError).toBe(false)
+      const event = created.data as { event: { id: string }; candidates: { id: string }[] }
+      const confirmed = await client.callTool('hiyori_confirm', {
+        eventId: event.event.id,
+        candidateIds: [event.candidates[0]!.id],
+      })
+      expect(confirmed.isError).toBe(false)
+      const feed = await SELF.fetch((added.data as { webcalUrl: string }).webcalUrl.replace('webcal://', 'https://'))
+      expect(feed.status).toBe(200)
+      expect(await feed.text()).toContain('SUMMARY:MCP hosted calendar fixture')
+      const participants = await (env as { DB: D1Database }).DB.prepare(
+        'SELECT id FROM participants WHERE eventId = ?',
+      ).bind(event.event.id).all()
+      expect(participants.results).toHaveLength(0)
+
       const list = await client.callTool('hiyori_list_subscriptions')
       expect((list.data as { subscriptions: { id: string }[] }).subscriptions.some((s) => s.id === subId)).toBe(true)
 
