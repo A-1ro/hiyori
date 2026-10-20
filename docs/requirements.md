@@ -137,6 +137,8 @@ Discord と連携可能な日程調整 Web ツール。
 | データ保持 | デフォルトは永久保持。`EVENT_RETENTION_DAYS`（正の整数、未設定なら無効）を設定すると、完了済み（`closed` / `cancelled`）イベントを最終活動（確定 / 取消、無ければ作成）から N 日経過後に Cron Trigger（毎日 3:00 UTC）で物理削除する。votes / participants / candidates / decisions も同時に削除し、削除操作は AuditLog（`event.retention.deleted`）に記録する（F-12 #24） |
 | コスト | 個人運用想定。CF Workers 無料枠内での運用を目標 |
 
+CLI の接続先は HTTPS を必須とし、開発用 HTTP は `localhost`、IPv4 loopback (`127.0.0.0/8`)、IPv6 loopback (`::1`) のみ許可する。設定・環境変数・フラグ・ログイン確認 URL に同じ検証を適用し、API/ICS リクエストはリダイレクトを拒否する。Web/REST/MCP のサーバー側認可や通信経路は変更しない。
+
 ---
 
 ## 7. 技術スタック

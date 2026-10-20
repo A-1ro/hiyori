@@ -5,6 +5,7 @@ import open from 'open'
 import { createCliApi, HiyoriApiError } from '../api.js'
 import { resolveApiUrl, writeCredentials } from '../config.js'
 import { fail } from '../output.js'
+import { assertSecureUrl } from '../transport.js'
 
 export function loginCommand(): Command {
   return new Command('login')
@@ -34,6 +35,8 @@ export function loginCommand(): Command {
       }
 
       const { deviceCode, userCode, verificationUri, verificationUriComplete, interval, expiresIn } = startData
+      assertSecureUrl(verificationUri)
+      assertSecureUrl(verificationUriComplete)
 
       clack.intro('Hiyori ログイン')
 

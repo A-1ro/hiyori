@@ -43,6 +43,12 @@ The API URL is resolved in this order:
 3. `hiyori config set api-url <url>`
 4. built-in default: `https://hiyori.example.workers.dev` (a placeholder — explicitly select production or your own instance)
 
+All CLI connections require HTTPS. For local development, HTTP is allowed only for
+`localhost`, IPv4 loopback (`127.0.0.0/8`), and IPv6 loopback (`[::1]`). LAN addresses
+and `.local` names require HTTPS. This policy applies to saved settings, environment
+variables, flags, and login verification URLs. API and ICS requests reject redirects;
+configure the final API URL directly. URLs must not contain a username or password.
+
 ## Commands
 
 | Command | Description |

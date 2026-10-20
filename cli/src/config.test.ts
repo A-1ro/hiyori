@@ -39,6 +39,17 @@ describe('config set/get api-url', () => {
 })
 
 describe('resolveApiUrl 優先順位', () => {
+  it.each(['flag', 'env', 'config'])('rejects insecure HTTP from %s', async (source) => {
+    const insecureUrl = 'http://example.com'
+    if (source === 'env') process.env.HIYORI_API_URL = insecureUrl
+    if (source === 'config') await writeConfig({ apiUrl: insecureUrl })
+    await expect(resolveApiUrl(source === 'flag' ? { flag: insecureUrl } : {})).rejects.toThrow('HTTPS')
+  })
+
+  it('keeps a selected loopback URL unchanged', async () => {
+    await expect(resolveApiUrl({ flag: 'http://[::1]:8787' })).resolves.toBe('http://[::1]:8787')
+  })
+
   it('flag > env > config > default の順: flag が最優先', async () => {
     process.env.HIYORI_API_URL = 'https://env.example.com'
     await writeConfig({ apiUrl: 'https://config.example.com' })
@@ -76,6 +87,11 @@ describe('writeCredentials mode 600', () => {
 })
 
 describe('resolveToken apiUrl 不一致で null', () => {
+  it('rejects non-local HTTP even when stored credentials match', async () => {
+    await writeCredentials({ token: 'fixture-token', expiresAt: '2999-01-01T00:00:00.000Z', apiUrl: 'http://example.com' })
+    await expect(resolveToken({ apiUrl: 'http://example.com' })).rejects.toThrow('HTTPS')
+  })
+
   it('apiUrl が一致すれば token を返す', async () => {
     await writeCredentials({ token: 'mytoken', expiresAt: '2999-01-01T00:00:00.000Z', apiUrl: 'https://example.com' })
     const token = await resolveToken({ apiUrl: 'https://example.com' })

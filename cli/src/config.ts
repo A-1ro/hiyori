@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { assertSecureUrl } from './transport.js'
 
 // TODO: 本番ドメイン確定後に差し替え
 export const DEFAULT_API_URL = 'https://hiyori.example.workers.dev'
@@ -77,14 +78,13 @@ export async function clearCredentials(): Promise<void> {
 }
 
 export async function resolveApiUrl(opts: { flag?: string }): Promise<string> {
-  if (opts.flag) return opts.flag
-  if (process.env.HIYORI_API_URL) return process.env.HIYORI_API_URL
-  const config = await readConfig()
-  if (config.apiUrl) return config.apiUrl
-  return DEFAULT_API_URL
+  const apiUrl = opts.flag || process.env.HIYORI_API_URL || (await readConfig()).apiUrl || DEFAULT_API_URL
+  assertSecureUrl(apiUrl)
+  return apiUrl
 }
 
 export async function resolveToken(opts: { apiUrl: string }): Promise<string | null> {
+  assertSecureUrl(opts.apiUrl)
   const creds = await readCredentials()
   if (!creds) return null
   if (creds.apiUrl !== opts.apiUrl) return null

@@ -26,7 +26,7 @@ program
   .name('hiyori')
   .description('Hiyori CLI')
   .version(pkg.version)
-  .option('--api-url <url>', 'API URL')
+  .option('--api-url <url>', 'API URL (HTTPS; HTTP only for localhost / loopback development)')
   .option('--json', 'Output as JSON')
 
 program.addCommand(loginCommand())
