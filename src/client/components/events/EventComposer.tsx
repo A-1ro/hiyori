@@ -445,6 +445,7 @@ export function EventComposer({
     <>
       {errorMessage && (
         <div
+          role="alert"
           style={{
             marginBottom: 16,
             padding: '10px 14px',

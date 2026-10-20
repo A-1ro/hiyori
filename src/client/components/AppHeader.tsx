@@ -10,8 +10,8 @@ export interface AppHeaderBack {
   label?: string
 }
 
-export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: ReactNode }) {
-  const { data: sessionData, error: sessionError } = useSession()
+export function AppHeader({ back, right, loginInNewTab = false }: { back?: AppHeaderBack; right?: ReactNode; loginInNewTab?: boolean }) {
+  const { data: sessionData, error: sessionError, isFetching, isPaused } = useSession()
   const logout = useLogout()
   const location = useLocation()
   const user = sessionData?.user ?? null
@@ -125,9 +125,12 @@ export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: React
               ログアウト
             </Button>
           </>
-        ) : sessionData?.user === null && !sessionError ? (
+        ) : sessionData?.user === null && !sessionError && !isFetching && !isPaused ? (
           <a
-            href={loginUrl(location.pathname)}
+            href={loginUrl(loginInNewTab ? '/me' : location.pathname + location.search)}
+            target={loginInNewTab ? '_blank' : undefined}
+            rel={loginInNewTab ? 'noopener noreferrer' : undefined}
+            aria-label={loginInNewTab ? 'Discord でログイン（別タブで開きます）' : undefined}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -144,7 +147,7 @@ export function AppHeader({ back, right }: { back?: AppHeaderBack; right?: React
           </a>
         ) : (
           <span style={{ fontSize: 12, color: 'var(--color-fg3)' }}>
-            {sessionError ? 'ログイン状態を確認できません' : 'ログイン状態を確認中...'}
+            {isPaused ? 'オフラインのため確認待ちです' : sessionError ? 'ログイン状態を確認できません' : 'ログイン状態を確認中...'}
           </span>
         )}
       </div>

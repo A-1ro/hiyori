@@ -100,6 +100,8 @@ const discordUsernameSchema = z.string().max(128).transform(normalizeDiscordUser
   .refine(isDiscordUsername, 'Invalid Discord username')
 
 const createEventBody = z.object({
+  // 省略可能な一致条件。主催者は常に認証済みセッションから決める。
+  expectedOrganizerDiscordId: discordUserIdSchema.optional(),
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   defaultDurationMinutes: z.number().int().min(1).max(60 * 24),
@@ -999,6 +1001,11 @@ window.__vite_plugin_react_preamble_installed__ = true
       async (c) => {
         const session = await requireSession(c, app, sessions, users)
         const body = c.req.valid('json')
+        // /auth/me が返った後に別タブで Cookie が変わる競合も、書き込みの前に止める。
+        // ID の申告では認証せず、既存 REST / MCP / CLI の省略時の動作も維持する。
+        if (body.expectedOrganizerDiscordId !== undefined && body.expectedOrganizerDiscordId !== session.discordUserId) {
+          return c.json({ error: 'ログイン中のアカウントが変わりました。元の Discord アカウントでログインしてください。' }, 412)
+        }
 
         let resolvedChannelId: string | null = null
         if (body.discordChannelToken) {

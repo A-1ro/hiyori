@@ -205,11 +205,18 @@ describe('セッション境界 (H-2)', () => {
       headers: { 'Content-Type': 'application/json', Cookie: expiredCookie },
       body: JSON.stringify({
         title: '期限切れテスト',
+        visibility: 'invite_only',
+        invitedDiscordUsernames: ['fictional_friend'],
         defaultDurationMinutes: 60,
         candidates: [{ startAt: '2026-08-01T10:00:00.000Z', endAt: '2026-08-01T11:00:00.000Z' }],
       }),
     })
     expect(res.status).toBe(401)
+    // 期限切れでイベント・候補・招待を一部だけ作成しない。
+    for (const table of ['events', 'candidates', 'event_invites']) {
+      const row = await (env as { DB: D1Database }).DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first<{ count: number }>()
+      expect(row?.count).toBe(0)
+    }
   })
 
   it('S3: cookie と Bearer を同時送信すると cookie 側のユーザーが勝つ', async () => {

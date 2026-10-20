@@ -49,6 +49,8 @@ export interface CandidateResponse {
 }
 
 export interface CreateEventInput {
+  // ブラウザーの下書きを別タブのアカウントへ誤保存しないための一致条件。認証情報ではない。
+  expectedOrganizerDiscordId?: string
   title: string
   description?: string
   defaultDurationMinutes: number

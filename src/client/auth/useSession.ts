@@ -9,7 +9,7 @@ export type SessionUser = {
   displayName: string
 }
 
-export function useSession() {
+export function useSession(options?: { refetchOnMount: 'always' }) {
   const qc = useQueryClient()
   return useQuery<{ user: SessionUser | null }>({
     queryKey: ['session'],
@@ -32,6 +32,7 @@ export function useSession() {
       return next
     },
     staleTime: Infinity,
+    refetchOnMount: options?.refetchOnMount,
     refetchOnWindowFocus: 'always',
     refetchOnReconnect: 'always',
   })
