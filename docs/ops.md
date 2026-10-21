@@ -108,6 +108,8 @@ Authorization: Bearer <FEEDBACK_ADMIN_TOKEN>
 
 ## お知らせ投稿 CLI
 
+接続先は運用者が信頼する HTTPS URL を指定する。開発用 HTTP は CLI と同じく `localhost`、IPv4 loopback (`127.0.0.0/8`)、IPv6 loopback (`[::1]`) のみ許可する。LAN アドレス・`.local` 名への HTTP と、ユーザー名・パスワード入り URL は拒否する。投稿・アーカイブはリダイレクトを拒否するため、最終の API URL を直接指定する。`--dry-run` でも同じ URL 検証を行い、管理トークンは出力しない。
+
 ヘッダのベルアイコンからログイン不要で閲覧できる。公開 GET は `Cache-Control: no-store` で origin 直返し・レート制限（60 req/min per IP）付き。投稿は admin Bearer 保護（`ANNOUNCEMENTS_ADMIN_TOKEN`）で、CLI `scripts/announce.mjs`（Node 22 標準依存ゼロ）から行う。
 
 ```

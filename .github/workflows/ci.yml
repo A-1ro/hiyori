@@ -48,6 +48,9 @@ jobs:
       - name: CLI Test
         run: pnpm -C cli test
 
+      - name: Script Test
+        run: pnpm test:scripts
+
       - name: Test
         run: pnpm test
 

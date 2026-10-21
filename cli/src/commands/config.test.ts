@@ -38,7 +38,7 @@ describe('config set api-url → config get api-url 往復', () => {
 
     output.length = 0
     await program.parseAsync(['config', 'get', 'api-url'], { from: 'user' })
-    expect(output.some((l) => l.includes('https://my.example.com'))).toBe(true)
+    expect(output).toEqual(['https://my.example.com  (source: config)'])
 
     vi.restoreAllMocks()
   })
