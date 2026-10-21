@@ -8,7 +8,7 @@ Command-line client for **[Hiyori](https://github.com/A-1ro/hiyori)** — the Di
 
 Build from this repository so the CLI matches this revision. These instructions do not depend on npm publication. The package is named `hiyori-cli`; its executable is `hiyori`.
 
-Use **Node.js 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+** and **pnpm 10.33.2**, matching the root package and CI. The CLI package's runtime engine is `>=22.12`; building and testing this workspace uses the stricter root requirement.
+Use **Node.js 22.23.4+ (22.x), 24.22.1+ (24.x), or 26.12.1+** and **pnpm 10.33.2**, matching the root package and CI. The CLI package's runtime engine is `>=22.12`; building and testing this workspace uses the stricter root requirement. For CLI use, install a maintained Node.js release with the October 2026 security fixes (22.23.4+, 24.22.1+, or 26.12.1+ on the respective release lines). The engine range describes compatibility, not a security guarantee.
 
 ```bash
 git clone https://github.com/A-1ro/hiyori.git
