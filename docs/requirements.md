@@ -112,6 +112,7 @@ Discord と連携可能な日程調整 Web ツール。
   - 公開 GET `/api/announcements`（認証不要・`Cache-Control: no-store` で origin 直返し・IP 単位 rate limit 60 req/min）。カテゴリは `bug_fix` / `new_feature` / `notice` の 3 種類。
   - 書き込み `POST /api/announcements` / `PATCH /api/announcements/:id`（`status` の変更のみ）は admin トークン（`ANNOUNCEMENTS_ADMIN_TOKEN`）Bearer 保護。IP 単位＋token 単位の二重 rate limit。未設定なら書き込みは常に 403（安全側）。
   - 投稿 CLI: `scripts/announce.mjs`（Node 22 標準依存ゼロ）。確認プロンプトは `/dev/tty` 直読み、tty 無し環境では `--yes` 必須。`--archive <id>` で誤投稿の取り下げも可。
+  - 投稿・アーカイブ・dry-run の接続先は CLI と同じ URL 検証を行う。HTTPS（開発用 HTTP は localhost / loopback のみ）を許可し、資格情報入り URL を拒否する。管理トークンを送る通信はリダイレクトを拒否する。運用者が信頼する接続先を明示する。
   - 未読管理はクライアント localStorage の `hiyori:announcements:lastSeenAt`（ゲストのままでも動作）。ドロップダウンを閉じるか「すべて既読にする」で更新。
   - **セキュリティ**: XSS 対策として本文の Markdown/HTML 解釈はしない。URL 自動リンク化は scheme allowlist（`http:` / `https:`）を regex＋`URL()` protocol の二重チェックで担保。auto-linkify はユニットテスト（`src/client/utils/__tests__/linkify.test.ts`）で `javascript:` / `data:` / 全角 URL 疑似などのケースを検証。
   - **設計方針**: MVP は個別詳細ページを持たず、accordion で全展開する UX。Phase 2 で `/announcements` 一覧＋`/announcements/:id` 詳細・Discord 通知連動を検討。

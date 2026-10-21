@@ -21,8 +21,29 @@
 import { parseArgs } from 'node:util'
 import { readFileSync, openSync, readSync, closeSync } from 'node:fs'
 import process from 'node:process'
+import { isIP } from 'node:net'
 
 const CATEGORIES = ['bug_fix', 'new_feature', 'notice']
+
+// Keep the standalone Node script consistent with cli/src/transport.ts.
+// Do not include a potentially credential-bearing URL in validation errors.
+function assertSecureUrl(value) {
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error('無効な URL です')
+  }
+  if (url.username || url.password) {
+    throw new Error('URL にユーザー名やパスワードを含めることはできません')
+  }
+  if (url.protocol === 'https:') return
+  const loopback = url.hostname === 'localhost' || url.hostname === '[::1]' || (
+    isIP(url.hostname) === 4 && url.hostname.split('.')[0] === '127'
+  )
+  if (url.protocol === 'http:' && loopback) return
+  throw new Error('HTTPS URL を使用してください。HTTP は localhost / loopback の開発環境のみ許可されます')
+}
 
 function die(msg, code = 1) {
   process.stderr.write(`${msg}\n`)
@@ -76,7 +97,8 @@ function usage() {
   node scripts/announce.mjs [options]
 
 投稿モード（既定）:
-  --api-url <url>          必須。省略時は env HIYORI_API_URL
+  --api-url <url>          必須。信頼する HTTPS URL。開発用 HTTP は localhost / loopback のみ
+                          省略時は env HIYORI_API_URL。リダイレクトは拒否
   --title <text>           必須。1〜120 字
   --category <cat>         必須。${CATEGORIES.join(' / ')}
   --body <text>            任意。省略時は stdin から読む
@@ -123,6 +145,11 @@ async function main() {
 
   const apiUrl = values['api-url'] ?? process.env.HIYORI_API_URL
   if (!apiUrl) die('--api-url もしくは HIYORI_API_URL が必要です')
+  try {
+    assertSecureUrl(apiUrl)
+  } catch (err) {
+    die(err instanceof Error ? err.message : '無効な URL です')
+  }
   const token = process.env.ANNOUNCEMENTS_ADMIN_TOKEN
   if (!token) die('環境変数 ANNOUNCEMENTS_ADMIN_TOKEN が未設定です')
 
@@ -145,6 +172,7 @@ async function main() {
     }
     const res = await fetch(`${apiUrl.replace(/\/$/, '')}/api/announcements/${id}`, {
       method: 'PATCH',
+      redirect: 'error',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
@@ -198,6 +226,7 @@ async function main() {
 
   const res = await fetch(`${apiUrl.replace(/\/$/, '')}/api/announcements`, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
