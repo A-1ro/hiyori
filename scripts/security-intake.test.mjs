@@ -68,7 +68,7 @@ test('one denied source does not suppress other results and never becomes a clea
   const records = await collectSources({ actions: [],
     fetch: url => {
       fetched.push(url);
-      if (url.includes('blog.cloudflare.com')) throw new Error('denied');
+      if (new URL(url).hostname === 'blog.cloudflare.com') throw new Error('denied');
       if (url.endsWith('index.json')) return JSON.stringify([
         { version: 'v24.22.1', date: '2026-10-21', security: true, lts: 'Krypton' },
       ]);
