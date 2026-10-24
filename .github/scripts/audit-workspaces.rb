@@ -42,8 +42,14 @@ module WorkspaceAudit
     1
   end
 
-  def self.classify(raw, status, workspace, summary)
+  def self.classify(raw, status, workspace, summary, records = nil)
+    record = { workspace: workspace, state: 'incomplete' }
+    records&.push(record)
+    unless status.success? || status.exitstatus == 1
+      return incomplete('The audit command did not complete normally.')
+    end
     report = JSON.parse(raw)
+    record[:report] = report
     counts = report.dig('metadata', 'vulnerabilities')
     unless report['error'].nil? && counts.is_a?(Hash) &&
            LEVELS.all? { |level| counts[level].is_a?(Integer) && counts[level] >= 0 }
@@ -56,17 +62,20 @@ module WorkspaceAudit
     File.open(summary, 'a') { |file| file.puts("Workspace #{label}: #{result}\n") } if summary
     puts JSON.pretty_generate(report['advisories'] || report['vulnerabilities'] || {})
     if LEVELS.drop(1).any? { |level| counts[level] > 0 }
+      record[:state] = 'findings'
       puts "::error title=Dependency vulnerabilities detected::Review advisories for workspace #{label}."
       return 1
     end
     return incomplete('The audit command failed without a vulnerability finding.') unless status.success?
 
+    record[:state] = 'clean'
     0
   rescue JSON::ParserError, TypeError, NoMethodError
     incomplete('No valid audit report. Check the registry/network and audit command.')
   end
 
-  def self.run(root, registry: REGISTRY)
+  def self.run(root, registry: REGISTRY, report_path: ENV['AUDIT_REPORT_PATH'])
+    records = []
     lockfile = YAML.safe_load(File.read(File.join(root, 'pnpm-lock.yaml')),
                               permitted_classes: [], permitted_symbols: [], aliases: false)
     projected = projections(lockfile)
@@ -85,13 +94,22 @@ module WorkspaceAudit
           'pnpm', '--dir', directory, 'audit', '--audit-level=low', '--json',
           "--registry=#{registry}"
         )
-        outcome = classify(raw, status, workspace, ENV['GITHUB_STEP_SUMMARY'])
+        outcome = classify(raw, status, workspace, ENV['GITHUB_STEP_SUMMARY'], records)
         failed = true unless outcome.zero?
       end
     end
     failed ? 1 : 0
   rescue StandardError => error
     incomplete("Lockfile projection or audit execution failed (#{error.class}).")
+  ensure
+    if report_path
+      File.write(report_path, JSON.pretty_generate(
+        schema_version: 1,
+        complete: !projected.nil? && records.size == projected.size &&
+          records.all? { |record| record[:state] != 'incomplete' },
+        workspaces: records
+      ))
+    end
   end
 end
 

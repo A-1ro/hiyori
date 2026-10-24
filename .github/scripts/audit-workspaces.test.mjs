@@ -87,6 +87,7 @@ async function check(realDependency, malformed = false) {
       RUNNER_TEMP: directory,
       GITHUB_STEP_SUMMARY: join(directory, 'summary.md'),
       AUDIT_REGISTRY: `http://127.0.0.1:${server.address().port}`,
+      AUDIT_REPORT_PATH: join(directory, 'audit.json'),
       npm_config_userconfig: join(directory, 'empty.npmrc'),
       npm_config_globalconfig: join(directory, 'empty.npmrc'),
     });
@@ -100,7 +101,8 @@ async function check(realDependency, malformed = false) {
     assert.ok(requests[0].dependencies['.'].dependencies['runtime-helper']);
     assert.ok(requests[1].dependencies['.'].dependencies['build-helper']);
     assert.ok(requests[1].dependencies['.'].dependencies['optional-helper']);
-    return { ...result, requests };
+    const audit = JSON.parse(await readFile(join(directory, 'audit.json'), 'utf8'));
+    return { ...result, requests, audit };
   } finally {
     await new Promise(resolve => { server.close(resolve); });
     await rm(directory, { recursive: true, force: true });
@@ -110,12 +112,17 @@ async function check(realDependency, malformed = false) {
 test('synthetic cli workspace is not sent as a cli registry dependency', async () => {
   const result = await check(false);
   assert.equal(result.code, 0, result.output);
+  assert.equal(result.audit.complete, true);
+  assert.deepEqual(result.audit.workspaces.map(record => record.state), ['clean', 'clean']);
   assert.ok(result.requests.every(request => !containsCli(request)));
 });
 
 test('an actual transitive cli@0.1.0 remains audited and fails on the same advisory', async () => {
   const result = await check(true);
   assert.equal(result.code, 1, result.output);
+  assert.equal(result.audit.complete, true);
+  assert.deepEqual(result.audit.workspaces.map(record => record.state), ['clean', 'findings']);
+  assert.equal(result.audit.workspaces[1].report.advisories['95'].module_name, 'cli');
   assert.ok(containsCli(result.requests[1]));
   assert.match(result.output, /Dependency vulnerabilities detected/);
   assert.match(result.output, /GHSA-6cpc-mj5c-m9rq/);
@@ -125,6 +132,8 @@ test('registry error reports fail closed while still auditing both importers', a
   const result = await check(false, true);
   assert.equal(result.code, 1, result.output);
   assert.match(result.output, /Dependency audit could not complete/);
+  assert.equal(result.audit.complete, false);
+  assert.ok(result.audit.workspaces.every(record => record.state === 'incomplete'));
 });
 
 test('ambiguous YAML keys fail closed instead of dropping a dependency name', async () => {

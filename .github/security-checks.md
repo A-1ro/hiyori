@@ -39,8 +39,10 @@ advisory details and the job summary includes severity counts. The error title
 `Dependency vulnerabilities detected` means a completed scan found issues;
 `Dependency audit could not complete` means a registry, command, or report error.
 Setup failures/timeouts also mean incomplete coverage. A failed scan is never a
-clean security result. No automatic fixes, suppressions, or ignored registry
-errors are configured. Findings require separate review and remediation.
+clean security result. This CI job does not apply fixes, suppress findings, or
+ignore registry errors. A separate [Codex security task](../docs/security-automation.md)
+can investigate findings, validate repairs and create reviewable PRs; its schedule
+must be registered in Codex. CI itself does not start or schedule that task.
 Only dependencies represented in the committed lockfile are covered; generated
 projects, unlocked fixtures, system packages, and vulnerabilities without a
 published advisory are outside this check.
