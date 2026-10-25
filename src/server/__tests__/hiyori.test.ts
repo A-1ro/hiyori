@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, inject, it, vi } from 'vitest'
 import { applyD1Migrations, createExecutionContext, env, waitOnExecutionContext } from 'cloudflare:test'
 import { buildApp, type Env } from '../index'
 import { loginAs, loginAsExpired } from './test-helpers'
-import { cleanupHiyoriReservations, hiyoriConfig, parseHiyoriOutput, runHiyori } from '../services/hiyori'
+import { cleanupHiyoriReservations, hiyoriConfig, hiyoriToday, parseHiyoriOutput, runHiyori } from '../services/hiyori'
 import { HIYORI_MODEL, type HiyoriChatInput } from '../../shared/hiyori'
 
 const OWNER = '12345678901234567'
-const today = new Date().toISOString().slice(0, 10)
+// The mocked draft is for Asia/Tokyo. UTC's date is the previous day after
+// 15:00 UTC, when the production parser correctly rejects it as a past date.
+const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const draft = { title: 'ゲーム会', description: '', dates: [today], times: ['19:00'], defaultDurationMinutes: 60, timezone: 'Asia/Tokyo', visibility: 'invite_only' }
 const reply = { reply: '下書きだよ。フォームで確認してね。', draft }
 const run = vi.fn()
@@ -36,6 +38,13 @@ beforeEach(async () => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('ﾋﾖﾘﾁｬﾝの安全な推論境界（全推論はモック）', () => {
+  it('UTC 15時に日本の日付が変わり、前日の下書きを拒否する', () => {
+    expect(hiyoriToday(new Date('2026-10-25T14:59:59Z'), 'Asia/Tokyo')).toBe('2026-10-25')
+    const japanDate = hiyoriToday(new Date('2026-10-25T15:00:00Z'), 'Asia/Tokyo')
+    expect(japanDate).toBe('2026-10-26')
+    expect(parseHiyoriOutput({ response: JSON.stringify({ ...reply, draft: { ...draft, dates: ['2026-10-25'] } }) }, 'Asia/Tokyo', japanDate)).toBeNull()
+    expect(parseHiyoriOutput({ response: JSON.stringify({ ...reply, draft: { ...draft, dates: ['2026-10-26'] } }) }, 'Asia/Tokyo', japanDate)).not.toBeNull()
+  })
   it('binding・予算・料金・明示有効化のどれかが欠けると呼び出さない', async () => {
     for (const key of ['HIYORI_AI', 'HIYORI_AI_ENABLED', 'HIYORI_AI_DAILY_MICROS', 'HIYORI_AI_MONTHLY_MICROS', 'HIYORI_AI_INPUT_MICROS_PER_MILLION', 'HIYORI_AI_OUTPUT_MICROS_PER_MILLION'] as const) {
       const settings = configured()
