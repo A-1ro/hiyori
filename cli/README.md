@@ -51,7 +51,7 @@ configure the final API URL directly. URLs must not contain a username or passwo
 
 ## Commands
 
-The site's ﾋﾖﾘﾁｬﾝ mascot is a Web presentation and draft-entry aid. It adds no CLI business operation or inference call. Existing create/invite/confirm commands and their authentication contracts are unchanged; AI cannot execute them. See [mascot implementation notes](../docs/hiyori-mascot.md).
+The site's ﾋﾖﾘﾁｬﾝ uses the same 22 tool definitions and authorized business API as MCP. Its Web session, conversation, and review cards are Web-specific; it adds no CLI inference call. A model proposal cannot execute a write: the signed review requires the user to confirm and send. Existing CLI commands, confirmations, JSON behavior, authentication and MCP scopes are unchanged. See [mascot implementation notes](../docs/hiyori-mascot.md).
 
 | Command | Description |
 |---|---|

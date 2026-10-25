@@ -2,7 +2,9 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSession, loginUrl } from '../auth/useSession'
-import { HIYORI_GUIDE, HIYORI_MEME, hiyoriReplySchema, isHiyoriMeme, type HiyoriDraft } from '../../shared/hiyori'
+import { HIYORI_GUIDE, HIYORI_MEME, isHiyoriMeme, type HiyoriDraft } from '../../shared/hiyori'
+import { hiyoriAgentReplySchema } from '../../shared/hiyori-agent'
+import { HiyoriOperations, emptyAgent, type AgentState } from './HiyoriOperations'
 import type { ComposerInitial } from './events/EventComposer'
 import { Icon } from './primitives'
 import hiyoriCharacter from '../assets/images/hiyori-bot.webp'
@@ -10,7 +12,7 @@ import './Hiyori.css'
 
 type Message = { id: string; role: 'user' | 'assistant'; content: string }
 type PendingDraft = { id: string; owner: string; draft: HiyoriDraft }
-type Conversation = { owner: string | null; messages: Message[]; draft: HiyoriDraft | null; input: string; consent: boolean; error: string }
+type Conversation = { owner: string | null; messages: Message[]; draft: HiyoriDraft | null; input: string; consent: boolean; error: string; agent: AgentState }
 type Settings = { hidden: boolean; autoDisplay: false }
 const SETTINGS_KEY = 'hiyori:mascot:settings'
 const GUIDE_CARDS = [
@@ -28,7 +30,7 @@ function readSettings(): Settings {
   try { return { hidden: JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}').hidden === true, autoDisplay: false } }
   catch { return { hidden: false, autoDisplay: false } }
 }
-const empty = (owner: string | null): Conversation => ({ owner, messages: [], draft: null, input: '', consent: false, error: '' })
+const empty = (owner: string | null): Conversation => ({ owner, messages: [], draft: null, input: '', consent: false, error: '', agent: emptyAgent() })
 const message = (content: string, role: Message['role'] = 'assistant'): Message => ({ id: crypto.randomUUID(), role, content })
 
 const HiyoriContext = createContext<{
@@ -63,6 +65,7 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
   const [guidesOpen, setGuidesOpen] = useState(true)
   const [available, setAvailable] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [operationsBusy, setOperationsBusy] = useState(false)
   const active = useRef<AbortController | null>(null)
   const epoch = useRef(0)
   const input = useRef<HTMLTextAreaElement>(null)
@@ -178,7 +181,7 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
   }
   async function send() {
     const text = current.input.trim()
-    if (!text || busy || active.current) return
+    if (!text || busy || operationsBusy || active.current) return
     if (isHiyoriMeme(text)) {
       setGuidesOpen(false)
       setConversation({ ...current, input: '', messages: [...current.messages, message(text, 'user'), message(HIYORI_MEME)].slice(-12) })
@@ -201,11 +204,11 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
       if (!id || controller.signal.aborted || turn !== epoch.current) return
       const history = [...current.messages.slice(-5), message(text, 'user')]
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-      const res = await fetch('/api/hiyori/chat', {
+      const res = await fetch('/api/hiyori/agent/chat', {
         method: 'POST', credentials: 'same-origin', signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestId: crypto.randomUUID(), expectedDiscordId: id, timezone, consent: true,
-          messages: history.map(({ role, content }) => ({ role, content })) }),
+          messages: history.map(({ role, content }) => ({ role, content })), selectedEventId: current.agent.selectedEventId, toolDataConsent: current.agent.toolDataConsent }),
       })
       if (res.status === 401 || res.status === 412) {
         discard()
@@ -217,10 +220,10 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
         const detail = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' ? body.error : 'AI が応答できませんでした。手動フォームをご利用ください。'
         throw new Error(detail)
       }
-      const reply = hiyoriReplySchema.parse(body)
+      const reply = hiyoriAgentReplySchema.parse(body)
       if (reply.draft && reply.draft.timezone !== timezone) throw new Error('日時を安全に読み取れませんでした。手動フォームをご利用ください。')
       if (!await checkedOwner(controller.signal) || controller.signal.aborted || turn !== epoch.current) return
-      setConversation({ ...current, input: '', messages: [...history, message(reply.reply)].slice(-12), draft: reply.draft, error: '' })
+      setConversation({ ...current, input: '', messages: [...history, message(reply.reply)].slice(-12), draft: reply.draft ?? null, error: '', agent: { ...current.agent, action: reply.action, selectEvent: reply.selectEvent, results: reply.results ?? current.agent.results } })
     } catch (error) {
       if (!controller.signal.aborted && turn === epoch.current && ownerRef.current === owner) {
         setConversation((old) => ({ ...old, draft: null, error: error instanceof Error ? error.message : '応答を確認できませんでした。手動フォームをご利用ください。' }))
@@ -281,7 +284,7 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
             {current.messages.some((item) => item.role === 'assistant' && item.content === HIYORI_MEME) && <div className="hiyori-meme-action"><button type="button" className="hiyori-primary-button" onClick={hide}>ﾋﾖﾘﾁｬﾝを非表示にする</button><p>本体も起動ボタンも消えます。ページ下の「ﾋﾖﾘﾁｬﾝの設定」から戻せます。</p></div>}
           </div>
           {current.error && <p className="hiyori-error" role="alert">{current.error}</p>}
-          {busy && <p className="hiyori-thinking" role="status"><span aria-hidden="true">・ ・ ・</span>下書きを考えています。まだ保存はしていません…</p>}
+          {busy && <p className="hiyori-thinking" role="status"><span aria-hidden="true">・ ・ ・</span>考えています。まだ送信はしていません…</p>}
           {current.draft && <section className="hiyori-draft" aria-label="イベントの下書き">
             <div className="hiyori-draft-heading"><span aria-hidden="true"><Icon name="calendar" size={22} /></span><span className="hiyori-draft-badge">下書き・未保存</span></div>
             <h3>{current.draft.title}</h3>{current.draft.description && <p className="hiyori-draft-description">{current.draft.description}</p>}
@@ -290,6 +293,7 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
             {location.pathname === '/events/new' && <p>フォームの入力をこの下書きで置き換えます。</p>}
             <button type="button" className="hiyori-primary-button" disabled={busy} onClick={() => { void transfer() }}>{location.pathname === '/events/new' ? '入力を置き換えてフォームで確認' : 'フォームで確認する'}<span aria-hidden="true"><Icon name="arrow-right" size={17} /></span></button>
           </section>}
+          {owner && <HiyoriOperations key={`${owner}:${epoch.current}`} owner={owner} state={current.agent} onChange={(agent) => setConversation((old) => old.owner === ownerRef.current ? { ...old, ...(old.agent.selectedEventId && old.agent.selectedEventId !== agent.selectedEventId ? { messages: [], draft: null, input: '' } : {}), agent } : empty(ownerRef.current))} checkedOwner={checkedOwner} disabled={busy} onBusyChange={setOperationsBusy} />}
           <div className="hiyori-support-links"><Link to="/help" onClick={close}>詳しい使い方</Link><Link to="/events/new" onClick={close}>手動フォームを開く<span aria-hidden="true"><Icon name="arrow-right" size={13} /></span></Link>{!owner && <a href={loginUrl('/me')}>Discord でログイン</a>}</div>
           <details ref={settingsPanel} id="hiyori-settings" className="hiyori-settings" open={settingsOpen} onToggle={(event) => setSettingsOpen(event.currentTarget.open)}><summary>表示・会話の設定<span aria-hidden="true"><Icon name="chevron-down" size={16} /></span></summary>
             <p>自動表示は初期状態で無効です。</p>
@@ -304,11 +308,11 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
         </div>
         <form className="hiyori-input" onSubmit={(event) => { event.preventDefault(); void send() }}>
           <label htmlFor="hiyori-message" className="hiyori-sr-only">ﾋﾖﾘﾁｬﾝへのメッセージ</label>
-          <div className="hiyori-compose"><textarea ref={input} id="hiyori-message" value={current.input} maxLength={1000} rows={2} disabled={busy} placeholder="メッセージを入力" onChange={(event) => setConversation({ ...current, input: event.target.value })} onKeyDown={(event) => {
+          <div className="hiyori-compose"><textarea ref={input} id="hiyori-message" value={current.input} maxLength={1000} rows={2} disabled={busy || operationsBusy} placeholder="メッセージを入力" onChange={(event) => setConversation({ ...current, input: event.target.value })} onKeyDown={(event) => {
             if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void send() }
-          }} /><button type="submit" className="hiyori-send" aria-label="送信" disabled={busy || !current.input.trim()}><span aria-hidden="true"><Icon name="arrow-right" size={20} /></span></button></div>
+          }} /><button type="submit" className="hiyori-send" aria-label="送信" disabled={busy || operationsBusy || !current.input.trim()}><span aria-hidden="true"><Icon name="arrow-right" size={20} /></span></button></div>
           {available && <label className="hiyori-consent"><input type="checkbox" checked={current.consent} disabled={busy} onChange={(event) => setConversation({ ...current, consent: event.target.checked })} /><span>入力した会話の AI 送信を確認しました<small>送信先は Cloudflare Workers AI。秘密情報は入力しないでね。</small></span></label>}
-          <div className="hiyori-input-footnote"><p>会話はこのタブだけ。既存イベントは送信しません。<Link to="/privacy" onClick={close}>取り扱い</Link></p><span className="hiyori-shortcut">Ctrl / ⌘ + Enter</span></div>
+          <div className="hiyori-input-footnote"><p>会話・操作内容はこのタブだけ。選んだイベントは個別に送信確認します。<Link to="/privacy" onClick={close}>取り扱い</Link></p><span className="hiyori-shortcut">Ctrl / ⌘ + Enter</span></div>
           {busy && <button type="button" className="hiyori-stop" onClick={discard}>停止して会話を消去</button>}
         </form>
         </>}

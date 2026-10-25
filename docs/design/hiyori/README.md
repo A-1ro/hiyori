@@ -21,6 +21,8 @@
 
 [PC の下書きカード](desktop-draft.png)
 
+[PC の回答確認](desktop-answer-review-light.png) ／ [スマホの回答確認](mobile-answer-review-light.png) ／ [OS darkでのPC](desktop-answer-review-dark.png) ／ [OS darkでのスマホ](mobile-answer-review-dark.png)。対象選択・既存回答・訂正・未送信の確認カードを、ブラウザ内の合成API fixtureだけで操作した。実ユーザーへの回答は送信していない。
+
 [OS dark のスマホ](mobile-dark.png) ／ [直接の非表示×](desktop-launcher.png) ／ [ページ末尾の起動 UI](mobile-page-end.png) ／ [200%拡大](mobile-zoom.png)
 
 [PC の独立した復帰設定](desktop-hidden-settings.png) ／ [スマホの独立した復帰設定](mobile-hidden-settings.png)

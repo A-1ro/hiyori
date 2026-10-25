@@ -51,7 +51,7 @@ beforeEach(() => {
     if (url === '/api/auth/me') return Response.json({ user: currentOwner ? { discordUserId: currentOwner } : null })
     if (url === '/api/hiyori/status') return Response.json({ available })
     if (url === '/api/mcp/status') return Response.json({ enabled: false })
-    if (url === '/api/hiyori/chat') { chatRequests.push(JSON.parse(String(options?.body))); return reply() }
+    if (url === '/api/hiyori/agent/chat') { chatRequests.push(JSON.parse(String(options?.body))); return reply() }
     throw new Error(`Unexpected request ${url}`)
   }))
 })

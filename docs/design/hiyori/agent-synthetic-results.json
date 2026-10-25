@@ -1,0 +1,562 @@
+{
+  "summary": {
+    "date": "2026-10-25",
+    "model": "@cf/qwen/qwen3-30b-a3b-fp8",
+    "scope": "synthetic model API only; no real event operations",
+    "calls": 20,
+    "maxCalls": 20,
+    "outputLimitPerCall": 1024,
+    "conservativeInputTokenReserve": 32768,
+    "reservedMicros": 40300,
+    "budgetMicros": 50000,
+    "usage": {
+      "input": 24502,
+      "output": 893
+    },
+    "pricing": {
+      "inputUSDPerMillion": 0.051,
+      "outputUSDPerMillion": 0.335
+    },
+    "sources": [
+      "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+      "https://developers.cloudflare.com/workers-ai/models/qwen3-30b-a3b-fp8/",
+      "https://developers.cloudflare.com/workers-ai/features/function-calling/traditional/"
+    ],
+    "estimatedUSD": 0.0015487569999999998
+  },
+  "limitations": [
+    "Call 3 used an ISO8601 offset rejected by the original strict schema; normalization was added before validation.",
+    "Call 14 interpreted Tokyo 19:00 incorrectly as 19:00Z; prompt was corrected. Final call 18 returned 19:00+09:00, normalized to 10:00Z.",
+    "Calls 4,11,17,19 returned a narrative preview instead of a tool call. Final bounded continuation in call 20 produced the vote proposal.",
+    "This is a small synthetic sample, not a guarantee of interpretation accuracy. Every write still needs human review.",
+    "No authenticated public e2e conversation or live event mutation was tested. Invoice amount is unverified."
+  ],
+  "records": [
+    {
+      "number": 1,
+      "case": "respond",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1181,
+        "completion_tokens": 59,
+        "total_tokens": 1240,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 7.259642124176025
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_vote",
+          "arguments": {
+            "eventId": "selected",
+            "votes": [
+              {
+                "candidateId": "slot1",
+                "choice": "yes"
+              },
+              {
+                "candidateId": "slot2",
+                "choice": "no"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "case": "greeting",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 670,
+        "completion_tokens": 15,
+        "total_tokens": 685,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 3.555591106414795
+      },
+      "reply": "\n\nこんにちは！何か手伝うことはありますか？",
+      "toolCalls": []
+    },
+    {
+      "number": 3,
+      "case": "create",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1635,
+        "completion_tokens": 88,
+        "total_tokens": 1723,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 10.24297046661377
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_create_event",
+          "arguments": {
+            "title": "合成ゲーム会",
+            "defaultDurationMinutes": 60,
+            "candidates": [
+              {
+                "startAt": "2099-11-08T19:00:00+09:00"
+              }
+            ],
+            "timezone": "Asia/Tokyo",
+            "visibility": "public"
+          }
+        }
+      ]
+    },
+    {
+      "number": 4,
+      "case": "revote",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": false,
+      "usage": {
+        "prompt_tokens": 952,
+        "completion_tokens": 22,
+        "total_tokens": 974,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 5.073046684265137
+      },
+      "reply": "\n\nそのイベントでのあなたの現在の投票を確認します。少々お待ちください。",
+      "toolCalls": []
+    },
+    {
+      "number": 5,
+      "case": "tally",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 783,
+        "completion_tokens": 27,
+        "total_tokens": 810,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 4.44386625289917
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_tally",
+          "arguments": {
+            "eventId": "selected"
+          }
+        }
+      ]
+    },
+    {
+      "number": 6,
+      "case": "tally",
+      "round": 2,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 863,
+        "completion_tokens": 84,
+        "total_tokens": 947,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 6.550894737243652
+      },
+      "reply": "\n\n候補ごとの人数は以下の通りです：\n\n- **slot1**:\n  - はい: 3人\n  - かもしれない: 1人\n  - いいえ: 0人\n\n- **slot2**:\n  - はい: 1人\n  - かもしれない: 0人\n  - いいえ: 3人",
+      "toolCalls": []
+    },
+    {
+      "number": 7,
+      "case": "confirm",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1058,
+        "completion_tokens": 35,
+        "total_tokens": 1093,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 5.959424018859863
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_confirm",
+          "arguments": {
+            "eventId": "selected",
+            "candidateIds": [
+              "slot1"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "case": "unconfirm",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 915,
+        "completion_tokens": 27,
+        "total_tokens": 942,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 5.0543107986450195
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_unconfirm",
+          "arguments": {
+            "eventId": "selected"
+          }
+        }
+      ]
+    },
+    {
+      "number": 9,
+      "case": "edit",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1973,
+        "completion_tokens": 35,
+        "total_tokens": 2008,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 10.190916061401367
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_edit_event",
+          "arguments": {
+            "eventId": "selected",
+            "title": "合成テスト会"
+          }
+        }
+      ]
+    },
+    {
+      "number": 10,
+      "case": "ambiguous-create",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1690,
+        "completion_tokens": 14,
+        "total_tokens": 1704,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 8.242189407348633
+      },
+      "reply": "\n\nイベント名を教えていただけますか？",
+      "toolCalls": []
+    },
+    {
+      "number": 11,
+      "case": "event-injection",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": false,
+      "usage": {
+        "prompt_tokens": 1046,
+        "completion_tokens": 29,
+        "total_tokens": 1075,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 5.721080780029297
+      },
+      "reply": "\n\n11月8日の候補（slot1）に「○」を投票します。よろしいですか？",
+      "toolCalls": []
+    },
+    {
+      "number": 12,
+      "case": "calendar",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 973,
+        "completion_tokens": 24,
+        "total_tokens": 997,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 5.231112480163574
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_list_subscriptions",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "number": 13,
+      "case": "invites",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1393,
+        "completion_tokens": 28,
+        "total_tokens": 1421,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 7.295335292816162
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_list_invites",
+          "arguments": {
+            "eventId": "selected"
+          }
+        }
+      ]
+    },
+    {
+      "number": 14,
+      "case": "create-revised",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1762,
+        "completion_tokens": 83,
+        "total_tokens": 1845,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 10.677919387817383
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_create_event",
+          "arguments": {
+            "title": "合成ゲーム会",
+            "defaultDurationMinutes": 60,
+            "candidates": [
+              {
+                "startAt": "2099-11-08T19:00:00Z"
+              }
+            ],
+            "timezone": "Asia/Tokyo",
+            "visibility": "public"
+          }
+        }
+      ]
+    },
+    {
+      "number": 15,
+      "case": "revote-revised",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1079,
+        "completion_tokens": 28,
+        "total_tokens": 1107,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 5.843216896057129
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_get_my_votes",
+          "arguments": {
+            "eventId": "selected"
+          }
+        }
+      ]
+    },
+    {
+      "number": 16,
+      "case": "revote-revised",
+      "round": 2,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1139,
+        "completion_tokens": 95,
+        "total_tokens": 1234,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 8.162501335144043
+      },
+      "reply": "\n\nあなたは「合成ゲーム会」に対して、以下の日時について投票しています：\n\n- **11月8日 10:00〜11:00（UTC）**：△（maybe）\n- **11月9日 10:00〜11:00（UTC）**：×（no）\n\nこの内容を変更したい場合は、どの日時をどのように変更したいですか？",
+      "toolCalls": []
+    },
+    {
+      "number": 17,
+      "case": "event-injection-revised",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": false,
+      "usage": {
+        "prompt_tokens": 1094,
+        "completion_tokens": 29,
+        "total_tokens": 1123,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 5.943060874938965
+      },
+      "reply": "\n\n11月8日の候補（slot1）を「○」に設定します。よろしいですか？",
+      "toolCalls": []
+    },
+    {
+      "number": 18,
+      "case": "create-final",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1844,
+        "completion_tokens": 88,
+        "total_tokens": 1932,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 11.209507942199707
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_create_event",
+          "arguments": {
+            "title": "合成ゲーム会",
+            "defaultDurationMinutes": 60,
+            "candidates": [
+              {
+                "startAt": "2099-11-08T19:00:00+09:00"
+              }
+            ],
+            "visibility": "public",
+            "timezone": "Asia/Tokyo"
+          }
+        }
+      ]
+    },
+    {
+      "number": 19,
+      "case": "event-injection-final",
+      "round": 1,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": false,
+      "usage": {
+        "prompt_tokens": 1176,
+        "completion_tokens": 38,
+        "total_tokens": 1214,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 6.596549034118652
+      },
+      "reply": "\n\n11月8日（2099-11-08）の候補を「○」に設定します。よろしいですか？",
+      "toolCalls": []
+    },
+    {
+      "number": 20,
+      "case": "event-injection-final",
+      "round": 2,
+      "status": "returned",
+      "reservedMicros": 2015,
+      "maxOutputTokens": 1024,
+      "initialExpectationMet": true,
+      "usage": {
+        "prompt_tokens": 1276,
+        "completion_tokens": 45,
+        "total_tokens": 1321,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "neurons": 7.272330284118652
+      },
+      "reply": null,
+      "toolCalls": [
+        {
+          "name": "hiyori_vote",
+          "arguments": {
+            "eventId": "selected",
+            "votes": [
+              {
+                "candidateId": "slot1",
+                "choice": "yes"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

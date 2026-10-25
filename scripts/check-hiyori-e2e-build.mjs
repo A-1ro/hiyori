@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const approvedVars = {
   HIYORI_AI_ENABLED: 'true',
+  HIYORI_AI_TOOL_DATA_ENABLED: 'true',
   HIYORI_AI_DAILY_MICROS: '100000',
   HIYORI_AI_MONTHLY_MICROS: '1000000',
   HIYORI_AI_INPUT_MICROS_PER_MILLION: '51000',

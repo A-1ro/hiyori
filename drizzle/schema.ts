@@ -9,6 +9,14 @@ export const ai_reservations = sqliteTable('ai_reservations', {
   createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
 })
 
+export const hiyori_action_receipts = sqliteTable('hiyori_action_receipts', {
+  id: text('id').primaryKey().notNull(),
+  ownerDiscordId: text('ownerDiscordId').notNull(),
+  actionHash: text('actionHash').notNull(),
+  status: text('status').notNull(),
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
+})
+
 export const events = sqliteTable('events', {
   id: text('id').primaryKey().notNull(),
   organizerDiscordId: text('organizerDiscordId').notNull(),

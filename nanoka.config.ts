@@ -1,5 +1,6 @@
 import { defineConfig } from '@nanokajs/core/config'
 import { aiReservationFields, aiReservationTableName } from './src/models/aiReservation'
+import { hiyoriActionReceiptFields, hiyoriActionReceiptTableName } from './src/models/hiyoriActionReceipt'
 import { announcementFields, announcementTableName } from './src/models/announcement'
 import { auditLogFields, auditLogTableName } from './src/models/auditLog'
 import { calendarSubscriptionFields, calendarSubscriptionTableName } from './src/models/calendarSubscription'
@@ -17,6 +18,7 @@ import { voteFields, voteTableName } from './src/models/vote'
 export default defineConfig({
   models: [
     { name: aiReservationTableName, fields: aiReservationFields },
+    { name: hiyoriActionReceiptTableName, fields: hiyoriActionReceiptFields },
     { name: eventTableName, fields: eventFields },
     { name: eventInviteTableName, fields: eventInviteFields },
     { name: candidateTableName, fields: candidateFields },

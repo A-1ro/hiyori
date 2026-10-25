@@ -46,6 +46,7 @@ import { tryLegacyBearerMcp, isMcpEnabled, MCP_ROUTE } from './mcp/handler'
 import { fetchOAuthProvider } from './mcp/provider'
 import { isDiscordUsername, normalizeDiscordUsername } from '../shared/discord-invites'
 import { HIYORI_BODY_BYTES, hiyoriChatSchema } from '../shared/hiyori'
+import { webAgentRoutes } from './tools/web-agent'
 import { cleanupHiyoriReservations, hiyoriConfig, runHiyori, type HiyoriEnv } from './services/hiyori'
 
 export interface Env extends HiyoriEnv {
@@ -523,6 +524,7 @@ window.__vite_plugin_react_preamble_installed__ = true
   }
 
   const routes = app
+    .route('/api/hiyori/agent', webAgentRoutes((c) => requireSession(c, app, sessions, users)))
     .get('/api/health', (c) => c.json({ ok: true, ts: new Date().toISOString() }))
     .get('/api/hiyori/status', (c) => {
       c.header('Cache-Control', 'no-store')

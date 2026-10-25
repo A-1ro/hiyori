@@ -171,3 +171,19 @@
 @media (prefers-reduced-motion: reduce) {
   .hiyori-panel, .hiyori-launcher, .hiyori-panel * { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+.hiyori-operations { display: grid; gap: 14px; min-width: 0; font-size: 13px; }
+.hiyori-operations section, .hiyori-action-review { border-top: 1px solid var(--hy-border); padding-top: 14px; }
+.hiyori-operations h3, .hiyori-operations h4 { margin: 0 0 8px; font-size: 14px; }
+.hiyori-operations button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--hy-border); border-radius: 9px; color: inherit; background: var(--hy-surface); font: inherit; cursor: pointer; }
+.hiyori-operations button:focus-visible, .hiyori-operations input:focus-visible { outline: 2px solid var(--hy-primary); outline-offset: 2px; }
+.hiyori-operations button[aria-pressed="true"] { border-color: var(--hy-primary); background: var(--hy-soft); font-weight: 700; }
+.hiyori-operations button:disabled { opacity: .5; cursor: default; }
+.hiyori-operations input:not([type="checkbox"]) { box-sizing: border-box; max-width: 100%; width: 100%; min-height: 44px; padding: 8px; border: 1px solid var(--hy-border); border-radius: 7px; background: var(--hy-surface); color: inherit; font: inherit; }
+.hiyori-operations label { display: block; margin: 7px 0; overflow-wrap: anywhere; }
+.hiyori-operations input[type="checkbox"] { width: 20px; height: 20px; vertical-align: middle; margin-inline-end: 8px; }
+.hiyori-operations fieldset { min-width: 0; padding: 8px 0; border: 0; }
+.hiyori-operations ul { padding-inline-start: 18px; overflow-wrap: anywhere; }
+.hiyori-operation-toolbar, .hiyori-vote-row > fieldset { display: flex; flex-wrap: wrap; gap: 8px; }
+.hiyori-vote-row { padding: 10px 0; border-bottom: 1px solid var(--hy-border); }
+.hiyori-vote-row strong { display: block; margin-bottom: 8px; }
+.hiyori-operations dd { margin-inline-start: 0; overflow-wrap: anywhere; }

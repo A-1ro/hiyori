@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { hiyoriIntent, permitsCreation } from '../../shared/hiyori-intent'
 import { HIYORI_GUIDE, HIYORI_MAX_OUTPUT_TOKENS, HIYORI_MODEL, hiyoriReplySchema } from '../../shared/hiyori'
 import type { HiyoriChatInput, HiyoriReply } from '../../shared/hiyori'
 
@@ -6,6 +7,7 @@ export interface HiyoriEnv {
   DB: D1Database
   // Optional: configured only for the explicitly approved e2e environment.
   HIYORI_AI?: Pick<Ai, 'run'>
+  HIYORI_AI_TOOL_DATA_ENABLED?: string
   HIYORI_AI_ENABLED?: string
   HIYORI_AI_DAILY_MICROS?: string
   HIYORI_AI_MONTHLY_MICROS?: string
@@ -79,15 +81,11 @@ export type HiyoriResult = { status: number; error: string } | { status: 200; re
 
 // No tools/internalApi access here. The only external operation is the optional,
 // explicitly budgeted single model call. User identity never enters the prompt.
-export async function runHiyori(env: HiyoriEnv, body: HiyoriChatInput, owner: string, now = new Date()): Promise<HiyoriResult> {
+export type HiyoriModelInput = AiModels[typeof HIYORI_MODEL]['inputs']
+export async function callHiyoriModel(env: HiyoriEnv, payload: HiyoriModelInput, owner: string, requestId: string, now = new Date()): Promise<{ status: 200; raw: unknown } | { status: number; error: string }> {
   const config = hiyoriConfig(env)
-  if (!config || !env.HIYORI_AI) return { status: 503, error: 'AI は準備中です。手動フォームをご利用ください。' }
-  const today = hiyoriToday(now, body.timezone)
-  const messages = [{ role: 'system', content: systemPrompt(today, body.timezone) }, ...body.messages]
-  // Bound the request size including the schema; billing reservations use the
-  // full model context below, not a byte-to-token equivalence assumption.
-  const inputBound = new TextEncoder().encode(JSON.stringify({ messages, response_format: responseFormat })).byteLength + 2048
-  if (inputBound > 28000) return { status: 400, error: '会話が長すぎます。履歴を消去して短く入力してください。' }
+  if (!config || !env.HIYORI_AI) return { status: 503, error: 'AI は準備中です。' }
+  if (new TextEncoder().encode(JSON.stringify(payload)).byteLength + 2048 > 28000) return { status: 400, error: '対象や会話が大きすぎます。対象を絞ってください。' }
   const reserve = Math.ceil((INPUT_TOKEN_RESERVE * config.input + HIYORI_MAX_OUTPUT_TOKENS * config.output) / 1_000_000)
   const month = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
   const day = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
@@ -105,28 +103,34 @@ export async function runHiyori(env: HiyoriEnv, body: HiyoriChatInput, owner: st
         AND COALESCE((SELECT SUM(reservedMicros) FROM ai_reservations WHERE createdAt >= ?), 0) + ? <= ?
         AND (SELECT COUNT(*) FROM ai_reservations WHERE ownerDiscordId = ? AND createdAt >= ?) < 30
         AND (SELECT COUNT(*) FROM ai_reservations WHERE ownerDiscordId = ? AND createdAt >= ?) < 5
-    `).bind(body.requestId, owner, reserve, now.getTime(), body.requestId,
+    `).bind(requestId, owner, reserve, now.getTime(), requestId,
       day, reserve, config.daily, month, reserve, config.monthly, owner, day, owner, now.getTime() - 60000).run()
     if (result.meta.changes !== 1) return { status: 429, error: '利用上限に達したか、送信済みの要求です。手動フォームをご利用ください。' }
   } catch {
     return { status: 503, error: '利用上限を確認できません。手動フォームをご利用ください。' }
   }
 
+
   let timer: ReturnType<typeof setTimeout> | undefined
   const controller = new AbortController()
   try {
     const raw: unknown = await Promise.race([
-      env.HIYORI_AI.run(HIYORI_MODEL, {
-        messages, max_tokens: HIYORI_MAX_OUTPUT_TOKENS, stream: false,
-        response_format: responseFormat,
-      }, { signal: controller.signal }),
+      env.HIYORI_AI.run(HIYORI_MODEL, payload, { signal: controller.signal }),
       new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')) }, 20000) }),
     ])
-    const result = parseHiyoriOutput(raw, body.timezone, today)
-    if (!result) return { status: 502, error: 'AI の下書きを安全に読み取れませんでした。手動フォームをご利用ください。' }
-    return { status: 200, result }
+    return { status: 200, raw }
   } catch {
-    // Never log provider errors: they may contain the prompt. No automatic retry.
-    return { status: 502, error: 'AI が応答できませんでした。手動フォームをご利用ください。' }
+    return { status: 502, error: 'AI が応答できませんでした。自動再試行はしていません。' }
   } finally { clearTimeout(timer) }
+}
+
+export async function runHiyori(env: HiyoriEnv, body: HiyoriChatInput, owner: string, now = new Date()): Promise<HiyoriResult> {
+  const today = hiyoriToday(now, body.timezone)
+  const messages = [{ role: 'system', content: systemPrompt(today, body.timezone) }, ...body.messages]
+  const called = await callHiyoriModel(env, { messages, max_tokens: HIYORI_MAX_OUTPUT_TOKENS, stream: false, response_format: responseFormat }, owner, body.requestId, now)
+  if ('error' in called) return called
+  const result = parseHiyoriOutput(called.raw, body.timezone, today)
+  if (!result) return { status: 502, error: 'AI の下書きを安全に読み取れませんでした。' }
+  if (result.draft && !permitsCreation(hiyoriIntent(body.messages))) return { status: 200, result: { reply: '新規作成の依頼が確認できないため、作成の下書きは表示していません。回答や変更は対象のイベントを選んで進められます。', draft: null } }
+  return { status: 200, result }
 }
