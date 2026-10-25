@@ -5,7 +5,7 @@ import { useSession, loginUrl } from '../auth/useSession'
 import { HIYORI_GUIDE, HIYORI_MEME, hiyoriReplySchema, isHiyoriMeme, type HiyoriDraft } from '../../shared/hiyori'
 import type { ComposerInitial } from './events/EventComposer'
 import { Icon } from './primitives'
-import hiyoriCharacter from '../assets/images/hiyori-chan.webp'
+import hiyoriCharacter from '../assets/images/hiyori-bot.webp'
 import './Hiyori.css'
 
 type Message = { id: string; role: 'user' | 'assistant'; content: string }
@@ -251,7 +251,7 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
         </header>
         <div ref={scroller} className="hiyori-scroll">
           {!current.messages.length && !current.draft && !busy && <section className="hiyori-welcome" aria-label="ﾋﾖﾘﾁｬﾝのごあいさつ">
-            <div className="hiyori-welcome-art"><img src={hiyoriCharacter} alt="カレンダーを持って手を振るﾋﾖﾘﾁｬﾝ" width={384} height={384} decoding="async" /></div>
+            <div className="hiyori-welcome-art"><img src={hiyoriCharacter} alt="手を振る小さなカレンダー型 Bot、ﾋﾖﾘﾁｬﾝ" width={384} height={384} decoding="async" /></div>
             <div><span className="hiyori-eyebrow">HELLO, I'M HIYORI</span><h3>予定のこと、<br />いっしょに考えよ。</h3><p>使い方も、予定の下書きも。<br />小さな相談からどうぞ。</p></div>
           </section>}
           <details className="hiyori-guides" open={guidesOpen} onToggle={(event) => setGuidesOpen(event.currentTarget.open)}>

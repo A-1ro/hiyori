@@ -60,7 +60,7 @@ afterEach(() => { vi.unstubAllGlobals() })
 describe('ﾋﾖﾘﾁｬﾝの UI と本人の確認', () => {
   it('生成画像を使い、開いた直後は入力欄にフォーカスせず、閉じると起動ボタンへ戻す', async () => {
     setup(); await open()
-    expect(screen.getByRole('img', { name: 'カレンダーを持って手を振るﾋﾖﾘﾁｬﾝ' }).getAttribute('src')).toContain('hiyori-chan.webp')
+    expect(screen.getByRole('img', { name: '手を振る小さなカレンダー型 Bot、ﾋﾖﾘﾁｬﾝ' }).getAttribute('src')).toContain('hiyori-bot.webp')
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'ﾋﾖﾘﾁｬﾝ' }))
     expect(document.activeElement).not.toBe(screen.getByLabelText('ﾋﾖﾘﾁｬﾝへのメッセージ'))
     fireEvent.click(screen.getByRole('button', { name: 'チャットを閉じる' }))
