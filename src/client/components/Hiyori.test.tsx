@@ -58,6 +58,34 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('ﾋﾖﾘﾁｬﾝの UI と本人の確認', () => {
+  it('生成画像を使い、開いた直後は入力欄にフォーカスせず、閉じると起動ボタンへ戻す', async () => {
+    setup(); await open()
+    expect(screen.getByRole('img', { name: 'カレンダーを持って手を振るﾋﾖﾘﾁｬﾝ' }).getAttribute('src')).toContain('hiyori-chan.webp')
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'ﾋﾖﾘﾁｬﾝ' }))
+    expect(document.activeElement).not.toBe(screen.getByLabelText('ﾋﾖﾘﾁｬﾝへのメッセージ'))
+    fireEvent.click(screen.getByRole('button', { name: 'チャットを閉じる' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'ﾋﾖﾘﾁｬﾝと話す' }))
+  })
+  it('Ctrl+Enter は IME 変換中に送信せず、変換後は明示的に送信できる', async () => {
+    setup(); await open()
+    await screen.findByText('AI 会話を利用できます。内容を確認して送信してください。')
+    fireEvent.click(screen.getByRole('checkbox'))
+    await fill()
+    const input = screen.getByLabelText('ﾋﾖﾘﾁｬﾝへのメッセージ')
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true, isComposing: true })
+    expect(chatRequests).toHaveLength(0)
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true, isComposing: false })
+    await screen.findByRole('region', { name: 'イベントの下書き' })
+    expect(chatRequests).toHaveLength(1)
+    expect(createEvent).not.toHaveBeenCalled()
+  })
+  it('有効な返答に含まれた HTML も文字として表示する', async () => {
+    reply = async () => Response.json({ reply: '<img src=x onerror=alert(1)>', draft: null })
+    setup(); await sendForDraft()
+    await within(screen.getByRole('log')).findByText('<img src=x onerror=alert(1)>')
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+    expect(document.querySelector('img[onerror]')).toBeNull()
+  })
   it('勝手に開かず、未ログインでも案内とミームと閉じるを利用できる', async () => {
     currentOwner = null
     setup()
@@ -148,7 +176,8 @@ describe('ﾋﾖﾘﾁｬﾝの UI と本人の確認', () => {
     setup(); await sendForDraft()
     await screen.findByRole('alert')
     expect(screen.queryByRole('region', { name: 'イベントの下書き' })).toBeNull()
-    expect(document.querySelector('img')).toBeNull()
+    expect(document.querySelector('img[src="x"]')).toBeNull()
+    expect(document.querySelector('img[onerror]')).toBeNull()
     expect(createEvent).not.toHaveBeenCalled()
     reply = async () => Response.json({ error: '利用上限です。手動フォームをご利用ください。' }, { status: 429 })
     fireEvent.click(screen.getByRole('button', { name: '送信' }))

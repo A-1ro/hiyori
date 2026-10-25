@@ -1,0 +1,163 @@
+.hiyori-panel, .hiyori-launcher {
+  --hy-surface: #fff;
+  --hy-canvas: #faf9f6;
+  --hy-ink: #303044;
+  --hy-muted: #686879;
+  --hy-border: #e8e5ef;
+  --hy-primary: #625dc5;
+  --hy-primary-hover: #524db1;
+  --hy-soft: #efedfa;
+  --hy-warm: #f7f0e1;
+  --hy-warm-ink: #78602e;
+  --hy-user: #625dc5;
+  --hy-user-ink: #fff;
+  --hy-danger: #a63e4a;
+  color-scheme: light;
+}
+.hiyori-launcher {
+  position: fixed; right: 24px; bottom: max(22px, env(safe-area-inset-bottom)); z-index: 40;
+  display: flex; align-items: center; gap: 11px; min-height: 62px; padding: 5px 16px 5px 5px;
+  border: 1px solid var(--hy-border); border-radius: 36px; background: var(--hy-surface); color: var(--hy-ink);
+  box-shadow: 0 4px 24px rgb(45 35 78 / 12%); font: inherit; cursor: pointer;
+}
+.hiyori-launcher:hover { border-color: var(--hy-primary); box-shadow: 0 6px 28px rgb(45 35 78 / 18%); }
+.hiyori-avatar { position: relative; display: block; flex: none; width: 44px; height: 44px; overflow: hidden; border-radius: 50%; background: var(--hy-warm); }
+.hiyori-avatar img { position: absolute; width: 240%; height: 240%; max-width: none; left: -70%; top: -25%; object-fit: contain; }
+.hiyori-launcher .hiyori-avatar { width: 52px; height: 52px; }
+.hiyori-launcher-label { display: grid; text-align: left; gap: 2px; }
+.hiyori-launcher-label small { font-size: 10px; font-weight: 500; color: var(--hy-muted); }
+.hiyori-launcher-label strong { font-size: 19px; line-height: 1.2; letter-spacing: .01em; }
+.hiyori-launcher-arrow { margin-left: 4px; color: var(--hy-primary); }
+.hiyori-panel {
+  position: fixed; inset: auto 24px max(20px, env(safe-area-inset-bottom)) auto;
+  width: min(460px, calc(100vw - 40px)); height: min(810px, calc(100dvh - 40px)); max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 1px solid var(--hy-border); border-radius: 26px;
+  background: var(--hy-canvas); color: var(--hy-ink); box-shadow: 0 20px 80px rgb(35 27 61 / 22%);
+  font: 14px/1.7 var(--font-sans); overflow: hidden;
+}
+.hiyori-panel[open] { display: flex; flex-direction: column; }
+.hiyori-panel::backdrop { background: rgb(28 24 43 / 28%); backdrop-filter: blur(2px); }
+.hiyori-header { display: flex; align-items: center; gap: 12px; flex: none; padding: 17px 20px; border-bottom: 1px solid var(--hy-border); background: var(--hy-surface); }
+.hiyori-identity { flex: 1; min-width: 0; }
+.hiyori-eyebrow { display: block; color: var(--hy-primary); font-size: 9px; font-weight: 700; letter-spacing: .14em; line-height: 1.6; }
+.hiyori-identity h2 { margin: 2px 0 0; font-size: 22px; font-weight: 750; letter-spacing: .01em; line-height: 1.3; }
+.hiyori-identity h2:focus { outline: none; }
+.hiyori-header-controls { display: flex; gap: 2px; }
+.hiyori-panel button { box-sizing: border-box; min-height: 44px; font: inherit; cursor: pointer; }
+.hiyori-panel button:disabled { opacity: .48; cursor: default; }
+.hiyori-panel .hiyori-icon-button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--hy-muted); }
+.hiyori-panel .hiyori-icon-button:hover { color: var(--hy-primary); background: var(--hy-soft); }
+.hiyori-panel button:focus-visible, .hiyori-panel summary:focus-visible, .hiyori-panel a:focus-visible, .hiyori-launcher:focus-visible { outline: 3px solid var(--hy-primary); outline-offset: 3px; }
+.hiyori-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 22px 18px; scrollbar-width: thin; scrollbar-color: var(--hy-border) transparent; }
+.hiyori-panel p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.hiyori-welcome { display: grid; grid-template-columns: 134px 1fr; align-items: center; gap: 14px; padding: 22px 0 18px; }
+.hiyori-welcome-art { position: relative; width: 134px; height: 158px; }
+.hiyori-welcome-art::before { content: ''; position: absolute; inset: 19px 2px 8px 0; border-radius: 50% 50% 45% 45%; background: var(--hy-warm); }
+.hiyori-welcome-art img { position: relative; display: block; width: 158px; height: 158px; max-width: none; margin-left: -12px; object-fit: contain; }
+.hiyori-welcome h3 { margin: 8px 0 10px; font-size: clamp(21px, 5.6vw, 26px); line-height: 1.55; font-weight: 750; letter-spacing: -.035em; }
+.hiyori-welcome p { color: var(--hy-muted); font-size: 12px; line-height: 1.85; }
+.hiyori-guides { margin: 14px 0 18px; }
+.hiyori-panel summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; box-sizing: border-box; list-style: none; cursor: pointer; }
+.hiyori-panel summary::-webkit-details-marker { display: none; }
+.hiyori-panel details[open] > summary > span { transform: rotate(180deg); }
+.hiyori-guides summary { font-size: 12px; font-weight: 600; color: var(--hy-muted); }
+.hiyori-guide-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.hiyori-panel .hiyori-guide-card { display: flex; align-items: flex-start; gap: 9px; padding: 15px 11px; border: 1px solid var(--hy-border); border-radius: 14px; background: var(--hy-surface); color: var(--hy-ink); text-align: left; }
+.hiyori-guide-card:hover { border-color: var(--hy-primary); }
+.hiyori-guide-icon { flex: none; color: var(--hy-primary); margin-top: 2px; }
+.hiyori-guide-card strong { display: block; font-size: 13px; font-weight: 650; line-height: 1.5; }
+.hiyori-guide-card small { display: block; margin-top: 5px; font-size: 11px; line-height: 1.7; color: var(--hy-muted); }
+.hiyori-notice { margin: 16px 0 20px; padding: 12px 14px; border: 1px solid var(--hy-border); border-radius: 12px; background: var(--hy-warm); }
+.hiyori-mode { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 650; color: var(--hy-warm-ink); }
+.hiyori-mode::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.hiyori-notice p { margin-top: 5px; color: var(--hy-muted); font-size: 11px; line-height: 1.7; }
+.hiyori-notice-ready { background: var(--hy-soft); }
+.hiyori-notice-ready .hiyori-mode { color: var(--hy-primary); }
+.hiyori-messages { display: grid; gap: 20px; }
+.hiyori-message { display: flex; align-items: flex-end; gap: 9px; }
+.hiyori-message > div { min-width: 0; max-width: calc(100% - 39px); }
+.hiyori-message-avatar { width: 29px; height: 29px; margin-bottom: 3px; }
+.hiyori-message-name { display: block; margin: 0 0 5px 2px; font-size: 10px; color: var(--hy-muted); }
+.hiyori-message p { padding: 12px 14px; border-radius: 16px 16px 16px 4px; background: var(--hy-surface); border: 1px solid var(--hy-border); font-size: 13px; line-height: 1.9; }
+.hiyori-user { justify-content: flex-end; }
+.hiyori-user > div { max-width: 88%; }
+.hiyori-user .hiyori-message-name { text-align: right; margin-right: 3px; }
+.hiyori-user p { border: 0; border-radius: 16px 16px 4px 16px; background: var(--hy-user); color: var(--hy-user-ink); }
+.hiyori-error { padding: 12px; margin-top: 16px !important; color: var(--hy-danger); border: 1px solid currentColor; border-radius: 12px; font-size: 12px; }
+.hiyori-thinking { padding: 18px 0; font-size: 12px; color: var(--hy-muted); }
+.hiyori-thinking span { display: block; font-size: 24px; color: var(--hy-primary); line-height: 1; margin-bottom: 8px; }
+.hiyori-draft { margin-top: 22px; padding: 18px; border: 1px solid var(--hy-border); border-top: 3px solid var(--hy-primary); border-radius: 18px; background: var(--hy-surface); box-shadow: 0 5px 18px rgb(45 35 78 / 4%); }
+.hiyori-draft-heading { display: flex; align-items: center; gap: 8px; color: var(--hy-primary); }
+.hiyori-draft-heading .hiyori-eyebrow { font-size: 11px; letter-spacing: .06em; }
+.hiyori-draft-badge { margin-left: auto; padding: 3px 7px; border-radius: 6px; background: var(--hy-warm); color: var(--hy-warm-ink); font-size: 10px; }
+.hiyori-draft h3 { margin: 14px 0 8px; font-size: 21px; font-weight: 700; letter-spacing: -.025em; line-height: 1.5; overflow-wrap: anywhere; }
+.hiyori-draft-description { color: var(--hy-muted); font-size: 12px; }
+.hiyori-draft dl { margin: 16px 0; padding: 12px 0; border-block: 1px solid var(--hy-border); display: grid; gap: 12px; }
+.hiyori-draft dl > div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; align-items: start; }
+.hiyori-draft dt { color: var(--hy-muted); font-size: 11px; line-height: 1.9; }
+.hiyori-draft dd { margin: 0; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.hiyori-date-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.hiyori-date-chips span, .hiyori-draft-duration { padding: 2px 6px; background: var(--hy-soft); border-radius: 5px; font-size: 11px; }
+.hiyori-draft-duration { display: inline-block; margin-left: 6px; }
+.hiyori-draft-note { color: var(--hy-muted); font-size: 11px; line-height: 1.8; }
+.hiyori-panel .hiyori-primary-button { display: flex; justify-content: center; align-items: center; gap: 10px; width: 100%; margin-top: 14px; padding: 11px 12px; border: 0; border-radius: 10px; background: var(--hy-primary); color: #fff; font-size: 13px; font-weight: 650; }
+.hiyori-panel .hiyori-primary-button:hover { background: var(--hy-primary-hover); }
+.hiyori-support-links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 20px; padding: 7px 0; }
+.hiyori-support-links a { display: flex; align-items: center; gap: 5px; min-height: 38px; color: var(--hy-primary); font-size: 11px; text-decoration: none; }
+.hiyori-support-links a:hover { text-decoration: underline; }
+.hiyori-settings { margin-top: 8px; border-top: 1px solid var(--hy-border); }
+.hiyori-settings summary { font-size: 11px; color: var(--hy-muted); }
+.hiyori-settings p { margin: 8px 0 12px; color: var(--hy-muted); font-size: 11px; }
+.hiyori-settings-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.hiyori-settings-actions button, .hiyori-stop { border: 1px solid var(--hy-border); border-radius: 10px; background: var(--hy-surface); color: var(--hy-ink); padding: 8px; font-size: 11px !important; }
+.hiyori-input { flex: none; padding: 14px 18px max(14px, env(safe-area-inset-bottom)); border-top: 1px solid var(--hy-border); background: var(--hy-surface); max-height: 48%; overflow-y: auto; }
+.hiyori-compose { display: flex; gap: 8px; align-items: flex-end; padding: 7px; border: 1px solid var(--hy-border); border-radius: 16px; background: var(--hy-canvas); }
+.hiyori-compose:focus-within { border-color: var(--hy-primary); box-shadow: 0 0 0 3px var(--hy-soft); }
+.hiyori-compose textarea { flex: 1; min-width: 0; width: 100%; min-height: 50px; max-height: 120px; margin: 0; padding: 7px 5px; box-sizing: border-box; border: 0; outline: none; border-radius: 8px; background: transparent; color: var(--hy-ink); font: 16px/1.65 var(--font-sans); resize: vertical; }
+.hiyori-compose textarea::placeholder { color: var(--hy-muted); opacity: .85; }
+.hiyori-panel .hiyori-send { display: grid; place-items: center; flex: none; width: 44px; height: 44px; min-height: 44px; border: 0; border-radius: 12px; background: var(--hy-primary); color: #fff; }
+.hiyori-send svg { transform: rotate(-90deg); }
+.hiyori-consent { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: 11px; line-height: 1.7; color: var(--hy-ink); }
+.hiyori-consent input { width: 17px; height: 17px; margin: 2px 0 0; flex: none; accent-color: var(--hy-primary); }
+.hiyori-consent small { display: block; font-size: 10px; color: var(--hy-muted); }
+.hiyori-input-footnote { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin-top: 9px; }
+.hiyori-input-footnote p { color: var(--hy-muted); font-size: 10px; line-height: 1.6; }
+.hiyori-input-footnote a { color: var(--hy-primary); margin-left: 5px; }
+.hiyori-shortcut { flex: none; color: var(--hy-muted); font-size: 9px; }
+.hiyori-stop { margin-top: 8px; width: 100%; }
+.hiyori-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 600px) {
+  .hiyori-panel { inset: var(--hy-viewport-top, 0px) 0 auto 0; width: 100%; height: var(--hy-viewport-height, 100dvh); border: 0; border-radius: 0; }
+  .hiyori-header { padding: max(12px, env(safe-area-inset-top)) 16px 12px; gap: 10px; }
+  .hiyori-header .hiyori-avatar { width: 40px; height: 40px; }
+  .hiyori-identity h2 { font-size: 21px; }
+  .hiyori-header .hiyori-eyebrow { font-size: 8px; }
+  .hiyori-scroll { padding-inline: 18px; }
+  .hiyori-welcome { grid-template-columns: 120px 1fr; gap: 12px; padding-top: 18px; }
+  .hiyori-welcome-art { width: 120px; height: 148px; }
+  .hiyori-welcome-art img { width: 148px; height: 148px; margin-left: -14px; }
+  .hiyori-welcome p { font-size: 11px; }
+  .hiyori-guide-card { gap: 7px !important; padding: 12px 9px !important; }
+  .hiyori-guide-card strong { font-size: 13px; }
+  .hiyori-guide-card small { font-size: 11px; }
+  .hiyori-guide-icon svg { width: 17px; height: 17px; }
+  .hiyori-launcher { right: 14px; bottom: max(80px, calc(64px + env(safe-area-inset-bottom))); min-height: 56px; gap: 8px; padding-right: 13px; }
+  .hiyori-launcher .hiyori-avatar { width: 46px; height: 46px; }
+  .hiyori-launcher-label strong { font-size: 17px; }
+  .hiyori-shortcut { display: none; }
+  .hiyori-input { padding-inline: 14px; }
+  .hiyori-draft { padding: 15px; }
+  .hiyori-draft dl > div { grid-template-columns: 82px minmax(0, 1fr); }
+}
+@media (prefers-color-scheme: dark) {
+  .hiyori-panel, .hiyori-launcher {
+    --hy-surface: #242433; --hy-canvas: #1d1d29; --hy-ink: #f0edf7; --hy-muted: #b0acbf; --hy-border: #414052;
+    --hy-primary: #b8adfa; --hy-primary-hover: #c8beff; --hy-soft: #34304d; --hy-warm: #393342; --hy-warm-ink: #e5c991;
+    --hy-user: #514980; --hy-user-ink: #fff; --hy-danger: #ffadb7;
+    color-scheme: dark;
+  }
+  .hiyori-panel .hiyori-primary-button, .hiyori-panel .hiyori-send { color: #252039; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hiyori-panel, .hiyori-launcher, .hiyori-panel * { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}

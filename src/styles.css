@@ -1,41 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
-.hiyori-launcher { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 40; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 8px 16px 8px 8px; border: 1px solid var(--color-blurple-border); border-radius: 999px; color: var(--color-blurple-ink); background: var(--color-surface); box-shadow: var(--shadow-md); font: inherit; font-size: 13px; cursor: pointer; }
-.hiyori-face { display: grid; place-items: center; position: relative; width: 36px; height: 36px; border-radius: 50%; background: #fff3cf; color: #db8a12; font-size: 34px; }
-.hiyori-face span { position: absolute; color: #604716; font-size: 12px; }
-.hiyori-panel { position: fixed; inset: auto 16px max(16px, env(safe-area-inset-bottom)) auto; width: min(420px, calc(100vw - 32px)); max-width: none; height: min(720px, calc(100dvh - 32px)); max-height: none; margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-fg1); box-shadow: var(--shadow-lg); font: inherit; font-size: 14px; line-height: 1.6; overflow: hidden; }
-.hiyori-panel[open] { display: flex; flex-direction: column; }
-.hiyori-panel::backdrop { background: rgb(0 0 0 / 20%); }
-.hiyori-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--color-border); gap: 12px; }
-.hiyori-header p { margin: 2px 0 0; font-size: 12px; color: var(--color-fg2); }
-.hiyori-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 18px 18px; }
-.hiyori-panel button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-fg1); background: var(--color-surface); font: inherit; font-size: 13px; cursor: pointer; }
-.hiyori-panel button:disabled { opacity: .55; cursor: default; }
-.hiyori-panel button:focus-visible, .hiyori-panel summary:focus-visible { outline: 3px solid var(--color-blue); outline-offset: 2px; }
-.hiyori-panel p { overflow-wrap: anywhere; white-space: pre-wrap; }
-.hiyori-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.hiyori-actions a { padding: 8px 0; color: var(--color-blurple-ink); }
-.hiyori-notice { padding: 10px; border-radius: 10px; background: var(--color-blurple-soft); }
-.hiyori-user, .hiyori-assistant { padding: 12px; border-radius: 12px; background: var(--color-surface-sunken); }
-.hiyori-user { margin-left: 24px; background: var(--color-blurple-soft); }
-.hiyori-messages b { font-size: 12px; }
-.hiyori-draft { padding: 14px; margin-bottom: 14px; border: 1px solid var(--color-blurple-border); border-radius: 12px; }
-.hiyori-input { padding: 12px 18px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--color-border); background: var(--color-surface); overflow-y: auto; flex-shrink: 0; max-height: 48%; }
-.hiyori-input textarea { display: block; width: 100%; box-sizing: border-box; min-height: 52px; max-height: 100px; margin: 6px 0; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: 8px; font: inherit; font-size: 16px; resize: vertical; }
-.hiyori-consent { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; }
-.hiyori-consent input { flex-shrink: 0; width: 20px; height: 20px; }
-.hiyori-input p { font-size: 11px; margin: 6px 0; color: var(--color-fg2); }
-.hiyori-input button[type=submit] { background: var(--color-blurple); color: #fff; min-width: 80px; }
-.hiyori-panel summary { padding: 12px 0; min-height: 44px; box-sizing: border-box; cursor: pointer; }
-@media (max-width: 600px) {
-  .hiyori-panel { inset: 0; width: 100%; height: 100dvh; border-radius: 0; border: 0; }
-  .hiyori-launcher { bottom: max(80px, calc(64px + env(safe-area-inset-bottom))); right: 12px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hiyori-panel, .hiyori-launcher { scroll-behavior: auto; transition: none; animation: none; }
-}
-
 @theme {
   --color-gray-0: #ffffff;
   --color-gray-50: #fbfbfd;
