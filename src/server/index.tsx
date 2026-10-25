@@ -36,6 +36,7 @@ import { feedbackFields, feedbackTableName } from '../models/feedback'
 import { sessionTableName, sessionFields } from '../models/session'
 import { setSessionCookie, clearSessionCookie, getSessionToken, getBearerToken, setStateCookie, consumeStateCookie, generateSessionToken, hashToken, isSecureRequest, SESSION_TTL_SECONDS, CLI_SESSION_TTL_SECONDS } from './auth/cookies'
 import { loadSession, requireSession } from './auth/session'
+import { safeReturnTo } from './auth/return-to'
 import { claimPendingInvites } from './auth/claim-invites'
 import type { SessionUser } from './auth/session'
 import { buildAuthorizeUrl, exchangeCodeForToken, fetchDiscordMe } from './auth/discord'
@@ -555,9 +556,9 @@ window.__vite_plugin_react_preamble_installed__ = true
     .get('/api/auth/discord', async (c) => {
       if (!c.env.DISCORD_CLIENT_ID) return c.json({ error: 'Discord OAuth not configured' }, 503)
       const returnTo = c.req.query('returnTo') ?? '/'
-      const safeReturnTo = /^\/[^/]/.test(returnTo) || returnTo === '/' ? returnTo : '/'
+      const returnPath = safeReturnTo(returnTo, c.req.url)
       const rawState = crypto.randomUUID()
-      const stateBundle = btoa(JSON.stringify({ s: rawState, r: safeReturnTo })).replace(/=+$/, '')
+      const stateBundle = btoa(JSON.stringify({ s: rawState, r: returnPath })).replace(/=+$/, '')
       setStateCookie(c, rawState)
       const url = new URL(c.req.url)
       const redirectUri = c.env.DISCORD_OAUTH_REDIRECT_URI ?? `${url.origin}/api/auth/discord/callback`
@@ -580,7 +581,7 @@ window.__vite_plugin_react_preamble_installed__ = true
         return c.json({ error: 'Invalid state' }, 400)
       }
       if (parsed.s !== cookieState) return c.json({ error: 'State mismatch' }, 400)
-      const safeR = /^\/[^/]/.test(parsed.r) || parsed.r === '/' ? parsed.r : '/'
+      const safeR = safeReturnTo(parsed.r, c.req.url)
 
       const url = new URL(c.req.url)
       const redirectUri = c.env.DISCORD_OAUTH_REDIRECT_URI ?? `${url.origin}/api/auth/discord/callback`
