@@ -7,6 +7,9 @@ import { useHiyori } from './Hiyori'
 const linkStyle: React.CSSProperties = {
   color: 'var(--color-fg3)',
   textDecoration: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+  minHeight: 44,
 }
 
 // 共通フッター。ナビリンク＋控えめな開発支援リンクを 1 箇所に集約し、
@@ -41,7 +44,7 @@ export function Footer() {
         <DiscordMark size={14} color="var(--color-blurple)" />
         {DISCORD_BOT_INVITE_LABEL}
       </a>
-      <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 18 }}>
         <Link to="/help" style={linkStyle}>
           使い方
         </Link>
@@ -59,7 +62,7 @@ export function Footer() {
         <Link to="/privacy" style={linkStyle}>
           プライバシーポリシー
         </Link>
-        {hiyori && <button type="button" data-hiyori-settings-trigger onClick={(event) => { event.currentTarget.focus(); hiyori.openSettings() }} style={{ color: 'var(--color-blurple)', minHeight: 44, border: '1px solid var(--color-border)', borderRadius: 8, padding: '0 12px', background: 'var(--color-surface)', font: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>ﾋﾖﾘﾁｬﾝの設定</button>}
+        {hiyori && <button type="button" className="hiyori-settings-trigger" data-hiyori-settings-trigger onClick={(event) => { event.currentTarget.focus(); hiyori.openSettings() }} style={{ ...linkStyle, border: 0, padding: 0, background: 'none', font: 'inherit', cursor: 'pointer' }}>ﾋﾖﾘﾁｬﾝの設定</button>}
       </div>
       <a
         href="https://buymeacoffee.com/a1ro"

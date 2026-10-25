@@ -157,7 +157,12 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
     setSettings(next)
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)) } catch { /* Memory fallback when storage is unavailable. */ }
   }
-  function close() { setOpen(false) }
+  function close() {
+    // Close while the native dialog is still connected. Hiding the mascot may
+    // unmount it, so an effect after rendering would no longer have this ref.
+    panel.current?.close()
+    setOpen(false)
+  }
   function hide() { previousFocus.current ??= launcher.current; discard(); saveSettings({ hidden: true, autoDisplay: false }); close() }
   function localReply(content: string) {
     setGuidesOpen(false)
