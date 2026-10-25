@@ -77,12 +77,12 @@
 	//   env.e2e に書いた分だけが e2e 側で使われる）。
 	//
 	// 設計上の要点:
-	// - D1 は専用DB `hiyori-e2e` を使用（2026-07-26に本番共有から分離）。分離理由: e2eの操作が本番の利用統計
+	// - D1 は既存の専用DB `hiyori-invite-preview` を使用（2026-10-25に実環境のbindingと照合）。分離理由: e2eの操作が本番の利用統計
 	//   （アクティビティ集計）に混入していたため。破壊系 CLI（d1 execute / migrations apply / seed）は
-	//   必ず `--env e2e`（対象は binding `DB` もしくは DB 名 `hiyori-e2e`）で叩くこと。この場合の影響範囲は
+	//   必ず `--env e2e`（対象は binding `DB` もしくは DB 名 `hiyori-invite-preview`）で叩くこと。この場合の影響範囲は
 	//   hiyori-e2e のみで本番データには触れない。注意: 位置引数に本番 DB 名 `hiyori` を渡すと `--env e2e` を
 	//   付けても本番 D1 を直撃する（wrangler は DB 名/ binding 名で解決するため）。
-	// - KV（OAUTH_KV）は引き続き本番と同一 ID を共有（テストアカウント単位で閉じるため実害なし・新設不要）。
+	// - KV（OAUTH_KV）も既存のe2e専用namespaceを使用。本番のKVを共有しない。
 	// - DO（HiyoriMcpAgent）は Worker 内で完結するため、e2e 側にも binding + migrations を定義して独立稼働させる。
 	// - cron は空配列を明示（e2e Worker自体に定期ジョブは不要。掃除・TTL削除は本番デプロイ版のみが担当）。
 	"env": {
@@ -102,15 +102,15 @@
 			"d1_databases": [
 				{
 					"binding": "DB",
-					"database_name": "hiyori-e2e",
+					"database_name": "hiyori-invite-preview",
 					// e2e専用D1（本番から分離。利用統計への混入と誤操作時の被害範囲を防ぐ）
-					"database_id": "dfb132a9-0f57-4661-9830-f3295fc8c589",
+					"database_id": "38c8635b-78ce-4330-9e2a-c5c44d3036ba",
 					"migrations_dir": "drizzle/migrations"
 				}
 			],
 			"kv_namespaces": [
-				// 本番 OAUTH_KV と同一 ID（共有・新設しない）
-				{ "binding": "OAUTH_KV", "id": "07eeb7f525df48efa451db8983f09926" }
+				// 現行e2e専用 OAUTH_KV（新設・本番共有はしない）
+				{ "binding": "OAUTH_KV", "id": "39d9cbf7472747d7aa3148e2fedd9993" }
 			],
 			"durable_objects": {
 				"bindings": [

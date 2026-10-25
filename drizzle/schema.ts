@@ -2,6 +2,13 @@
 // To regenerate: `npx nanoka generate`
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
+export const ai_reservations = sqliteTable('ai_reservations', {
+  id: text('id').primaryKey().notNull(),
+  ownerDiscordId: text('ownerDiscordId').notNull(),
+  reservedMicros: integer('reservedMicros').notNull(),
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull(),
+})
+
 export const events = sqliteTable('events', {
   id: text('id').primaryKey().notNull(),
   organizerDiscordId: text('organizerDiscordId').notNull(),

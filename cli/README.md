@@ -51,6 +51,8 @@ configure the final API URL directly. URLs must not contain a username or passwo
 
 ## Commands
 
+The site's ﾋﾖﾘﾁｬﾝ mascot is a Web presentation and draft-entry aid. It adds no CLI business operation or inference call. Existing create/invite/confirm commands and their authentication contracts are unchanged; AI cannot execute them. See [mascot implementation notes](../docs/hiyori-mascot.md).
+
 | Command | Description |
 |---|---|
 | `hiyori login` / `logout` / `whoami` | Device-code auth against your instance |

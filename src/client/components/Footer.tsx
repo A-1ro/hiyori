@@ -2,6 +2,7 @@ import { Link, Outlet } from 'react-router'
 import { useMcpStatus } from '../auth/useMcpStatus'
 import { DiscordMark } from './primitives'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
+import { useHiyori } from './Hiyori'
 
 const linkStyle: React.CSSProperties = {
   color: 'var(--color-fg3)',
@@ -11,6 +12,7 @@ const linkStyle: React.CSSProperties = {
 // 共通フッター。ナビリンク＋控えめな開発支援リンクを 1 箇所に集約し、
 // ランディングとログイン後の全ページで同じ体裁を出す。配色はテーマトークンのみ。
 export function Footer() {
+  const hiyori = useHiyori()
   const { data: mcpStatus } = useMcpStatus()
   return (
     <footer
@@ -57,6 +59,7 @@ export function Footer() {
         <Link to="/privacy" style={linkStyle}>
           プライバシーポリシー
         </Link>
+        {hiyori && <button type="button" onClick={hiyori.openSettings} style={{ ...linkStyle, border: 0, padding: 0, background: 'none', font: 'inherit', cursor: 'pointer' }}>ﾋﾖﾘﾁｬﾝの設定</button>}
       </div>
       <a
         href="https://buymeacoffee.com/a1ro"

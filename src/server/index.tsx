@@ -6,6 +6,7 @@ import { eq, inArray, and, or, exists, isNull, ne, gt, desc, sql } from 'drizzle
 import { HTTPException } from 'hono/http-exception'
 import { getCookie, setCookie } from 'hono/cookie'
 import { cors } from 'hono/cors'
+import { bodyLimit } from 'hono/body-limit'
 import type { Context } from 'hono'
 import { Link, Script, ViteClient } from 'vite-ssr-components/hono'
 import { z } from 'zod'
@@ -43,8 +44,10 @@ import { cli_auth_requests } from '../../drizzle/schema'
 import { tryLegacyBearerMcp, isMcpEnabled, MCP_ROUTE } from './mcp/handler'
 import { fetchOAuthProvider } from './mcp/provider'
 import { isDiscordUsername, normalizeDiscordUsername } from '../shared/discord-invites'
+import { HIYORI_BODY_BYTES, hiyoriChatSchema } from '../shared/hiyori'
+import { cleanupHiyoriReservations, hiyoriConfig, runHiyori, type HiyoriEnv } from './services/hiyori'
 
-export interface Env {
+export interface Env extends HiyoriEnv {
   DB: D1Database
   ENVIRONMENT: string
   DISCORD_BOT_TOKEN?: string
@@ -520,6 +523,35 @@ window.__vite_plugin_react_preamble_installed__ = true
 
   const routes = app
     .get('/api/health', (c) => c.json({ ok: true, ts: new Date().toISOString() }))
+    .get('/api/hiyori/status', (c) => {
+      c.header('Cache-Control', 'no-store')
+      return c.json({ available: hiyoriConfig(c.env) !== null })
+    })
+    .post('/api/hiyori/chat',
+      bodyLimit({ maxSize: HIYORI_BODY_BYTES, onError: (c) => c.json({ error: '入力が長すぎます。' }, 413) }),
+      async (c) => {
+        c.header('Cache-Control', 'no-store')
+        if (c.req.header('origin') !== new URL(c.req.url).origin) return c.json({ error: 'Forbidden origin' }, 403)
+        if (!c.req.header('content-type')?.startsWith('application/json')) return c.json({ error: 'JSON required' }, 415)
+        const ip = c.req.header('CF-Connecting-IP')
+        if (ip && c.env.CLI_AUTH_RATELIMIT) {
+          const { success } = await c.env.CLI_AUTH_RATELIMIT.limit({ key: `hiyori-chat:ip:${ip}` })
+          if (!success) return c.json({ error: '短時間に送りすぎました。少し待ってからお試しください。' }, 429)
+        }
+        if (!getSessionToken(c)) return c.json({ error: 'ログインが必要です。' }, 401)
+        const session = await requireSession(c, app, sessions, users)
+        let json: unknown
+        try { json = await c.req.json() } catch { return c.json({ error: '入力を確認してください。' }, 400) }
+        const parsed = hiyoriChatSchema.safeParse(json)
+        if (!parsed.success) return c.json({ error: '入力を確認してください。' }, 400)
+        if (parsed.data.expectedDiscordId !== session.discordUserId) return c.json({ error: 'アカウントが変わりました。会話を消去してください。' }, 412)
+        const result = await runHiyori(c.env, parsed.data, session.discordUserId)
+        if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 429 | 502 | 503)
+        // Discard output if the original session was revoked during inference.
+        await requireSession(c, app, sessions, users)
+        return c.json(result.result)
+      },
+    )
     .get('/api/auth/discord', async (c) => {
       if (!c.env.DISCORD_CLIENT_ID) return c.json({ error: 'Discord OAuth not configured' }, 503)
       const returnTo = c.req.query('returnTo') ?? '/'
@@ -2264,6 +2296,7 @@ export default {
     ctx.waitUntil(cleanupExpiredCliAuthRequests(env.DB, new Date()))
     // F-12 (#24): 日次 cron のみ・EVENT_RETENTION_DAYS が正の整数のときだけ実行
     if (event.cron === EVENT_CLEANUP_CRON) {
+      ctx.waitUntil(cleanupHiyoriReservations(env.DB).catch(() => { console.warn('Hiyori AI reservation cleanup unavailable') }))
       const retentionDays = parseRetentionDays(env.EVENT_RETENTION_DAYS)
       if (retentionDays !== null) {
         ctx.waitUntil(cleanupExpiredEvents(env.DB, retentionDays, new Date()))

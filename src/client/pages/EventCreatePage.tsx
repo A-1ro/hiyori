@@ -6,11 +6,13 @@ import { loginUrl, useSession } from '../auth/useSession'
 import { Button } from '../components/primitives'
 import { AppHeader } from '../components/AppHeader'
 import { EventComposer, type ComposerPayload } from '../components/events/EventComposer'
+import { hiyoriComposerInitial, useHiyori } from '../components/Hiyori'
 
 // 認証確認の失敗は現在のセッション表示で案内し、復旧後のフォームに古いエラーを残さない。
 class SessionCheckError extends Error {}
 
 export function EventCreatePage() {
+  const hiyori = useHiyori()
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
@@ -26,6 +28,7 @@ export function EventCreatePage() {
   }, [sessionReady, userId, composerOwner])
   const accountChanged = !!userId && !!composerOwner && (userId !== composerOwner || accountConflict)
   const canCreate = sessionReady && !!userId && !accountChanged
+  const aiDraft = hiyori?.pending && hiyori.pending.owner === userId && userId === composerOwner ? hiyori.pending : null
   const needsLogin = sessionReady && !userId
 
   const [searchParams] = useSearchParams()
@@ -146,9 +149,11 @@ export function EventCreatePage() {
         )}
         {composerOwner && (
           // アンマウントせず、個人情報・招待情報をメモリ内だけに保持する。
-          <fieldset disabled={!canCreate || mutation.isPending} aria-label="日程調整の入力" style={{ margin: 0, padding: 0, border: 0, minWidth: 0 }}>
+          <fieldset key={aiDraft?.id ?? 'manual'} disabled={!canCreate || mutation.isPending} aria-label="日程調整の入力" style={{ margin: 0, padding: 0, border: 0, minWidth: 0 }}>
+            {aiDraft && <p role="status">ﾋﾖﾘﾁｬﾝの下書きです。日時・所要時間・公開範囲を確認し、必要なら招待先を入力してください。「この内容でつくる」を押すまで保存されません。</p>}
             <EventComposer
               mode="create"
+              initial={aiDraft ? hiyoriComposerInitial(aiDraft.draft) : undefined}
               discordChannelToken={channelToken}
               submitLabel="この内容でつくる"
               submittingLabel="作成中..."

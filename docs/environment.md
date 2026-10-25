@@ -28,3 +28,7 @@
 `DB`（D1）、`OAUTH_KV`（KV）、`MCP_OBJECT`（Durable Object）、rate limit は文字列の環境変数ではなく Wrangler のバインディング。[開発・セルフホスト手順](development.md) を参照。
 
 [README に戻る](../README.md)
+
+## サイト内マスコット（既定では推論停止）
+
+`HIYORI_AI` は未追加の Workers AI バインディングです。今回の作業では接続や設定を作成しません。`HIYORI_AI_ENABLED=true`、`HIYORI_AI_DAILY_MICROS`、`HIYORI_AI_MONTHLY_MICROS`、`HIYORI_AI_INPUT_MICROS_PER_MILLION`、`HIYORI_AI_OUTPUT_MICROS_PER_MILLION` が全部揃わなければ推論しません。予算と料金は整数の USD マイクロドル単位（1 USD = 1,000,000）です。料金は百万トークン当たりの値を指定します。既定予算はありません。実際の契約とモデル料金を確認して承認された値だけ設定してください。[設定例と制限](hiyori-mascot.md)

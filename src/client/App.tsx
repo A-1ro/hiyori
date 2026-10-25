@@ -13,6 +13,7 @@ import { HelpPage } from './pages/HelpPage'
 import { McpGuidePage } from './pages/McpGuidePage'
 import { CliGuidePage } from './pages/CliGuidePage'
 import { FooterLayout } from './components/Footer'
+import { HiyoriLayout } from './components/Hiyori'
 
 function HomeRoute() {
   const { data, isLoading } = useSession()
@@ -26,6 +27,7 @@ function HomeRoute() {
 // データルーター。投票ページの未送信ガード（useBlocker）はデータルーター配下でのみ動くため、
 // <BrowserRouter>+<Routes> ではなく createBrowserRouter を使う。ルート定義自体は従来のフラット構成のまま。
 const router = createBrowserRouter([
+  { element: <HiyoriLayout />, children: [
   // ランディング（未ログイン）は自前でフッターを描画するため layout の外に置く。
   { path: '/', element: <HomeRoute /> },
   // ログイン後・その他の全ページは共通フッター付き layout でまとめる。
@@ -45,6 +47,7 @@ const router = createBrowserRouter([
       { path: '/events/:id/tally', element: <EventTallyPage /> },
     ],
   },
+  ] },
 ])
 
 export function App() {

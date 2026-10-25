@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '../components/AppHeader'
 
-const LAST_UPDATED = '2026年6月6日'
+const LAST_UPDATED = '2026年10月25日'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -171,6 +171,16 @@ export function PrivacyPage() {
               <>ユーザーが本サービス上でイベントや回答を削除した場合、当該情報は本サービスのデータベースから削除されます。</>,
             ]}
           />
+        </Section>
+
+        <Section title="ﾋﾖﾘﾁｬﾝ（任意の AI 会話機能）">
+          <OrderedList items={[
+            <>使い方の定型案内と表示設定は AI を呼び出さずに利用できます。AI 会話は接続・予算の設定が完了し、ログインした本人が送信内容の取り扱いを確認した場合だけ利用できます。</>,
+            <>AI 利用時は、このチャットに入力した会話と必要な日時・タイムゾーン情報を Cloudflare Workers AI に送信します。既存イベント、投票、招待一覧、認証トークンを自動取得して送ることはありません。秘密情報や送信したくない情報は入力しないでください。</>,
+            <>会話・下書きはこのタブのメモリ内にだけ保持し、履歴消去、再読み込み、ログアウト、アカウント切替で破棄します。チャットを閉じるだけでは消去しません。サーバーのアプリログやデータベースに会話本文を保存しません。</>,
+            <>費用上限と濫用対策のため、要求 ID、本人の Discord ID、最大想定費用、送信時刻を記録します。今月と前月の記録を保持し、それ以前の記録は日次処理で削除します。日次処理に失敗した場合は削除が遅れることがあります。</>,
+            <>表示・自動表示の設定だけをブラウザの localStorage に保存します。Cloudflare 側のデータ処理条件は <a href="https://developers.cloudflare.com/workers-ai/platform/data-usage/" target="_blank" rel="noopener noreferrer">Workers AI のデータ利用に関する説明</a> を参照してください。AI がイベントの作成・招待・確定を直接実行することはありません。</>,
+          ]} />
         </Section>
 
         <Section title="8. ユーザーの権利">
