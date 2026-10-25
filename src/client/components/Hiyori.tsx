@@ -3,7 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSession, loginUrl } from '../auth/useSession'
 import { HIYORI_GUIDE, HIYORI_MEME, isHiyoriMeme, type HiyoriDraft } from '../../shared/hiyori'
-import { hiyoriAgentReplySchema } from '../../shared/hiyori-agent'
+import { HIYORI_ACTION_LABELS, hiyoriAgentReplySchema } from '../../shared/hiyori-agent'
 import { HiyoriOperations, emptyAgent, type AgentState } from './HiyoriOperations'
 import type { ComposerInitial } from './events/EventComposer'
 import { Icon } from './primitives'
@@ -293,7 +293,7 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
             {location.pathname === '/events/new' && <p>フォームの入力をこの下書きで置き換えます。</p>}
             <button type="button" className="hiyori-primary-button" disabled={busy} onClick={() => { void transfer() }}>{location.pathname === '/events/new' ? '入力を置き換えてフォームで確認' : 'フォームで確認する'}<span aria-hidden="true"><Icon name="arrow-right" size={17} /></span></button>
           </section>}
-          {owner && <HiyoriOperations key={`${owner}:${epoch.current}`} owner={owner} state={current.agent} onChange={(agent) => setConversation((old) => old.owner === ownerRef.current ? { ...old, ...(old.agent.selectedEventId && old.agent.selectedEventId !== agent.selectedEventId ? { messages: [], draft: null, input: '' } : {}), agent } : empty(ownerRef.current))} checkedOwner={checkedOwner} disabled={busy} onBusyChange={setOperationsBusy} />}
+          {owner && <HiyoriOperations key={`${owner}:${epoch.current}`} owner={owner} state={current.agent} onChange={(agent) => setConversation((old) => old.owner === ownerRef.current ? { ...old, ...((old.agent.selectedEventId && old.agent.selectedEventId !== agent.selectedEventId || agent.results.some((r) => r.name in HIYORI_ACTION_LABELS && !old.agent.results.includes(r))) ? { messages: [], draft: null, input: '' } : {}), agent } : empty(ownerRef.current))} checkedOwner={checkedOwner} disabled={busy} onBusyChange={setOperationsBusy} />}
           <div className="hiyori-support-links"><Link to="/help" onClick={close}>詳しい使い方</Link><Link to="/events/new" onClick={close}>手動フォームを開く<span aria-hidden="true"><Icon name="arrow-right" size={13} /></span></Link>{!owner && <a href={loginUrl('/me')}>Discord でログイン</a>}</div>
           <details ref={settingsPanel} id="hiyori-settings" className="hiyori-settings" open={settingsOpen} onToggle={(event) => setSettingsOpen(event.currentTarget.open)}><summary>表示・会話の設定<span aria-hidden="true"><Icon name="chevron-down" size={16} /></span></summary>
             <p>自動表示は初期状態で無効です。</p>

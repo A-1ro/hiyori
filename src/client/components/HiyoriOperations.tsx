@@ -106,10 +106,19 @@ export function HiyoriOperations({ owner, state, onChange, checkedOwner, disable
     void work(async (signal) => {
       onChange({ ...stateRef.current, action: undefined })
       const result = z.object({ name: z.string(), data: z.unknown() }).parse(await request('confirm', { token: action.token, confirmed: true }, signal))
-      const refreshed = stateRef.current.selectedEventId && !['hiyori_delete_event', 'hiyori_remove_candidate'].includes(action.name)
-        ? [await read('hiyori_get_event', { eventId: stateRef.current.selectedEventId }, signal), await read('hiyori_get_my_votes', { eventId: stateRef.current.selectedEventId }, signal)] : []
-      onChange({ ...stateRef.current, action: undefined, results: [...refreshed, result], ...(['hiyori_delete_event'].includes(action.name) ? { selectedEventId: undefined } : {}) })
+      const created = result.name === 'hiyori_create_event' ? z.object({ event: z.object({ id: z.string() }) }).safeParse(result.data) : null
+      const eventId = result.name === 'hiyori_delete_event' ? undefined : created?.success ? created.data.event.id : stateRef.current.selectedEventId
+      const completed = { ...stateRef.current, action: undefined, selectedEventId: eventId, toolDataConsent: stateRef.current.selectedEventId === eventId && stateRef.current.toolDataConsent, results: [result] }
+      onChange(completed)
       setNotice('送信が完了しました。')
+      if (eventId) {
+        try {
+          const refreshed = [await read('hiyori_get_event', { eventId }, signal), await read('hiyori_get_my_votes', { eventId }, signal)]
+          onChange({ ...completed, results: [...refreshed, result] })
+        } catch {
+          if (!signal.aborted) setError('送信は完了しましたが、最新情報を取得できませんでした。再送せず、イベントを選び直して現在の状態を確認してください。')
+        }
+      }
     })
   }
   return <section className="hiyori-operations" aria-label="イベントの操作">

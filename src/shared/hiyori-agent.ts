@@ -44,6 +44,7 @@ export const HIYORI_ACTION_LABELS: Record<string, string> = {
 // Existing form represents dates × times. Offer that handoff only when it is
 // lossless; irregular slots and invitations stay in the complete review card.
 export function draftFromCreation(args: Record<string, unknown>, timezone: string) {
+  if (typeof args.timezone === 'string' && args.timezone !== timezone) return null
   if (Array.isArray(args.invitedDiscordUsernames) && args.invitedDiscordUsernames.length) return null
   const slots = z.array(z.object({ startAt: z.string().datetime(), endAt: z.string().datetime().optional() })).safeParse(args.candidates)
   if (!slots.success || args.deadline) return null

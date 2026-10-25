@@ -5,6 +5,7 @@ import { loginAs, loginAsBearer, loginAsExpired } from './test-helpers'
 import { hiyoriToolCatalog, READ_TOOLS, WRITE_TOOLS } from '../tools/catalog'
 import { parseAgentModel } from '../services/hiyori-agent'
 import realTrial from '../../../docs/design/hiyori/agent-synthetic-results.json'
+import { draftFromCreation } from '../../shared/hiyori-agent'
 const OWNER = '12345678901234567', OTHER = '99999999999999999'
 const run = vi.fn()
 const db = (env as Env).DB
@@ -140,6 +141,7 @@ describe('共有ツールと本人確認付きエージェント（外部推論�
       action: { name: 'hiyori_create_event', arguments: { candidates: [{ startAt: '2099-11-08T10:00:00.000Z' }] } },
       draft: { dates: ['2099-11-08'], times: ['19:00'], timezone: 'Asia/Tokyo' },
     })
+    expect(draftFromCreation({ title: '別タイムゾーン', timezone: 'Europe/London', defaultDurationMinutes: 60, visibility: 'public', candidates: [{ startAt: '2099-11-08T10:00:00Z' }] }, 'Asia/Tokyo')).toBeNull()
   })
   it('実出力の自然文確認を制限内でツール確認カードへ進める', async () => {
     const f = await fixture()

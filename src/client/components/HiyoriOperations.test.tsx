@@ -84,4 +84,25 @@ describe('会話内の回答・変更と本人の確認', () => {
     await act(async () => resolve(Response.json({ name: 'hiyori_list_events', data: { organized: [event], participating: [] } })))
     expect(screen.queryByText(event.title)).toBeNull()
   })
+  it('送信成功後の再取得失敗を送信失敗と取り違えず、再送しない', async () => {
+    vi.mocked(fetch).mockImplementation(async (url) => {
+      if (String(url).endsWith('/confirm')) { requests.push({ path: String(url), body: {} }); return confirmReply() }
+      throw new Error('refresh unavailable')
+    })
+    render(<Wrapper initial={{ ...emptyAgent(), selectedEventId: event.id, action: { name: 'hiyori_vote', label: '回答を送信', token: 'fixture', arguments: { votes: [] }, expiresAt: Date.now() + 300000 } }} />)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'この内容で実行することを確認しました' }))
+    fireEvent.click(screen.getByRole('button', { name: '回答を送信' }))
+    await screen.findByText('送信が完了しました。')
+    expect((await screen.findByRole('alert')).textContent).toContain('送信は完了しましたが')
+    expect(requests.filter((r) => r.path.endsWith('/confirm'))).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: '回答を送信' })).toBeNull()
+  })
+  it('作成後は作成したイベントを選択し、後続操作の対象を明確にする', async () => {
+    confirmReply = async () => Response.json({ name: 'hiyori_create_event', data: { event } })
+    render(<Wrapper initial={{ ...emptyAgent(), action: { name: 'hiyori_create_event', label: 'イベントを作成', token: 'fixture', arguments: { title: event.title }, expiresAt: Date.now() + 300000 } }} />)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'この内容で実行することを確認しました' }))
+    fireEvent.click(screen.getByRole('button', { name: 'イベントを作成' }))
+    const selected = await screen.findByRole('region', { name: '選択中のイベント' })
+    expect(within(selected).getByRole('heading', { name: event.title })).toBeTruthy()
+  })
 })
