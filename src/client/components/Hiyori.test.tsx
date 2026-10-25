@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { HiyoriLayout, useHiyori } from './Hiyori'
+import { HiyoriLayout } from './Hiyori'
 import { Footer } from './Footer'
 import { EventCreatePage } from '../pages/EventCreatePage'
 import { createEvent } from '../api/client'
@@ -15,15 +15,15 @@ let currentOwner: string | null
 let available: boolean
 let reply: () => Promise<Response>
 let chatRequests: unknown[]
-function Home() { const hiyori = useHiyori(); return <><p>ホーム</p><button type="button" onClick={hiyori?.openSettings}>ﾋﾖﾘﾁｬﾝの設定</button></> }
+function Home() { return <><p>ホーム</p><Footer /></> }
 function setup() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } })
   const router = createMemoryRouter([{ element: <HiyoriLayout />, children: [
     { path: '/', element: <Home /> }, { path: '/events/new', element: <EventCreatePage /> },
     { path: '/events/:id', element: <div>作成しました</div> },
   ] }], { initialEntries: ['/'] })
-  render(<QueryClientProvider client={qc}><RouterProvider router={router} /></QueryClientProvider>)
-  return { qc, router }
+  const view = render(<QueryClientProvider client={qc}><RouterProvider router={router} /></QueryClientProvider>)
+  return { qc, router, unmount: view.unmount }
 }
 async function open() {
   fireEvent.click(screen.getByRole('button', { name: 'ﾋﾖﾘﾁｬﾝと話す' }))
@@ -96,22 +96,35 @@ describe('ﾋﾖﾘﾁｬﾝの UI と本人の確認', () => {
     await fill('お前を消す方法')
     fireEvent.click(screen.getByRole('button', { name: '送信' }))
     expect(screen.getByText(/消される前に/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: '自動表示しない' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: '自動表示しない' }))
-    fireEvent.click(screen.getByRole('button', { name: 'チャットを閉じる' }))
+    fireEvent.click(within(screen.getByRole('log')).getByRole('button', { name: 'ﾋﾖﾘﾁｬﾝを非表示にする' }))
+    expect(document.querySelector('.hiyori-dock, .hiyori-avatar, .hiyori-welcome')).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(chatRequests).toHaveLength(0)
   })
   it('非表示を永続化し、フッターから再表示できる（会話は保存しない）', async () => {
-    setup(); await open()
+    const first = setup(); await open()
     fireEvent.click(screen.getByText('表示・会話の設定'))
     fireEvent.click(screen.getByRole('button', { name: 'マスコットを非表示' }))
     expect(screen.queryByRole('button', { name: 'ﾋﾖﾘﾁｬﾝと話す' })).toBeNull()
     expect(JSON.parse(localStorage.getItem('hiyori:mascot:settings')!)).toEqual({ hidden: true, autoDisplay: false })
+    expect(document.querySelector('.hiyori-dock, .hiyori-avatar, .hiyori-welcome, .hiyori-messages')).toBeNull()
+    first.unmount()
+    setup()
+    expect(document.querySelector('.hiyori-dock, .hiyori-avatar, dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'ﾋﾖﾘﾁｬﾝの設定' }))
+    expect(screen.getByRole('heading', { name: 'ﾋﾖﾘﾁｬﾝの表示設定' })).toBeTruthy()
+    expect(document.querySelector('.hiyori-avatar, .hiyori-welcome, .hiyori-dock')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'マスコットを再表示' }))
     expect(screen.getByRole('button', { name: 'ﾋﾖﾘﾁｬﾝと話す' })).toBeTruthy()
     expect(localStorage.length).toBe(1)
+  })
+  it('チャットを開かずに44pxの独立した非表示ボタンを使える', () => {
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: 'ﾋﾖﾘﾁｬﾝを非表示' }))
+    expect(document.querySelector('.hiyori-dock, .hiyori-avatar, dialog')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'ﾋﾖﾘﾁｬﾝの設定' }))
+    expect(chatRequests).toHaveLength(0)
+    expect(JSON.parse(localStorage.getItem('hiyori:mascot:settings')!).hidden).toBe(true)
   })
   it('設定保存不可でも案内が使え、未接続や同意なしでは送信しない', async () => {
     available = false

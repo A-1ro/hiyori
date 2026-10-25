@@ -14,10 +14,10 @@ type Conversation = { owner: string | null; messages: Message[]; draft: HiyoriDr
 type Settings = { hidden: boolean; autoDisplay: false }
 const SETTINGS_KEY = 'hiyori:mascot:settings'
 const GUIDE_CARDS = [
-  { key: 'create', icon: 'calendar', label: 'つくり方', caption: '候補日から、はじめよう' },
-  { key: 'vote', icon: 'users', label: '回答のしかた', caption: '○・△・× で気持ちを伝える' },
-  { key: 'confirm', icon: 'check-circle', label: '確定とカレンダー', caption: '決まったあとのことも' },
-  { key: 'draft', icon: 'message-square', label: '下書きの頼み方', caption: 'つくりたい予定を言葉に' },
+  { key: 'create', icon: 'calendar', label: 'つくり方' },
+  { key: 'vote', icon: 'users', label: '回答のしかた' },
+  { key: 'confirm', icon: 'check-circle', label: '確定とカレンダー' },
+  { key: 'draft', icon: 'message-square', label: '下書きの頼み方' },
 ] as const
 
 function HiyoriAvatar({ className = '' }: { className?: string }) {
@@ -68,6 +68,7 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
   const input = useRef<HTMLTextAreaElement>(null)
   const panel = useRef<HTMLDialogElement>(null)
   const title = useRef<HTMLHeadingElement>(null)
+  const restoreTitle = useRef<HTMLHeadingElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const settingsPanel = useRef<HTMLDetailsElement>(null)
   const launcher = useRef<HTMLButtonElement>(null)
@@ -117,6 +118,8 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
     const update = () => {
       panel.current?.style.setProperty('--hy-viewport-height', `${viewport.height}px`)
       panel.current?.style.setProperty('--hy-viewport-top', `${viewport.offsetTop}px`)
+      panel.current?.style.setProperty('--hy-viewport-width', `${viewport.width}px`)
+      panel.current?.style.setProperty('--hy-viewport-left', `${viewport.offsetLeft}px`)
     }
     update()
     viewport.addEventListener('resize', update)
@@ -128,12 +131,13 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
       previousFocus.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : launcher.current
       panel.current?.showModal()
       // Focus the dialog title without opening a phone's software keyboard.
-      title.current?.focus()
+      ;(settings.hidden ? restoreTitle.current : title.current)?.focus()
     } else {
       panel.current?.close()
-      previousFocus.current?.focus()
+      if (previousFocus.current?.isConnected) previousFocus.current.focus()
+      else if (previousFocus.current) document.querySelector<HTMLButtonElement>('[data-hiyori-settings-trigger]')?.focus()
     }
-  }, [open])
+  }, [open, settings.hidden])
   useEffect(() => {
     if (open && scroller.current && (current.messages.length || current.draft || busy)) scroller.current.scrollTop = scroller.current.scrollHeight
   }, [open, current.messages.length, current.draft, busy])
@@ -154,6 +158,7 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)) } catch { /* Memory fallback when storage is unavailable. */ }
   }
   function close() { setOpen(false) }
+  function hide() { previousFocus.current ??= launcher.current; discard(); saveSettings({ hidden: true, autoDisplay: false }); close() }
   function localReply(content: string) {
     setGuidesOpen(false)
     setConversation((old) => ({ ...old, owner, messages: [...(old.owner === owner ? old.messages : []), message(content)].slice(-12), error: '' }))
@@ -170,7 +175,6 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
     const text = current.input.trim()
     if (!text || busy || active.current) return
     if (isHiyoriMeme(text)) {
-      setSettingsOpen(true)
       setGuidesOpen(false)
       setConversation({ ...current, input: '', messages: [...current.messages, message(text, 'user'), message(HIYORI_MEME)].slice(-12) })
       return
@@ -237,13 +241,20 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
   return (
     <HiyoriContext.Provider value={{ pending: pending?.owner === owner ? pending : null, openSettings: () => { setSettingsOpen(true); setOpen(true) } }}>
       {children}
-      {!settings.hidden && <button ref={launcher} type="button" className="hiyori-launcher" onClick={() => { setSettingsOpen(false); setOpen(true) }} aria-label="ﾋﾖﾘﾁｬﾝと話す" aria-haspopup="dialog">
-        <HiyoriAvatar /><span className="hiyori-launcher-label"><small>日程調整のおとも</small><strong>ﾋﾖﾘﾁｬﾝ</strong></span><span className="hiyori-launcher-arrow" aria-hidden="true"><Icon name="message-square" size={18} /></span>
-      </button>}
-      <dialog ref={panel} className="hiyori-panel" aria-labelledby="hiyori-title" onCancel={(event) => { event.preventDefault(); close() }} onClose={close}>
+      {!settings.hidden && <div className="hiyori-dock">
+        <button ref={launcher} type="button" className="hiyori-launcher" onClick={() => { setSettingsOpen(false); setOpen(true) }} aria-label="ﾋﾖﾘﾁｬﾝと話す" aria-haspopup="dialog">
+        <HiyoriAvatar /><span className="hiyori-launcher-label"><strong>ﾋﾖﾘﾁｬﾝ</strong></span>
+        </button>
+        <button type="button" className="hiyori-dismiss" onClick={hide} aria-label="ﾋﾖﾘﾁｬﾝを非表示" title="ﾋﾖﾘﾁｬﾝを非表示"><span aria-hidden="true"><Icon name="x" size={20} /></span></button>
+      </div>}
+      {(!settings.hidden || open) && <dialog ref={panel} className="hiyori-panel" aria-labelledby="hiyori-title" onCancel={(event) => { event.preventDefault(); close() }} onClose={() => { if (!panel.current?.open) close() }}>
+        {settings.hidden ? <>
+          <header className="hiyori-header"><h2 ref={restoreTitle} tabIndex={-1} id="hiyori-title">ﾋﾖﾘﾁｬﾝの表示設定</h2><button type="button" className="hiyori-icon-button" onClick={close} aria-label="設定を閉じる"><span aria-hidden="true"><Icon name="x" size={20} /></span></button></header>
+          <div className="hiyori-scroll hiyori-restore"><p>ﾋﾖﾘﾁｬﾝ本体と起動ボタンを非表示にしています。</p><button type="button" className="hiyori-primary-button" onClick={() => { saveSettings({ hidden: false, autoDisplay: false }); setSettingsOpen(false) }}>マスコットを再表示</button><p>自動では話しかけません。</p></div>
+        </> : <>
         <header className="hiyori-header">
           <HiyoriAvatar />
-          <div className="hiyori-identity"><span className="hiyori-eyebrow">YOUR LITTLE HELPER</span><h2 ref={title} tabIndex={-1} id="hiyori-title">ﾋﾖﾘﾁｬﾝ</h2></div>
+          <div className="hiyori-identity"><h2 ref={title} tabIndex={-1} id="hiyori-title">ﾋﾖﾘﾁｬﾝ</h2></div>
           <div className="hiyori-header-controls">
             <button type="button" className="hiyori-icon-button" onClick={() => setSettingsOpen(!settingsOpen)} aria-label="ﾋﾖﾘﾁｬﾝの設定を開く" aria-expanded={settingsOpen} aria-controls="hiyori-settings"><span aria-hidden="true"><Icon name="chevron-down" size={19} /></span></button>
             <button type="button" className="hiyori-icon-button" onClick={close} aria-label="チャットを閉じる"><span aria-hidden="true"><Icon name="x" size={20} /></span></button>
@@ -252,25 +263,25 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
         <div ref={scroller} className="hiyori-scroll">
           {!current.messages.length && !current.draft && !busy && <section className="hiyori-welcome" aria-label="ﾋﾖﾘﾁｬﾝのごあいさつ">
             <div className="hiyori-welcome-art"><img src={hiyoriCharacter} alt="手を振る小さなカレンダー型 Bot、ﾋﾖﾘﾁｬﾝ" width={384} height={384} decoding="async" /></div>
-            <div><span className="hiyori-eyebrow">HELLO, I'M HIYORI</span><h3>予定のこと、<br />いっしょに考えよ。</h3><p>使い方も、予定の下書きも。<br />小さな相談からどうぞ。</p></div>
           </section>}
           <details className="hiyori-guides" open={guidesOpen} onToggle={(event) => setGuidesOpen(event.currentTarget.open)}>
-            <summary>こんなこと、手伝えるよ<span aria-hidden="true"><Icon name="chevron-down" size={16} /></span></summary>
+            <summary>使い方<span aria-hidden="true"><Icon name="chevron-down" size={16} /></span></summary>
             <div className="hiyori-guide-grid">
-              {GUIDE_CARDS.map((item) => <button key={item.key} type="button" className="hiyori-guide-card" aria-label={item.label} disabled={busy} onClick={() => localReply(HIYORI_GUIDE[item.key])}><span className="hiyori-guide-icon" aria-hidden="true"><Icon name={item.icon} size={20} /></span><span><strong>{item.label}</strong><small>{item.caption}</small></span></button>)}
+              {GUIDE_CARDS.map((item) => <button key={item.key} type="button" className="hiyori-guide-card" aria-label={item.label} disabled={busy} onClick={() => localReply(HIYORI_GUIDE[item.key])}><span className="hiyori-guide-icon" aria-hidden="true"><Icon name={item.icon} size={20} /></span><strong>{item.label}</strong></button>)}
             </div>
           </details>
-          <div role="status" className={`hiyori-notice ${available ? 'hiyori-notice-ready' : ''}`}><span className="hiyori-mode">{available ? 'AI と相談できます' : 'ただいま案内モード'}</span><p>{available ? 'AI 会話を利用できます。内容を確認して送信してください。' : 'AI は準備中です。使い方の案内と手動フォームをご利用ください。'}</p></div>
+          <div role="status" className={`hiyori-notice ${available ? 'hiyori-notice-ready' : ''}`}><p>{available ? 'AI 会話を利用できます。内容を確認して送信してください。' : 'AI は準備中です。使い方の案内と手動フォームをご利用ください。'}</p></div>
           <div className="hiyori-messages" role="log" aria-label="ﾋﾖﾘﾁｬﾝとの会話" aria-live="polite">
             {current.messages.map((item) => <div key={item.id} className={`hiyori-message ${item.role === 'user' ? 'hiyori-user' : 'hiyori-assistant'}`}>{item.role === 'assistant' && <HiyoriAvatar className="hiyori-message-avatar" />}<div><span className="hiyori-message-name">{item.role === 'user' ? 'あなた' : 'ﾋﾖﾘﾁｬﾝ'}</span><p>{item.content}</p></div></div>)}
+            {current.messages.some((item) => item.role === 'assistant' && item.content === HIYORI_MEME) && <div className="hiyori-meme-action"><button type="button" className="hiyori-primary-button" onClick={hide}>ﾋﾖﾘﾁｬﾝを非表示にする</button><p>本体も起動ボタンも消えます。ページ下の「ﾋﾖﾘﾁｬﾝの設定」から戻せます。</p></div>}
           </div>
           {current.error && <p className="hiyori-error" role="alert">{current.error}</p>}
           {busy && <p className="hiyori-thinking" role="status"><span aria-hidden="true">・ ・ ・</span>下書きを考えています。まだ保存はしていません…</p>}
           {current.draft && <section className="hiyori-draft" aria-label="イベントの下書き">
-            <div className="hiyori-draft-heading"><span aria-hidden="true"><Icon name="calendar" size={22} /></span><span className="hiyori-eyebrow">予定の提案</span><span className="hiyori-draft-badge">下書き・未保存</span></div>
+            <div className="hiyori-draft-heading"><span aria-hidden="true"><Icon name="calendar" size={22} /></span><span className="hiyori-draft-badge">下書き・未保存</span></div>
             <h3>{current.draft.title}</h3>{current.draft.description && <p className="hiyori-draft-description">{current.draft.description}</p>}
             <dl><div><dt>候補日</dt><dd className="hiyori-date-chips">{current.draft.dates.map((date) => <span key={date}>{date.replaceAll('-', '/')}</span>)}</dd></div><div><dt>開始・所要時間</dt><dd>各日 {current.draft.times.join('、')}<span className="hiyori-draft-duration">{current.draft.defaultDurationMinutes}分</span></dd></div><div><dt>タイムゾーン</dt><dd>{current.draft.timezone}</dd></div><div><dt>公開範囲</dt><dd>{current.draft.visibility === 'public' ? '公開（リンクを知る人が閲覧可能）' : '招待限定'}</dd></div></dl>
-            <p className="hiyori-draft-note">候補は日付と時刻の全組合せです。まだ保存されていません。招待先は次のフォームで入力してね。</p>
+            <p className="hiyori-draft-note">候補は日付と時刻の全組合せです。招待先は次のフォームで入力してください。</p>
             {location.pathname === '/events/new' && <p>フォームの入力をこの下書きで置き換えます。</p>}
             <button type="button" className="hiyori-primary-button" disabled={busy} onClick={() => { void transfer() }}>{location.pathname === '/events/new' ? '入力を置き換えてフォームで確認' : 'フォームで確認する'}<span aria-hidden="true"><Icon name="arrow-right" size={17} /></span></button>
           </section>}
@@ -279,7 +290,7 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
             <p>自動表示は初期状態で無効です。</p>
             <div className="hiyori-settings-actions">
               <button type="button" onClick={() => { saveSettings({ ...settings, autoDisplay: false }); localReply('自動表示しない設定にしたよ。呼ばれたときだけ開くね。') }}>自動表示しない</button>
-              <button type="button" onClick={() => { discard(); saveSettings({ hidden: true, autoDisplay: false }); close() }}>マスコットを非表示</button>
+              <button type="button" onClick={hide}>マスコットを非表示</button>
               <button type="button" onClick={() => { saveSettings({ hidden: false, autoDisplay: false }); localReply('マスコットを再表示したよ。') }}>マスコットを再表示</button>
               <button type="button" onClick={discard}>会話と下書きを消去</button>
             </div>
@@ -288,14 +299,15 @@ export function HiyoriProvider({ children }: { children: ReactNode }) {
         </div>
         <form className="hiyori-input" onSubmit={(event) => { event.preventDefault(); void send() }}>
           <label htmlFor="hiyori-message" className="hiyori-sr-only">ﾋﾖﾘﾁｬﾝへのメッセージ</label>
-          <div className="hiyori-compose"><textarea ref={input} id="hiyori-message" value={current.input} maxLength={1000} rows={2} disabled={busy} placeholder="どんな予定をつくろう？" onChange={(event) => setConversation({ ...current, input: event.target.value })} onKeyDown={(event) => {
+          <div className="hiyori-compose"><textarea ref={input} id="hiyori-message" value={current.input} maxLength={1000} rows={2} disabled={busy} placeholder="メッセージを入力" onChange={(event) => setConversation({ ...current, input: event.target.value })} onKeyDown={(event) => {
             if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void send() }
           }} /><button type="submit" className="hiyori-send" aria-label="送信" disabled={busy || !current.input.trim()}><span aria-hidden="true"><Icon name="arrow-right" size={20} /></span></button></div>
           {available && <label className="hiyori-consent"><input type="checkbox" checked={current.consent} disabled={busy} onChange={(event) => setConversation({ ...current, consent: event.target.checked })} /><span>入力した会話の AI 送信を確認しました<small>送信先は Cloudflare Workers AI。秘密情報は入力しないでね。</small></span></label>}
           <div className="hiyori-input-footnote"><p>会話はこのタブだけ。既存イベントは送信しません。<Link to="/privacy" onClick={close}>取り扱い</Link></p><span className="hiyori-shortcut">Ctrl / ⌘ + Enter</span></div>
           {busy && <button type="button" className="hiyori-stop" onClick={discard}>停止して会話を消去</button>}
         </form>
-      </dialog>
+        </>}
+      </dialog>}
     </HiyoriContext.Provider>
   )
 }

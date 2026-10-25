@@ -88,6 +88,7 @@
 	"env": {
 		"e2e": {
 			"name": "hiyori-e2e",
+			"ai": { "binding": "HIYORI_AI" },
 			// 検証 URL: https://e2e.hiyori-schedule.com（custom domain。workers.dev URL は無効化）
 			"workers_dev": false,
 			"routes": [
@@ -97,7 +98,12 @@
 				// 本番同等の "production" を維持すること。"e2e" 等に変えると src/server/index.tsx が
 				// React Refresh preamble（/@react-refresh — デプロイ環境には存在しない）を注入し、空白画面になる。
 				"ENVIRONMENT": "production",
-				"MCP_ENABLED": "true"
+				"MCP_ENABLED": "true",
+				"HIYORI_AI_ENABLED": "true",
+				"HIYORI_AI_DAILY_MICROS": "100000",
+				"HIYORI_AI_MONTHLY_MICROS": "1000000",
+				"HIYORI_AI_INPUT_MICROS_PER_MILLION": "51000",
+				"HIYORI_AI_OUTPUT_MICROS_PER_MILLION": "335000"
 			},
 			"d1_databases": [
 				{

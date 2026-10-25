@@ -59,7 +59,7 @@ export function Footer() {
         <Link to="/privacy" style={linkStyle}>
           プライバシーポリシー
         </Link>
-        {hiyori && <button type="button" onClick={(event) => { event.currentTarget.focus(); hiyori.openSettings() }} style={{ ...linkStyle, border: 0, padding: 0, background: 'none', font: 'inherit', cursor: 'pointer' }}>ﾋﾖﾘﾁｬﾝの設定</button>}
+        {hiyori && <button type="button" data-hiyori-settings-trigger onClick={(event) => { event.currentTarget.focus(); hiyori.openSettings() }} style={{ color: 'var(--color-blurple)', minHeight: 44, border: '1px solid var(--color-border)', borderRadius: 8, padding: '0 12px', background: 'var(--color-surface)', font: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>ﾋﾖﾘﾁｬﾝの設定</button>}
       </div>
       <a
         href="https://buymeacoffee.com/a1ro"

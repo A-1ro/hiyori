@@ -4,7 +4,7 @@ import type { HiyoriChatInput, HiyoriReply } from '../../shared/hiyori'
 
 export interface HiyoriEnv {
   DB: D1Database
-  // Optional future bindings/settings. None are provisioned by this change.
+  // Optional: configured only for the explicitly approved e2e environment.
   HIYORI_AI?: Pick<Ai, 'run'>
   HIYORI_AI_ENABLED?: string
   HIYORI_AI_DAILY_MICROS?: string
@@ -39,6 +39,10 @@ const providerResponse = z.union([
   z.object({ response: z.union([z.string(), hiyoriReplySchema]) }),
   z.object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) }),
 ])
+const responseFormat = { type: 'json_schema' as const, json_schema: z.toJSONSchema(hiyoriReplySchema) }
+// Model context bound verified against the official model page (2026-10-25).
+// Reserve a full context rather than treating UTF-8 bytes as billed tokens.
+const INPUT_TOKEN_RESERVE = 32768
 
 export function parseHiyoriOutput(raw: unknown, timezone: string, today: string): HiyoriReply | null {
   const envelope = providerResponse.safeParse(raw)
@@ -80,14 +84,17 @@ export async function runHiyori(env: HiyoriEnv, body: HiyoriChatInput, owner: st
   if (!config || !env.HIYORI_AI) return { status: 503, error: 'AI は準備中です。手動フォームをご利用ください。' }
   const today = hiyoriToday(now, body.timezone)
   const messages = [{ role: 'system', content: systemPrompt(today, body.timezone) }, ...body.messages]
-  // Conservative byte-based upper bound (including chat-template margin), not
-  // an assertion of actual billing. Verified current prices must be configured.
-  const inputBound = new TextEncoder().encode(JSON.stringify(messages)).byteLength + 2048
+  // Bound the request size including the schema; billing reservations use the
+  // full model context below, not a byte-to-token equivalence assumption.
+  const inputBound = new TextEncoder().encode(JSON.stringify({ messages, response_format: responseFormat })).byteLength + 2048
   if (inputBound > 28000) return { status: 400, error: '会話が長すぎます。履歴を消去して短く入力してください。' }
-  const reserve = Math.ceil((inputBound * config.input + HIYORI_MAX_OUTPUT_TOKENS * config.output) / 1_000_000)
+  const reserve = Math.ceil((INPUT_TOKEN_RESERVE * config.input + HIYORI_MAX_OUTPUT_TOKENS * config.output) / 1_000_000)
   const month = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
   const day = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
   try {
+    // e2e has no cron. Also prune expired metadata on use while preserving all
+    // current-month reservations, including failures and requests in progress.
+    await cleanupHiyoriReservations(env.DB, now)
     // One SQLite statement serializes budget checks and insertion. The request
     // UUID also prevents replay. Timeouts and invalid outputs remain reserved.
     const result = await env.DB.prepare(`
@@ -111,7 +118,7 @@ export async function runHiyori(env: HiyoriEnv, body: HiyoriChatInput, owner: st
     const raw: unknown = await Promise.race([
       env.HIYORI_AI.run(HIYORI_MODEL, {
         messages, max_tokens: HIYORI_MAX_OUTPUT_TOKENS, stream: false,
-        response_format: { type: 'json_object' },
+        response_format: responseFormat,
       }, { signal: controller.signal }),
       new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')) }, 20000) }),
     ])

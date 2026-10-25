@@ -85,6 +85,18 @@ describe('ﾋﾖﾘﾁｬﾝの安全な推論境界（全推論はモック）'
     expect(remaining.filter((res) => res.status === 200)).toHaveLength(4)
     expect(run).toHaveBeenCalledTimes(5)
   })
+  it('Qwen の choices envelope を Web API まで通し、JSON Mode と出力上限を渡す（接続モック）', async () => {
+    run.mockResolvedValueOnce({
+      choices: [{ message: { role: 'assistant', content: JSON.stringify(reply) }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180 },
+    })
+    const res = await request(input())
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(reply)
+    expect(run).toHaveBeenCalledOnce()
+    expect(run.mock.calls[0]![1]).toMatchObject({ response_format: { type: 'json_schema', json_schema: { required: ['reply', 'draft'], additionalProperties: false } }, max_tokens: 1024, stream: false })
+    expect(run.mock.calls[0]![2].signal).toBeInstanceOf(AbortSignal)
+  })
   it('別ユーザーによる並行要求も全体予算を超えて開始しない', async () => {
     const settings = configured()
     settings.HIYORI_AI_DAILY_MICROS = '1'
@@ -102,6 +114,16 @@ describe('ﾋﾖﾘﾁｬﾝの安全な推論境界（全推論はモック）'
     run.mockClear()
     const results = await Promise.all(Array.from({ length: 6 }, (_, i) => runHiyori(settings, input(), `account-${i}`, now)))
     expect(results.filter((r) => r.status === 200)).toHaveLength(1)
+    expect(run).toHaveBeenCalledOnce()
+  })
+  it('承認単価で文脈全体と最大出力分を先に予約し、残額不足では呼び出さない', async () => {
+    const settings = { ...configured(), HIYORI_AI_INPUT_MICROS_PER_MILLION: '51000', HIYORI_AI_OUTPUT_MICROS_PER_MILLION: '335000', HIYORI_AI_DAILY_MICROS: '2014' }
+    expect((await request(input(), { settings })).status).toBe(429)
+    expect(run).not.toHaveBeenCalled()
+    settings.HIYORI_AI_DAILY_MICROS = '2015'
+    expect((await request(input(), { settings })).status).toBe(200)
+    expect((await db.prepare('SELECT reservedMicros FROM ai_reservations').first<{ reservedMicros: number }>())!.reservedMicros).toBe(2015)
+    expect((await request(input(), { settings })).status).toBe(429)
     expect(run).toHaveBeenCalledOnce()
   })
   it('不正出力・未対応JSON形式・プロバイダー失敗でも再試行せず予約を残す', async () => {

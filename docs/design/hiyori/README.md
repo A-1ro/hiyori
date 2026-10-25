@@ -15,14 +15,18 @@
 |---|---|
 | ![PC の案内画面](desktop-light.png) | ![スマホの案内画面](mobile-light.png) |
 
-| PC・ダーク | スマホ・下書き |
+| OS dark・サイト light | スマホ・下書き |
 |---|---|
-| ![PC のダーク画面](desktop-dark.png) | ![スマホの下書きカード](mobile-draft.png) |
+| ![OS dark でもサイトと同じライト画面](desktop-dark.png) | ![スマホの下書きカード](mobile-draft.png) |
 
 [PC の下書きカード](desktop-draft.png)
 
-[スマホのダーク画面](mobile-dark.png) ／ [小さな起動ボタン](desktop-launcher.png)
+[OS dark のスマホ](mobile-dark.png) ／ [直接の非表示×](desktop-launcher.png) ／ [ページ末尾の起動 UI](mobile-page-end.png) ／ [200%拡大](mobile-zoom.png)
 
-マスコットのテーマは OS の light/dark に対応し、既存サイトのグローバルテーマは変更しない。開いた直後は見出しへフォーカスし、スマホのキーボードを勝手に開かない。閉じると起動元へ戻り、Escape とネイティブ dialog のフォーカス制御を使う。Ctrl/⌘+Enter 送信は IME 変換中には動かさない。モバイルは VisualViewport の変化に追従する。
+[PC の独立した復帰設定](desktop-hidden-settings.png) ／ [スマホの独立した復帰設定](mobile-hidden-settings.png)
 
-静的案内・ミーム・表示設定、本人確認、下書き確認、ログアウト・アカウント切替時の破棄は維持。認証修正 PR #125 のコードは変更しない。TLS/HSTS/Access/DNS、AI binding、実推論も変更・実行しない。画面改善は危険サイト判定の解消を意味しない。
+サイトのテーマトークンを共有し、OS dark のときもサイトが light ならウィジェットだけ暗くならない。スマホの起動 UI は通常のページフローでフッターより後に置き、カードを覆わず Safari の下部バーの高さを推測しない。各非表示×は44px。本体・起動 UI は非表示後に DOM から外し、再読み込み後も設定を維持する。復帰は共通フッターから開く独立した表示設定で、非表示中はキャラクターやチャットを出さない。ミームの主操作は本体の非表示で、チャットの×は一時的な閉鎖。静的な宣伝文・英語見出し・重複した説明は削除した。
+
+開いた直後は見出しへフォーカスし、スマホのキーボードを勝手に開かない。閉じると起動元へ戻り、Escape とネイティブ dialog のフォーカス制御を使う。Ctrl/⌘+Enter は IME 変換中に送信しない。パネルは VisualViewport の幅・高さ・オフセットに追従する。ローカル Chromium の320/390/393px、低い画面と200%拡大で検証した。添付 iOS Safari 画像は非公開で目視したが、実機 Safari の最終動作を確認したとは扱わない。
+
+本人確認、下書き確認、ログアウト・アカウント切替時の破棄は維持。認証修正 PR #125 のコードは変更しない。e2e の AI 接続・予算と合成実測は別途承認範囲で進める。TLS/HSTS/Access/DNS は変更せず、UI やモデル試験の成功を危険サイト判定の解消とは扱わない。

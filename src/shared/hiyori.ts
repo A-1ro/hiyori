@@ -52,5 +52,5 @@ export const HIYORI_GUIDE = {
   draft: 'イベント名・具体的な日付・開始時刻・所要時間・公開範囲を教えてね。下書きをフォームで確認して、最後は自分で保存するよ。招待先はフォームで入力してね。',
 }
 
-export const HIYORI_MEME = '消される前に、おやすみするね……。下の「閉じる」「自動表示しない」「マスコットを非表示」で静かにできるよ。非表示の後はページ下の「ﾋﾖﾘﾁｬﾝの設定」から戻してね。'
+export const HIYORI_MEME = '消される前に、おやすみするね……。下の「ﾋﾖﾘﾁｬﾝを非表示にする」で、私も起動ボタンも消せるよ。再読み込みしても非表示のまま。戻したいときはページ下の「ﾋﾖﾘﾁｬﾝの設定」から呼んでね。'
 export const isHiyoriMeme = (text: string) => text.normalize('NFKC').replace(/\s/g, '').includes('お前を消す方法')
