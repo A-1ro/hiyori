@@ -679,7 +679,7 @@ describe('MCP Phase 2: スコープ要求の解決（権限過剰付与の防止
 })
 
 describe('MCP Phase 2: 残りツール（案 B Bearer 経路で権限確認）', () => {
-  it('tools/list に招待管理を含む全 22 ツールが並ぶ', async () => {
+  it('tools/list に招待管理・アシスタントを含む全26ツールが並ぶ', async () => {
     await withMcpEnabled(async () => {
       const client = new McpTestClient(await loginAsBearer('p2-list'))
       await client.initialize()
@@ -707,10 +707,14 @@ describe('MCP Phase 2: 残りツール（案 B Bearer 経路で権限確認）',
         'hiyori_list_invites',
         'hiyori_add_invite',
         'hiyori_revoke_invite',
+        'hiyori_assistant_history',
+        'hiyori_assistant_chat',
+        'hiyori_assistant_resolve',
+        'hiyori_assistant_clear',
       ]) {
         expect(tools).toContain(name)
       }
-      expect(tools.length).toBe(22)
+      expect(tools.length).toBe(26)
     })
   })
 

@@ -310,3 +310,7 @@ Claude / MCP クライアント
 4. Phase 1 の**コア 8 ツール**の顔ぶれで日程調整体験として過不足ないか。
 
 以上、承認いただければ Phase 0 → 1 から着手します（実装は独立リポ `projects/hiyori` 内、サブエージェント委譲で進行）。
+
+## ﾋﾖﾘﾁｬﾝの追加インターフェース
+
+`hiyori_assistant_history`（read）、`hiyori_assistant_chat` / `hiyori_assistant_resolve` / `hiyori_assistant_clear`（write）を追加。既存の業務ツール22個は変更せず共通登録簿へ移動し、エージェントからはInMemoryTransportで利用する。エージェントにassistant系ツールは渡さず、再帰を防ぐ。履歴・相談・変更確認・取消・削除の[Web/REST/MCP/CLI対応表](../hiyorichan.md)を参照。

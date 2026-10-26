@@ -145,7 +145,7 @@ describe('MCP invitation schemas', () => {
   it('advertises username-only creation/addition, visibility edits, and record-UUID revocation', async () => {
     const client = await clientFor()
     const tools = await client.listTools()
-    expect(tools).toHaveLength(22)
+    expect(tools).toHaveLength(26)
     const schema = (name: string) => {
       const tool = tools.find((item) => item.name === name)
       expect(tool, name).toBeDefined()

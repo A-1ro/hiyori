@@ -21,6 +21,8 @@ export interface McpProps extends Record<string, unknown> {
   displayName: string
   // 内部 /api/* を叩くための Bearer トークン（案 B: クライアント提示のセッショントークン）。
   apiToken: string
+  // Set by the authenticated HTTP entrypoint, never by a model/tool argument.
+  apiOrigin?: string
   // read/write スコープ。案 B では常に両方。案 A では同意画面で絞れる。
   scopes: McpScope[]
 }

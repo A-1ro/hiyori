@@ -90,3 +90,9 @@ pnpm dev
 ## ライセンス
 
 [MIT License](LICENSE) © 2026 A-1ro
+
+## ﾋﾖﾘﾁｬﾝ（e2e）
+
+マイページのサイドパネルからWorkers AIで相談できます。変更は確認後に実行します。
+新しいDurable Objectは追加せず、既存D1で会話とAI利用枠を管理します。本番では無効、e2eのみ有効です。
+モデル・制限・Web/REST/MCP/CLI対応表・e2e専用デプロイ手順は[ﾋﾖﾘﾁｬﾝ](docs/hiyorichan.md)を参照してください。

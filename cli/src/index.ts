@@ -19,6 +19,7 @@ import { voteCommand } from './commands/vote.js'
 import { confirmCommand, unconfirmCommand } from './commands/confirm.js'
 import { subCommand } from './commands/sub.js'
 import { inviteCommand } from './commands/invite.js'
+import { assistantCommand } from './commands/assistant.js'
 
 const program = new Command()
 
@@ -52,5 +53,6 @@ program.addCommand(voteCommand())
 program.addCommand(confirmCommand())
 program.addCommand(unconfirmCommand())
 program.addCommand(subCommand())
+program.addCommand(assistantCommand())
 
 await program.parseAsync()
