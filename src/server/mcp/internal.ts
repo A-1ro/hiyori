@@ -9,6 +9,7 @@
 
 import { buildApp } from '../index'
 import type { Env } from '../index'
+import type { ExecutionContext } from 'hono'
 
 // 内部呼び出しでは実ネットワークに出ないが、一部ハンドラが new URL(c.req.url) で
 // host を参照する（ics のファイル名生成など）ため、有効な絶対 URL を与える。
@@ -42,6 +43,8 @@ export async function internalApi(
   method: string,
   path: string,
   body?: unknown,
+  context?: ExecutionContext,
+  origin = INTERNAL_ORIGIN,
 ): Promise<InternalResponse> {
   const app = buildApp(env)
   const headers: Record<string, string> = { authorization: `Bearer ${token}` }
@@ -52,8 +55,8 @@ export async function internalApi(
   }
   init.headers = headers
 
-  const request = new Request(`${INTERNAL_ORIGIN}${path}`, init)
-  const res = await app.fetch(request, env, stubExecutionCtx())
+  const request = new Request(`${new URL(origin).origin}${path}`, init)
+  const res = await app.fetch(request, env, context ?? stubExecutionCtx())
   const text = await res.text()
   let data: unknown = null
   if (text.length > 0) {

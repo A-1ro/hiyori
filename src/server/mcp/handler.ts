@@ -24,9 +24,10 @@ const mcpServeHandler = HiyoriMcpAgent.serve(MCP_ROUTE)
 // Forward verified request identity/scopes separately from the SDK's persisted
 // session props. Never forward a public caller's claimed internal auth context.
 export function serveAuthenticatedMcp(request: Request, env: Env, ctx: ExecutionContext, props: McpProps): Promise<Response> {
+  const requestProps = { ...props, apiOrigin: new URL(request.url).origin }
   const headers = new Headers(request.headers)
-  headers.set(MCP_AUTH_CONTEXT_HEADER, encodeMcpAuth(props))
-  ;(ctx as ExecutionContext & { props?: McpProps }).props = props
+  headers.set(MCP_AUTH_CONTEXT_HEADER, encodeMcpAuth(requestProps))
+  ;(ctx as ExecutionContext & { props?: McpProps }).props = requestProps
   return mcpServeHandler.fetch(new Request(request, { headers }), env, ctx)
 }
 

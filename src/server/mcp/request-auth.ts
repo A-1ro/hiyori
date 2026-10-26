@@ -19,6 +19,7 @@ export function decodeMcpAuth(header: string | null): McpProps | null {
     }
     if (value.globalName !== null && typeof value.globalName !== 'string') return null
     if (value.avatar !== null && typeof value.avatar !== 'string') return null
+    if (value.apiOrigin !== undefined && typeof value.apiOrigin !== 'string') return null
     if (!Array.isArray(value.scopes) || value.scopes.some((scope) => scope !== 'hiyori:read' && scope !== 'hiyori:write')) return null
     return value as McpProps
   } catch {
