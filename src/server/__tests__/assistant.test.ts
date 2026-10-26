@@ -146,8 +146,24 @@ describe('MCP tools and bounded inference', () => {
     expect(state).toMatchObject({ busy: false, messages: [], pending: null })
   })
 
+  it.each([
+    { choices: [{ finish_reason: 'length', message: { content: null } }] },
+    { choices: [{ finish_reason: 'length', message: { content: '途中の回答', tool_calls: [{ id: 'partial', type: 'function', function: { name: 'hiyori_create_event', arguments: '{"title":"テスト","candidates":[' } }] } }] },
+    { choices: [{ finish_reason: 'stop', message: { content: null, reasoning: 'not a user-facing response' } }] },
+    { choices: [{ finish_reason: 'stop', message: { content: '<think>internal</think>  ' } }] },
+  ])('does not save empty/truncated output or propose a partial operation: %j', async raw => {
+    run.mockResolvedValue(raw)
+    const response = await chat('テストというイベントを作成したい。今日から一週間、12時から3時間と19時から4時間')
+    expect(response.status).toBe(503)
+    expect(JSON.stringify(await response.json())).not.toContain('質問を短く')
+    const state = await (await request('/api/assistant/history')).json() as AssistantState
+    expect(state).toMatchObject({ busy: false, messages: [], pending: null })
+    expect(await bindings.DB.prepare('SELECT COUNT(*) AS n FROM events').first('n')).toBe(0)
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
   it('accepts only structured function calls, never reasoning text', () => {
-    expect(parseAssistantResponse({ choices: [{ message: { content: '回答', reasoning: '<tool_call>delete</tool_call>' } }] })).toEqual({ content: '回答', calls: [] })
+    expect(parseAssistantResponse({ choices: [{ message: { content: '回答', reasoning: '<tool_call>delete</tool_call>' } }] })).toEqual({ content: '回答', finishReason: null, calls: [] })
     expect(() => parseAssistantResponse({ choices: [{ message: { tool_calls: [{ id: 'x', type: 'function', function: { name: 'hiyori_create_event', arguments: '{broken' } }] } }] })).toThrow()
   })
 })
@@ -160,6 +176,32 @@ describe('confirmation is a separate authenticated, single-use operation', () =>
     expect(response.status).toBe(200)
     return (await response.json() as AssistantState).pending!
   }
+
+  it('retries the same request after truncation and creates all 14 mixed-duration candidates only after approval', async () => {
+    const candidates = Array.from({ length: 7 }, (_, day) => [
+      { startAt: new Date(Date.UTC(2030, 9, 28 + day, 3)).toISOString(), endAt: new Date(Date.UTC(2030, 9, 28 + day, 6)).toISOString() },
+      { startAt: new Date(Date.UTC(2030, 9, 28 + day, 10)).toISOString(), endAt: new Date(Date.UTC(2030, 9, 28 + day, 14)).toISOString() },
+    ]).flat()
+    const args = { title: 'テスト', defaultDurationMinutes: 180, visibility: 'invite_only', candidates }
+    run.mockResolvedValueOnce({ choices: [{ finish_reason: 'length', message: { content: null } }] }).mockResolvedValueOnce(call('hiyori_create_event', args))
+    const id = crypto.randomUUID()
+    const message = 'テストを2030/10/28〜11/3の毎日、12時から3時間と19時から4時間で作成して。招待限定、招待なし。'
+    expect((await chat(message, id)).status).toBe(503)
+    const response = await chat(message, id)
+    expect(response.status).toBe(200)
+    const state = await response.json() as AssistantState
+    expect(state.messages).toHaveLength(2)
+    expect(state.pending?.arguments).toEqual(args)
+    expect(run.mock.calls[0]?.[1]).toMatchObject({ max_completion_tokens: 4096, reasoning_effort: 'low' })
+    expect((await chat(message, id)).status).toBe(200)
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(await bindings.DB.prepare('SELECT COUNT(*) AS n FROM events').first('n')).toBe(0)
+    const approved = await (await request(`/api/assistant/actions/${state.pending!.id}`, 'POST', { decision: 'approve' })).json() as AssistantState
+    const result = approved.result as { event: { id: string } }
+    const detail = await (await request(`/api/events/${result.event.id}`)).json() as { candidates: Array<{ startAt: string; endAt: string }> }
+    expect(detail.candidates).toHaveLength(14)
+    expect(detail.candidates.map(({ startAt, endAt }) => ({ startAt, endAt }))).toEqual(expect.arrayContaining(candidates))
+  })
 
   it('never writes automatically, binds exact arguments, and rejects replay or another user', async () => {
     const action = await proposal()

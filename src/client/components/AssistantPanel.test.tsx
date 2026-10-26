@@ -83,4 +83,18 @@ describe('ﾋﾖﾘﾁｬﾝ side panel', () => {
     expect(sendAssistantMessage).toHaveBeenCalledTimes(1)
     expect((textarea as HTMLTextAreaElement).value).toBe('予定を確認して')
   })
+
+  it('keeps a multi-day creation request intact when inference is truncated', async () => {
+    const message = 'テストというイベントを作成したい。期間は今日から一週間で、12:00から3時間と19:00から4時間'
+    vi.mocked(sendAssistantMessage).mockRejectedValue(new ApiError('AIの応答が途中で終了しました。入力内容はそのままで再試行してください', 503))
+    mount()
+    const textarea = await screen.findByRole('textbox', { name: 'メッセージ' })
+    await waitFor(() => expect((textarea as HTMLTextAreaElement).disabled).toBe(false))
+    fireEvent.change(textarea, { target: { value: message } })
+    fireEvent.click(screen.getByRole('button', { name: '送信' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('途中で終了')
+    expect((textarea as HTMLTextAreaElement).value).toBe(message)
+    expect(sendAssistantMessage).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/質問を短く/)).toBeNull()
+  })
 })
