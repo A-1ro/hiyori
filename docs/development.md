@@ -48,7 +48,7 @@ pnpm exec wrangler kv namespace create OAUTH_KV
 ```
 
 1. D1 作成結果の `database_id` を `d1_databases` の `DB` に設定する。DB 名 `hiyori` と `migrations_dir: drizzle/migrations` を維持する。別の DB 名を使う場合は migration コマンドの対象も揃える。
-2. KV 作成結果の `id` を `kv_namespaces` の `OAUTH_KV` に設定する。MCP を無効にしても、バインディングを残す場合は自分の KV ID が必要。
+2. KV 作成結果の `id` を `kv_namespaces` の `OAUTH_KV` に設定する。MCP を無効にしても、バインディングを残す場合は自分の KV ID が必要。e2eも利用する場合は本番と異なるnamespaceを指定し、OAuthグラント・トークンの保存先を共有しない。本家の`env.e2e`は既存のe2e専用KVを参照する。この設定の変更だけで稼働中Workerのbindingや既存データは変更されない。
 3. MCP を利用する場合は `MCP_OBJECT` / `HiyoriMcpAgent` の Durable Object バインディングと `v1` の SQLite migration を維持する。KV は OAuth のグラント・トークン保管用。
 4. Worker 名、公開先と `vars` を自分の環境に合わせる。現行設定は `workers_dev: false`。workers.dev で公開する場合は `true` に変更するか、利用する独自ドメインを設定する。デプロイ環境では `ENVIRONMENT=production` を使う。
 5. [環境変数一覧](environment.md)に従って Discord OAuth の公開 URL とシークレットを設定する。シークレットは `pnpm exec wrangler secret put <KEY>` で登録し、`vars` に直接書かない。ローカルの `.dev.vars` は本番シークレット登録の代わりにはならない。

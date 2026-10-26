@@ -82,7 +82,7 @@
 	//   必ず `--env e2e`（対象は binding `DB` もしくは DB 名 `hiyori-e2e`）で叩くこと。この場合の影響範囲は
 	//   hiyori-e2e のみで本番データには触れない。注意: 位置引数に本番 DB 名 `hiyori` を渡すと `--env e2e` を
 	//   付けても本番 D1 を直撃する（wrangler は DB 名/ binding 名で解決するため）。
-	// - KV（OAUTH_KV）は引き続き本番と同一 ID を共有（テストアカウント単位で閉じるため実害なし・新設不要）。
+	// - KV（OAUTH_KV）は既存のe2e専用namespaceを使用し、本番のOAuthグラント・トークン保存先を共有しない。
 	// - DO（HiyoriMcpAgent）は Worker 内で完結するため、e2e 側にも binding + migrations を定義して独立稼働させる。
 	// - cron は空配列を明示（e2e Worker自体に定期ジョブは不要。掃除・TTL削除は本番デプロイ版のみが担当）。
 	"env": {
@@ -109,8 +109,8 @@
 				}
 			],
 			"kv_namespaces": [
-				// 本番 OAUTH_KV と同一 ID（共有・新設しない）
-				{ "binding": "OAUTH_KV", "id": "07eeb7f525df48efa451db8983f09926" }
+				// 既存のe2e専用 OAUTH_KV。本番のnamespaceを指定しない。
+				{ "binding": "OAUTH_KV", "id": "39d9cbf7472747d7aa3148e2fedd9993" }
 			],
 			"durable_objects": {
 				"bindings": [
