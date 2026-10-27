@@ -22,6 +22,7 @@
 | キー | 区分 | 用途 |
 |---|---|---|
 | `MCP_ENABLED` | var | `true` / `1` で MCP を有効化。未設定・その他では `/mcp` は 404。リポジトリの現行 `wrangler.jsonc` は `"true"` |
+| `MCP_STATELESS_ENABLED` | var | `true` / `1` で `/mcp` の新規Streamable HTTP接続をDOなし・JSON応答にする。本番false、e2e true。既存のセッションID付き接続は従来のDO経路を維持 |
 | `DISCORD_APP_ID` | コマンド登録用環境変数 | `DISCORD_CLIENT_ID` と同じ Application ID。`scripts/register-discord-commands.mjs` が使用 |
 | `DISCORD_GUILD_ID` | コマンド登録用環境変数（任意） | 開発中に特定サーバーだけへコマンドを登録する場合に指定 |
 

@@ -2,7 +2,7 @@
 
 マイページのサイドパネルから使う、Hiyori専用AIエージェント。
 Worker・Workers AI・既存D1で構成し、新しいDurable Object、WebSocket、常駐処理、待機中の定期ポーリングは追加しない。
-既存のリモートMCP用Durable Objectは維持する。Web・REST・CLIからのチャットはDOを呼び出さない。外部MCPクライアントからの利用は、既存のMCP用DOを経由する。
+既存のリモートMCP用Durable Objectは既存セッションの互換用に維持する。e2eの新規Streamable HTTP接続はDOを経由せず、同じツール登録簿を使う。Web・REST・CLIからのチャットもDOを呼び出さない。本番の外部MCPは従来のDO経路を維持する。
 
 ## モデルと実行
 

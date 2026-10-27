@@ -1,7 +1,11 @@
 import type { Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { eq, and, gt } from 'drizzle-orm'
+import type { DrizzleD1Database } from 'drizzle-orm/d1'
+import type { sessions as sessionTable, users as userTable } from '../../../drizzle/schema'
 import { getSessionToken, getBearerToken, hashToken } from './cookies'
+
+type SessionDatabase = Pick<DrizzleD1Database, 'select' | 'update'>
 
 export type SessionUser = {
   userId: string
@@ -14,12 +18,28 @@ export type SessionUser = {
   kind: string
 }
 
+declare module 'hono' {
+  interface ContextVariableMap {
+    hiyoriSessionLookup: Promise<SessionUser | null> | undefined
+  }
+}
+
 export async function loadSession(
   c: Context,
-  app: { db: any },
-  sessions: any,
-  users: any,
+  app: { db: SessionDatabase },
+  sessions: typeof sessionTable,
+  users: typeof userTable,
 ): Promise<SessionUser | null> {
+  // The invite middleware and route guard share one authenticated lookup only
+  // within this Hono request. Subsequent requests always recheck revocation.
+  const existing = c.get('hiyoriSessionLookup')
+  if (existing) return existing
+  const lookup = lookupSession(c, app, sessions, users)
+  c.set('hiyoriSessionLookup', lookup)
+  return lookup
+}
+
+async function lookupSession(c: Context, app: { db: SessionDatabase }, sessions: typeof sessionTable, users: typeof userTable): Promise<SessionUser | null> {
   const token = getSessionToken(c) ?? getBearerToken(c)
   if (!token) return null
   const tokenHash = await hashToken(token)
@@ -38,8 +58,8 @@ export async function loadSession(
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, now)))
     .limit(1)
-  if (rows.length === 0) return null
   const row = rows[0]
+  if (!row) return null
   c.executionCtx.waitUntil(
     app.db.update(sessions).set({ lastUsedAt: now }).where(eq(sessions.id, row.sessionId))
   )
@@ -57,9 +77,9 @@ export async function loadSession(
 
 export async function requireSession(
   c: Context,
-  app: { db: any },
-  sessions: any,
-  users: any,
+  app: { db: SessionDatabase },
+  sessions: typeof sessionTable,
+  users: typeof userTable,
 ): Promise<SessionUser> {
   const s = await loadSession(c, app, sessions, users)
   if (!s) throw new HTTPException(401, { message: 'Authentication required' })

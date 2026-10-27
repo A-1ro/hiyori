@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SELF, env, applyD1Migrations, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { OAuthProvider as LegacyOAuthProvider } from '@cloudflare/workers-oauth-provider-legacy'
 import type { OAuthHelpers as LegacyOAuthHelpers } from '@cloudflare/workers-oauth-provider-legacy'
@@ -44,6 +44,7 @@ function withMcpDisabled<T>(fn: () => Promise<T>): Promise<T> {
 // ---- MCP over Streamable HTTP の最小クライアント ----
 
 function parseSse(text: string): unknown[] {
+  if (text.trimStart().startsWith('{')) return [JSON.parse(text)]
   const out: unknown[] = []
   for (const line of text.split('\n')) {
     const trimmed = line.trimEnd()
@@ -222,7 +223,27 @@ beforeEach(async () => {
   await applyMigrations()
 })
 
+describe.each(['false', 'true'])('MCP_STATELESS_ENABLED=%s', stateless => {
+  const bindings = env as { MCP_STATELESS_ENABLED?: string }
+  let previous: string | undefined
+  beforeEach(() => { previous = bindings.MCP_STATELESS_ENABLED; bindings.MCP_STATELESS_ENABLED = stateless })
+  afterEach(() => { bindings.MCP_STATELESS_ENABLED = previous })
+
 describe('MCP Phase 2: OAuth ディスカバリ / ゲート', () => {
+  it('keeps an already-issued DO session usable during stateless rollout', async () => {
+    await withMcpEnabled(async () => {
+      bindings.MCP_STATELESS_ENABLED = 'false'
+      const client = new McpTestClient(await loginAsBearer('legacy-rollout-owner'))
+      await client.initialize()
+      expect(client.sessionId).toBeTruthy()
+      bindings.MCP_STATELESS_ENABLED = 'true'
+      expect((await client.callTool('hiyori_whoami')).data).toMatchObject({ discordUserId: 'legacy-rollout-owner' })
+      const other = new McpTestClient(await loginAsBearer('legacy-rollout-other'))
+      other.sessionId = client.sessionId
+      expect((await other.callTool('hiyori_whoami')).data).toMatchObject({ discordUserId: 'legacy-rollout-other' })
+    })
+  })
+
   it('MCP off なら /mcp は 404（OAuth を被せても既存挙動）', async () => {
     await withMcpDisabled(async () => {
       const res = await SELF.fetch(`${BASE}/mcp`, {
@@ -928,4 +949,6 @@ describe('MCP OAuth 0.8.3 → 1.x stored-grant migration', () => {
       await assertReadOnly(replacement.access_token)
     })
   })
+})
+
 })

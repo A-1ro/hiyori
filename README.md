@@ -96,3 +96,4 @@ pnpm dev
 マイページのサイドパネルからWorkers AIで相談できます。変更は確認後に実行します。
 新しいDurable Objectは追加せず、既存D1で会話とAI利用枠を管理します。本番では無効、e2eのみ有効です。
 モデル・制限・Web/REST/MCP/CLI対応表・e2e専用デプロイ手順は[ﾋﾖﾘﾁｬﾝ](docs/hiyorichan.md)を参照してください。
+e2eの外部MCPは、新規Streamable HTTP接続をDOなしで処理します。ﾋﾖﾘﾁｬﾝも引き続き利用できます。[接続仕様と切替条件](docs/integrations.md#mcpの軽量化e2e)を参照してください。
