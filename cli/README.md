@@ -150,3 +150,5 @@ hiyori assistant clear --yes
 
 最初の例の後もe2eに接続するには、各コマンドで同じ`--api-url`を指定するか接続先の設定を保存してください。
 相談はAI利用枠を消費します。通信失敗後の再試行には同じ`--request-id`を使います。変更は`ask`では実行せず、保存した操作名と引数を確認してから`approve`します。非対話・JSON実行の承認と会話削除は`--yes`が必須です。
+
+The e2e MCP endpoint uses stateless Streamable HTTP for new connections. The CLI continues to call the same REST API directly; its commands, flags, authorization, and response fields are unchanged. Event creation shares the API improvements with Web, MCP, and Hiyorichan. See [MCP integration](../docs/integrations.md#mcpの軽量化e2e).

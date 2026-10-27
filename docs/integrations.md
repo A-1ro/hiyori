@@ -36,3 +36,13 @@ Hiyori のリモート MCP サーバーを使うと、対応クライアント�
 [MCP 設計資料](plans/2026-07-21-mcp-server.md)は設計の経緯を残した資料。現在のツールと設定は実装を優先する。
 
 [README に戻る](../README.md)
+## MCPの軽量化（e2e）
+
+e2e接続先は `https://e2e.hiyori-schedule.com/mcp`。本番の接続先とデプロイは変更しません。
+`MCP_STATELESS_ENABLED=true`のとき、新規接続は既存SDKのWeb Standard Streamable HTTP transportを直接使い、DO・WebSocketの往復を省きます。OAuthと既存セッションBearerの両方を引き続き利用できます。ツール名・入力・結果・スコープと業務APIは共通です。
+
+新しい接続ではMCPのセッションIDを発行せず、POSTにJSONで応答します。2025 Streamable HTTPクライアントのinitialize・initialized通知・tools/list・tools/callを受け付けます。単独のGETストリームとDELETEは405を返します。旧HTTP+SSEの新規接続、サーバーからの独立通知、リプレイは提供しません。クライアントのトランスポートはStreamable HTTPまたは自動判定を選んでください。ブラウザのOrigin付き要求は同一オリジンだけを許可します。
+
+切替前に発行済みの`Mcp-Session-Id`、旧SSEの`sessionId`や`/mcp/message`は既存DOへ送ります。そのためDO binding・namespace・migrationは残し、削除migrationは追加しません。フラグをfalseへ戻すと新規接続も従来経路へ戻せます。本番はfalseのままです。
+
+イベント作成後のイベント・候補の再取得2回と、同じAPI要求内の重複したセッション照会も省いています。Web・REST・CLI・ﾋﾖﾘﾁｬﾝもこの共通APIを利用します。認証キャッシュはリクエストをまたがず、失効は次のリクエストで再検証します。AIの推論待ち時間は、このMCP通信経路の改善とは別です。

@@ -13,6 +13,7 @@
 import { HiyoriMcpAgent } from './agent'
 import { internalApi } from './internal'
 import { MCP_AUTH_CONTEXT_HEADER, encodeMcpAuth } from './request-auth'
+import { serveStatelessMcp } from './stateless'
 import type { McpProps } from './types'
 import type { Env } from '../index'
 
@@ -24,7 +25,14 @@ const mcpServeHandler = HiyoriMcpAgent.serve(MCP_ROUTE)
 // Forward verified request identity/scopes separately from the SDK's persisted
 // session props. Never forward a public caller's claimed internal auth context.
 export function serveAuthenticatedMcp(request: Request, env: Env, ctx: ExecutionContext, props: McpProps): Promise<Response> {
-  const requestProps = { ...props, apiOrigin: new URL(request.url).origin }
+  const url = new URL(request.url)
+  const requestProps = { ...props, apiOrigin: url.origin }
+  // Keep already-issued legacy sessions on their original transport while new
+  // e2e connections use the lightweight path. Never trust a supplied auth header.
+  if ((env.MCP_STATELESS_ENABLED === 'true' || env.MCP_STATELESS_ENABLED === '1') &&
+      url.pathname === MCP_ROUTE && !request.headers.has('mcp-session-id') && !url.searchParams.has('sessionId')) {
+    return serveStatelessMcp(request, env, ctx, requestProps)
+  }
   const headers = new Headers(request.headers)
   headers.set(MCP_AUTH_CONTEXT_HEADER, encodeMcpAuth(requestProps))
   ;(ctx as ExecutionContext & { props?: McpProps }).props = requestProps

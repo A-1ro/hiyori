@@ -89,6 +89,8 @@ export interface Env {
   // MCP サーバー（AI 連携第2弾）。'true' / '1' のときだけ /mcp を有効化する。
   // 未設定・その他の値なら /mcp は 404（既存機能に一切影響しない）。
   MCP_ENABLED?: string
+  // e2e rollout: new Streamable HTTP connections bypass the legacy MCP DO.
+  MCP_STATELESS_ENABLED?: string
   // McpAgent 用 Durable Object（SQLite バックエンド・Free プラン枠内）。
   MCP_OBJECT: DurableObjectNamespace
   // MCP 濫用対策の Rate Limit binding（key = discordUserId）。未設定ならスキップ。
@@ -1102,27 +1104,27 @@ window.__vite_plugin_react_preamble_installed__ = true
             inviteInserts.push(app.db.insert(event_invites).values(values.slice(i, i + CHUNK)))
           }
         }
+        const eventRow = {
+          id: eventId,
+          organizerDiscordId: session.discordUserId,
+          title: body.title,
+          description: body.description ?? null,
+          defaultDurationMinutes: body.defaultDurationMinutes,
+          visibility: body.visibility,
+          status: 'open',
+          deadline: body.deadline ? new Date(body.deadline) : null,
+          timezone: body.timezone ?? 'UTC',
+          discordChannelId: resolvedChannelId,
+          createdAt: eventCreatedAt,
+        }
         await app.batch([
-          app.db.insert(events).values({
-            id: eventId,
-            organizerDiscordId: session.discordUserId,
-            title: body.title,
-            description: body.description ?? null,
-            defaultDurationMinutes: body.defaultDurationMinutes,
-            visibility: body.visibility,
-            status: 'open',
-            deadline: body.deadline ? new Date(body.deadline) : null,
-            timezone: body.timezone ?? 'UTC',
-            discordChannelId: resolvedChannelId,
-            createdAt: eventCreatedAt,
-          }),
+          app.db.insert(events).values(eventRow),
           ...candidateInserts,
           ...inviteInserts,
         ])
 
-        const eventRow = await Event.findOne(eventId)
-        if (!eventRow) throw new HTTPException(500, { message: 'Internal Server Error' })
-        const candidateRows = await Candidate.findMany({ where: { eventId }, limit: 1000 })
+        // All IDs/defaults/timestamps were fixed above and the atomic batch has
+        // succeeded. Return those saved values without two serial DB round trips.
 
         // Do not post a private event's title/description into a channel whose membership
         // is not represented by the Hiyori invite list.
@@ -1144,8 +1146,8 @@ window.__vite_plugin_react_preamble_installed__ = true
 
         return c.json(
           {
-            event: Event.toResponse(eventRow),
-            candidates: Candidate.toResponseMany(candidateRows),
+            event: Event.outputSchema().parse(eventRow),
+            candidates: Candidate.toResponseMany(candidateValues),
           },
           201,
         )
@@ -2270,7 +2272,7 @@ export type AppType = ReturnType<typeof buildApp>
 export { HiyoriMcpAgent } from './mcp/agent'
 
 export default {
-  async fetch(req, env, ctx) {
+  async fetch(req: Request, env, ctx) {
     const url = new URL(req.url)
     const isMcpPath =
       url.pathname === MCP_ROUTE || url.pathname.startsWith(`${MCP_ROUTE}/`)
