@@ -68,7 +68,8 @@ export function securityReleases(raw) {
   if (!Array.isArray(releases) || releases.length === 0) throw new Error('Missing Node release data');
   const latest = new Map();
   for (const release of releases) {
-    if (!/^v\d+\.\d+\.\d+$/.test(release.version) ||
+    // The official index also lists prereleases; security flags still decide relevance.
+    if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(release.version) ||
         Number.isNaN(Date.parse(release.date)) || typeof release.security !== 'boolean') {
       throw new Error('Unsupported Node release data');
     }
