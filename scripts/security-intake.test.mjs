@@ -45,6 +45,38 @@ test('latest security release per major is selected by date, not input order', (
   }
 });
 
+test('official prereleases do not prevent collection of stable security releases', () => {
+  const releases = [
+    { version: 'v27.0.0-alpha.0.0.0', date: '2026-10-29', security: false, lts: false },
+    { version: 'v26.13.0', date: '2026-10-28', security: false, lts: 'Lithium' },
+    { version: 'v24.22.1', date: '2026-10-21', security: true, lts: 'Krypton' },
+    { version: 'v26.12.1', date: '2026-10-21', security: true, lts: false },
+  ];
+  assert.deepEqual(securityReleases(JSON.stringify(releases)), [
+    { version: 'v24.22.1', date: '2026-10-21', lts: 'Krypton' },
+    { version: 'v26.12.1', date: '2026-10-21', lts: false },
+  ]);
+});
+
+test('malformed prereleases and invalid prerelease metadata still fail closed', () => {
+  const stable = { version: 'v24.22.1', date: '2026-10-21', security: true, lts: 'Krypton' };
+  const alpha = { version: 'v27.0.0-alpha.0.0.0', date: '2026-10-29', security: false, lts: false };
+  for (const version of ['v27.0.0-', 'v27.0.0-alpha..0', 'v27.0.0-alpha/0', 'v27.0.0-alpha_0']) {
+    assert.throws(() => securityReleases(JSON.stringify([stable, { ...alpha, version }])));
+  }
+  for (const entry of [{ ...alpha, security: 'false' }, { ...alpha, date: 'not-a-date' }]) {
+    assert.throws(() => securityReleases(JSON.stringify([stable, entry])));
+  }
+  assert.throws(() => securityReleases(JSON.stringify([alpha])));
+});
+
+test('a prerelease marked as a security release is retained', () => {
+  const release = { version: 'v27.0.0-rc.1', date: '2026-10-29', security: true, lts: false };
+  assert.deepEqual(securityReleases(JSON.stringify([release])), [
+    { version: release.version, date: release.date, lts: false },
+  ]);
+});
+
 test('Action subpaths map to repository identities; all API pages and only matching advisories are used', () => {
   const actions = actionInventory([`steps:
   - uses: actions/checkout@abc123
