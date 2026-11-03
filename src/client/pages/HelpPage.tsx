@@ -1,13 +1,16 @@
 import { Link, useNavigate } from 'react-router'
 import type { ReactNode } from 'react'
 import { AppHeader } from '../components/AppHeader'
-import { Icon } from '../components/primitives'
+import { DiscordMark, Icon } from '../components/primitives'
+import { AiGuideIntro } from '../components/AiGuideIntro'
 import { FeedbackButton } from '../components/FeedbackButton'
 import { useMcpStatus } from '../auth/useMcpStatus'
+import { DISCORD_BOT_INVITE_LABEL, DISCORD_BOT_INVITE_URL } from '../lib/discord'
+import { DEVELOPMENT_SUPPORT_URL, GITHUB_REPOSITORY_URL } from '../lib/project'
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ id, title, children }: { id?: string; title: string; children: ReactNode }) {
   return (
-    <section style={{ marginTop: 40 }}>
+    <section id={id} style={{ marginTop: 40, scrollMarginTop: 84 }}>
       <h2
         style={{
           margin: '0 0 12px',
@@ -23,6 +26,53 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
         {children}
       </div>
     </section>
+  )
+}
+
+function GuideNavigation() {
+  const items = [
+    { href: '#basics', label: '基本の使い方', desc: '作成・回答・カレンダー' },
+    { href: '#discord', label: 'Discord Bot', desc: 'サーバーへの追加・通知' },
+    { href: '#cli', label: 'CLI', desc: 'コマンドラインから使う' },
+    { href: '#support', label: '開発・サポート', desc: 'ソースコード・開発支援' },
+  ]
+  return (
+    <nav
+      aria-label="使い方ページ内の案内"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        gap: 10,
+        marginTop: 24,
+      }}
+    >
+      {items.map(({ href, label, desc }) => (
+        <a
+          key={href}
+          href={href}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            padding: '14px 16px',
+            textDecoration: 'none',
+            border: '1px solid var(--color-border)',
+            borderRadius: 14,
+            background: 'var(--color-surface)',
+            minWidth: 0,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-fg1)' }}>{label}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--color-fg2)', lineHeight: 1.65, marginTop: 3 }}>
+              {desc}
+            </div>
+          </div>
+          <span aria-hidden="true" style={{ color: 'var(--color-fg3)' }}>↓</span>
+        </a>
+      ))}
+    </nav>
   )
 }
 
@@ -122,7 +172,10 @@ export function HelpPage() {
           一気通貫で行えます。
         </p>
 
-        <Section title="基本の流れ">
+        {mcpStatus?.enabled && <AiGuideIntro />}
+        <GuideNavigation />
+
+        <Section id="basics" title="基本の流れ">
           <Steps
             items={[
               {
@@ -159,7 +212,7 @@ export function HelpPage() {
           />
         </Section>
 
-        <Section title="Discord Bot の使い方">
+        <Section id="discord" title="Discord Bot の使い方">
           <p style={{ margin: 0 }}>
             Hiyori Bot をサーバーに招待すると、Discord 上から直接イベントを作成してチャンネルに紐付けられます。
           </p>
@@ -186,11 +239,31 @@ export function HelpPage() {
             <p style={{ margin: '0 0 8px', fontSize: 14, lineHeight: 1.7, color: 'var(--color-fg2)' }}>
               サーバー管理者が以下の手順で Hiyori Bot を招待してください。
             </p>
+            <a
+              href={DISCORD_BOT_INVITE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${DISCORD_BOT_INVITE_LABEL}（別タブで開きます）`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                color: 'var(--color-blurple-ink)',
+                fontSize: 14,
+                fontWeight: 600,
+                textDecoration: 'none',
+                minHeight: 44,
+                marginBottom: 12,
+              }}
+            >
+              <DiscordMark size={16} color="var(--color-blurple)" />
+              {DISCORD_BOT_INVITE_LABEL} <span aria-hidden="true">↗</span>
+            </a>
             <Steps
               items={[
                 {
                   label: 'Bot 招待リンクを開く',
-                  desc: 'サービスのトップページにある「Discord サーバーに追加」ボタンを押します。',
+                  desc: '「Hiyori Bot をサーバーに招待」から Discord の認証画面を開きます。',
                 },
                 {
                   label: '招待先サーバーを選ぶ',
@@ -291,7 +364,7 @@ export function HelpPage() {
           </div>
         </Section>
 
-        <Section title="ターミナルから使う（CLI）">
+        <Section id="cli" title="ターミナルから使う（CLI）">
           <p style={{ margin: '0 0 12px' }}>
             <Code>hiyori</Code> コマンドで、ターミナルから直接 Hiyori を操作できます（自動化・スクリプト・パワーユーザー向け）。
             インストール・初期設定・コマンド一覧は専用ガイドにまとめています。
@@ -314,31 +387,6 @@ export function HelpPage() {
           </Link>
         </Section>
 
-        {mcpStatus?.enabled && (
-          <Section title="AI アシスタントと連携する">
-            <p style={{ margin: '0 0 12px' }}>
-              Claude などの AI アシスタントを Hiyori につなぐと、チャットで話しかけるだけで日程調整を任せられます。
-              接続手順・使えるツール・許可範囲は専用ガイドにまとめています。
-            </p>
-            <Link
-              to="/help/mcp"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 14,
-                fontWeight: 600,
-                color: 'var(--color-blurple-ink)',
-                textDecoration: 'none',
-              }}
-            >
-              <Icon name="sparkles" size={16} color="var(--color-blurple)" />
-              AI との連携（MCP 接続ガイド）を見る
-              <Icon name="arrow-right" size={15} />
-            </Link>
-          </Section>
-        )}
-
         <Section title="フィードバック・不具合報告">
           <p style={{ margin: '0 0 12px' }}>
             使ってみて気づいた点や不具合があれば、ぜひお知らせください。ログイン不要で送れます
@@ -346,6 +394,46 @@ export function HelpPage() {
           </p>
           <FeedbackButton variant="link" />
         </Section>
+        <section
+          id="support"
+          style={{
+            marginTop: 40,
+            paddingTop: 24,
+            scrollMarginTop: 84,
+            borderTop: '1px solid var(--color-border)',
+          }}
+        >
+          <h2 style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700, letterSpacing: '-0.01em' }}>
+            開発・サポート
+          </h2>
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.8, color: 'var(--color-fg2)' }}>
+            Hiyori はソースコードを公開しています。開発への参加や、ご支援はこちらから。
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0 24px', marginTop: 10, fontSize: 14 }}>
+            {[
+              { href: GITHUB_REPOSITORY_URL, label: 'GitHub でソースコードを見る' },
+              { href: DEVELOPMENT_SUPPORT_URL, label: '開発を支援する' },
+            ].map(({ href, label }) => (
+              <a
+                key={href}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`${label}（別タブで開きます）`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  minHeight: 44,
+                  color: 'var(--color-fg2)',
+                  textDecoration: 'none',
+                }}
+              >
+                {label} <span aria-hidden="true">↗</span>
+              </a>
+            ))}
+          </div>
+        </section>
       </main>
     </div>
   )

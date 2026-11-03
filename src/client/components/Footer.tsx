@@ -1,72 +1,61 @@
+import type { CSSProperties } from 'react'
 import { Link, Outlet } from 'react-router'
-import { useMcpStatus } from '../auth/useMcpStatus'
-import { DiscordMark } from './primitives'
-import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
+import { GITHUB_REPOSITORY_URL } from '../lib/project'
 
-const linkStyle: React.CSSProperties = {
-  color: 'var(--color-fg3)',
+const linkStyle: CSSProperties = {
+  color: 'var(--color-fg2)',
   textDecoration: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+  minHeight: 44,
+  whiteSpace: 'nowrap',
 }
 
-// 共通フッター。ナビリンク＋控えめな開発支援リンクを 1 箇所に集約し、
-// ランディングとログイン後の全ページで同じ体裁を出す。配色はテーマトークンのみ。
+// 全ページ共通。詳しい案内と開発支援は使い方ガイドにまとめる。
 export function Footer() {
-  const { data: mcpStatus } = useMcpStatus()
   return (
     <footer
       style={{
         marginTop: 40,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 12,
-        fontSize: 13,
-        color: 'var(--color-fg3)',
+        paddingTop: 16,
+        borderTop: '1px solid var(--color-border)',
+        textAlign: 'center',
       }}
     >
-      <a
-        href={DISCORD_BOT_INVITE_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          color: 'var(--color-blurple)',
-          textDecoration: 'none',
-        }}
+      <nav
+        aria-label="ご案内"
+        style={{ display: 'flex', justifyContent: 'center', gap: 28, fontSize: 13 }}
       >
-        <DiscordMark size={14} color="var(--color-blurple)" />
-        {DISCORD_BOT_INVITE_LABEL}
-      </a>
-      <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 18 }}>
         <Link to="/help" style={linkStyle}>
           使い方
         </Link>
-        <Link to="/help/cli" style={linkStyle}>
-          CLI
-        </Link>
-        {mcpStatus?.enabled && (
-          <Link to="/help/mcp" style={linkStyle}>
-            AI 連携
-          </Link>
-        )}
+        <a
+          href={GITHUB_REPOSITORY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="GitHub（別タブで開きます）"
+          style={{ ...linkStyle, gap: 5 }}
+        >
+          GitHub <span aria-hidden="true">↗</span>
+        </a>
+      </nav>
+      <nav
+        aria-label="規約"
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          gap: '0 20px',
+          fontSize: 12,
+        }}
+      >
         <Link to="/terms" style={linkStyle}>
           利用規約
         </Link>
         <Link to="/privacy" style={linkStyle}>
           プライバシーポリシー
         </Link>
-      </div>
-      <a
-        href="https://buymeacoffee.com/a1ro"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Buy Me a Coffee で開発支援する"
-        style={linkStyle}
-      >
-        ☕ よろしければ開発支援をお願いします
-      </a>
+      </nav>
     </footer>
   )
 }
