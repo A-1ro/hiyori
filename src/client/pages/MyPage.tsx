@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AppHeader } from '../components/AppHeader'
+import { AssistantPanel } from '../components/AssistantPanel'
 import { Avatar, Badge, Button, ConfirmDialog, DiscordMark, Icon } from '../components/primitives'
 import { loginUrl, useLogout, useSession, type SessionUser } from '../auth/useSession'
 import { DISCORD_BOT_INVITE_URL, DISCORD_BOT_INVITE_LABEL } from '../lib/discord'
@@ -10,6 +11,7 @@ import {
   createSubscription,
   deleteSubscription,
   fetchMyEvents,
+  fetchAssistantStatus,
   fetchMySubscriptions,
   regenerateSubscription,
   type EventResponse,
@@ -669,6 +671,7 @@ export function MyPage() {
   const location = useLocation()
   const { data: sessionData, isLoading: sessionLoading } = useSession()
   const user = sessionData?.user ?? null
+  const { data: assistantStatus } = useQuery({ queryKey: ['assistantStatus'], queryFn: fetchAssistantStatus, staleTime: 60_000, retry: false, enabled: !!user })
 
   const { data: myEvents, isLoading: eventsLoading } = useQuery({
     queryKey: ['myEvents'],
@@ -738,7 +741,8 @@ export function MyPage() {
   return (
     <div>
       <AppHeader />
-      <main style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px 80px' }}>
+      <main className={assistantStatus?.enabled ? 'my-page-with-assistant' : undefined} style={{ maxWidth: assistantStatus?.enabled ? 1120 : 640, margin: '0 auto', padding: '32px 24px 80px' }}>
+        <div className="my-page-content">
         <ProfileCard user={user} />
 
         <BotInviteCard />
@@ -774,6 +778,8 @@ export function MyPage() {
             新しい日程調整をつくる
           </Button>
         </div>
+        </div>
+        {assistantStatus?.enabled && <AssistantPanel key={user.userId} userId={user.userId} events={[...new Map([...(myEvents?.organized ?? []), ...(myEvents?.participating ?? [])].map(event => [event.id, event])).values()]} />}
       </main>
     </div>
   )

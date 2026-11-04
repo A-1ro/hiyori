@@ -1,4 +1,6 @@
 import { defineConfig } from '@nanokajs/core/config'
+import { assistantConversationFields, assistantConversationTableName } from './src/models/assistantConversation'
+import { assistantUsageFields, assistantUsageTableName } from './src/models/assistantUsage'
 import { announcementFields, announcementTableName } from './src/models/announcement'
 import { auditLogFields, auditLogTableName } from './src/models/auditLog'
 import { calendarSubscriptionFields, calendarSubscriptionTableName } from './src/models/calendarSubscription'
@@ -15,6 +17,8 @@ import { voteFields, voteTableName } from './src/models/vote'
 
 export default defineConfig({
   models: [
+    { name: assistantConversationTableName, fields: assistantConversationFields },
+    { name: assistantUsageTableName, fields: assistantUsageFields },
     { name: eventTableName, fields: eventFields },
     { name: eventInviteTableName, fields: eventInviteFields },
     { name: candidateTableName, fields: candidateFields },

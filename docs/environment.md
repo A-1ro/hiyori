@@ -28,3 +28,7 @@
 `DB`（D1）、`OAUTH_KV`（KV）、`MCP_OBJECT`（Durable Object）、rate limit は文字列の環境変数ではなく Wrangler のバインディング。[開発・セルフホスト手順](development.md) を参照。
 
 [README に戻る](../README.md)
+
+## ﾋﾖﾘﾁｬﾝ
+
+`HIYORICHAN_ENABLED`は本番false・e2e true。e2eにWorkers AI binding `AI`と`ASSISTANT_RATELIMIT`を設定します。`HIYORICHAN_DAILY_CALLS=100`、`HIYORICHAN_USER_DAILY_CALLS=20`は推論回数の日次枠（UTC日付）です。新しいDOは追加しません。詳細は[ﾋﾖﾘﾁｬﾝ](hiyorichan.md)。

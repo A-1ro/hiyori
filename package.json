@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:e2e": "CLOUDFLARE_ENV=e2e vite build",
+    "deploy:e2e": "pnpm build:e2e && wrangler deploy --env e2e",
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy",
     "db:generate": "nanoka generate && drizzle-kit generate",

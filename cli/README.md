@@ -133,3 +133,20 @@ hiyori --json invite revoke EVENT_ID INVITATION_UUID --yes
 [MIT](./LICENSE) © A-1ro
 
 Issues & source: <https://github.com/A-1ro/hiyori> (CLI lives in [`cli/`](https://github.com/A-1ro/hiyori/tree/main/cli)).
+
+## ﾋﾖﾘﾁｬﾝ（assistant）
+
+AI機能が有効な接続先で使用できます。現時点ではe2eのみ有効です。
+
+```sh
+hiyori --api-url https://e2e.hiyori-schedule.com assistant ask '自分の予定を教えて'
+hiyori assistant ask '候補日を比べて' --event <event-id> --request-id <uuid>
+hiyori assistant history
+hiyori assistant approve <action-id>
+hiyori --json assistant approve <action-id> --yes
+hiyori assistant cancel <action-id>
+hiyori assistant clear --yes
+```
+
+最初の例の後もe2eに接続するには、各コマンドで同じ`--api-url`を指定するか接続先の設定を保存してください。
+相談はAI利用枠を消費します。通信失敗後の再試行には同じ`--request-id`を使います。変更は`ask`では実行せず、保存した操作名と引数を確認してから`approve`します。非対話・JSON実行の承認と会話削除は`--yes`が必須です。
