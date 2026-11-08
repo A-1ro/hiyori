@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createMemoryRouter,
@@ -112,7 +112,7 @@ function LayoutWithLeave() {
   )
 }
 
-function renderApp() {
+async function renderApp() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   })
@@ -129,11 +129,15 @@ function renderApp() {
     ],
     { initialEntries: [`/events/${EVENT_ID}/vote`] },
   )
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  )
+  // Hydration and useBlocker's passive registration must settle before a click.
+  // Seeing the dirty button alone does not guarantee that the guard is registered.
+  await act(async () => {
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    )
+  })
 }
 
 describe('EventVotePage の離脱ガード', () => {
@@ -147,7 +151,7 @@ describe('EventVotePage の離脱ガード', () => {
     seedDirtyDraft()
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
-    renderApp()
+    await renderApp()
 
     // dirty=true のとき送信ボタンは「未送信の変更を送信」になる。
     const submit = await screen.findByRole('button', {
@@ -168,7 +172,7 @@ describe('EventVotePage の離脱ガード', () => {
     seedDirtyDraft()
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
-    renderApp()
+    await renderApp()
 
     await screen.findByRole('button', { name: '未送信の変更を送信' })
 
