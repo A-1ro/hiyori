@@ -24,6 +24,7 @@
     "@cloudflare/workers-oauth-provider": "^1.2.3",
     "@hono/zod-validator": "^0.9.1",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@modelcontextprotocol/server": "2.4.0",
     "@nanokajs/core": "2.0.1",
     "@tanstack/react-query": "^5.105.3",
     "agents": "^0.33.0",
