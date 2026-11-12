@@ -33,6 +33,44 @@ async function start(opts?: { clientName?: string; hostname?: string }) {
   }>
 }
 
+// GHSA-92p4-j3wq-jmqx: optional fields must not be validated as an empty body
+// merely because legal Content-Type parameters have a different format.
+describe('CLI start JSON Content-Type validation', () => {
+  const parameterizedTypes = [
+    'application/json ; charset=utf-8',
+    'application/json;',
+    'application/json; x_y=1',
+  ]
+
+  it.each(['application/json', ...parameterizedTypes])('rejects invalid metadata with %s before writing', async (contentType) => {
+    const db = (env as { DB: D1Database }).DB
+    const before = await db.prepare('SELECT COUNT(*) AS count FROM cli_auth_requests').first<{ count: number }>()
+    const res = await SELF.fetch(`${BASE}/api/auth/cli/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body: JSON.stringify({ clientName: 123 }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({
+      error: 'Invalid request',
+      issues: expect.arrayContaining([expect.objectContaining({ path: ['clientName'] })]),
+    })
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM cli_auth_requests').first()).toEqual(before)
+  })
+
+  it.each(parameterizedTypes)('preserves validated metadata with %s', async (contentType) => {
+    const metadata = { clientName: 'Header formatting regression', hostname: 'loopback.test' }
+    const res = await SELF.fetch(`${BASE}/api/auth/cli/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body: JSON.stringify(metadata),
+    })
+    expect(res.status).toBe(201)
+    expect(await (env as { DB: D1Database }).DB
+      .prepare('SELECT clientName, hostname FROM cli_auth_requests').first()).toEqual(metadata)
+  })
+})
+
 describe('C1: start → approve → poll => approved + token + ~90日 expiresAt', () => {
   it('C1', async () => {
     const cookie = await loginAs('111111111111111111')
