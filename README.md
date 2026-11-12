@@ -60,7 +60,7 @@ Discord ログイン後の戻り先は同一オリジンの画面パスだけを
 
 Hiyori は単一の Cloudflare Worker で Web 画面・API・静的ファイルを配信します。主な構成は Hono、React 19、Vite 8、Cloudflare D1、Drizzle ORM、nanoka、Tailwind CSS v4 です。
 
-必要な環境は **Node.js 22.23.4 以降の 22.x、24.22.1 以降の 24.x、または 26.12.1 以降**と **pnpm 10.33.2** です。`package.json` と CI の検証対象に合わせています。
+必要な環境は **Node.js 22.23.5 以降の 22.x、24.22.3 以降の 24.x、または 26.13.1 以降**と **pnpm 10.33.2** です。`package.json` と CI の検証対象に合わせています。
 
 ```bash
 # リポジトリルートで実行
