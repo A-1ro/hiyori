@@ -1,8 +1,31 @@
 import type { ClientResponse } from 'hono/client'
 import type { $ZodIssue } from 'zod/v4/core'
 import { createApi } from '../../shared/api'
+import type { AssistantState } from '../../shared/assistant'
 
 const api = createApi()
+
+const assistantOptions = (userId: string, signal?: AbortSignal) => ({ headers: { 'X-Hiyori-User': userId }, init: { credentials: 'include' as const, signal } })
+
+export async function fetchAssistantStatus(): Promise<{ enabled: boolean }> {
+  return handleResponse(await api.api.assistant.status.$get())
+}
+
+export async function fetchAssistantHistory(userId: string, signal?: AbortSignal): Promise<AssistantState> {
+  return handleResponse(await api.api.assistant.history.$get(undefined, assistantOptions(userId, signal)))
+}
+
+export async function sendAssistantMessage(userId: string, input: { message: string; requestId: string; eventId?: string }): Promise<AssistantState> {
+  return handleResponse(await api.api.assistant.chat.$post({ json: input }, assistantOptions(userId)))
+}
+
+export async function resolveAssistantAction(userId: string, actionId: string, decision: 'approve' | 'cancel'): Promise<AssistantState> {
+  return handleResponse(await api.api.assistant.actions[':id'].$post({ param: { id: actionId }, json: { decision } }, assistantOptions(userId)))
+}
+
+export async function clearAssistantHistory(userId: string): Promise<AssistantState> {
+  return handleResponse(await api.api.assistant.history.$delete(undefined, assistantOptions(userId)))
+}
 
 export class ApiError extends Error {
   issues?: $ZodIssue[]

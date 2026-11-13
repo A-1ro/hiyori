@@ -28,6 +28,9 @@ export function useSession(options?: { refetchOnMount: 'always' }) {
         await qc.cancelQueries({ queryKey: ['eventInvites'] })
         signal.throwIfAborted()
         qc.removeQueries({ queryKey: ['eventInvites'] })
+        await qc.cancelQueries({ queryKey: ['assistant'] })
+        signal.throwIfAborted()
+        qc.removeQueries({ queryKey: ['assistant'] })
       }
       return next
     },

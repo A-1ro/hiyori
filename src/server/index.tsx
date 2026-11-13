@@ -6,6 +6,7 @@ import { eq, inArray, and, or, exists, isNull, ne, gt, desc, sql } from 'drizzle
 import { HTTPException } from 'hono/http-exception'
 import { getCookie, setCookie } from 'hono/cookie'
 import { cors } from 'hono/cors'
+import { bodyLimit } from 'hono/body-limit'
 import type { Context } from 'hono'
 import { Link, Script, ViteClient } from 'vite-ssr-components/hono'
 import { z } from 'zod'
@@ -44,8 +45,21 @@ import { cli_auth_requests } from '../../drizzle/schema'
 import { tryLegacyBearerMcp, isMcpEnabled, MCP_ROUTE } from './mcp/handler'
 import { fetchOAuthProvider } from './mcp/provider'
 import { isDiscordUsername, normalizeDiscordUsername } from '../shared/discord-invites'
+import { assistantChatSchema, assistantActionSchema, chatAssistant, resolveAssistantAction, clearAssistant } from './assistant/agent'
+import { conversationState, readConversation } from './assistant/store'
+import type { McpProps } from './mcp/types'
+
+declare module 'hono' {
+  interface ContextVariableMap { assistantProps: McpProps }
+}
 
 export interface Env {
+  // The default inference overload, derived from the Workers AI binding types.
+  AI?: { run: (...args: Parameters<Ai['run']>) => ReturnType<Ai['run']> }
+  HIYORICHAN_ENABLED?: string
+  HIYORICHAN_DAILY_CALLS?: string
+  HIYORICHAN_USER_DAILY_CALLS?: string
+  ASSISTANT_RATELIMIT?: RateLimit
   DB: D1Database
   ENVIRONMENT: string
   DISCORD_BOT_TOKEN?: string
@@ -417,6 +431,26 @@ export const buildApp = (env: Env) => {
     return c.json({ error: isDev ? (err.message || 'Internal Server Error') : 'Internal Server Error' }, 500)
   })
 
+  app.use('/api/assistant/*', bodyLimit({ maxSize: 16_384, onError: c => c.json({ error: '入力が長すぎます。短くして送信してください' }, 413) }))
+  app.use('/api/assistant/*', async (c, next) => {
+    c.header('Cache-Control', 'private, no-store')
+    if (c.req.path === '/api/assistant/status' && c.req.method === 'GET') return next()
+    if (c.env.HIYORICHAN_ENABLED !== 'true' || !c.env.AI) return c.json({ error: 'Not Found' }, 404)
+    const session = await requireSession(c, app, sessions, users)
+    const expected = c.req.header('X-Hiyori-User')
+    if (expected && expected !== session.userId) return c.json({ error: 'アカウントが切り替わりました。再読み込みしてください' }, 412)
+    if (c.req.method !== 'GET') {
+      if (getSessionToken(c) && c.req.header('Origin') !== new URL(c.req.url).origin) return c.json({ error: 'Forbidden' }, 403)
+      if (c.env.ASSISTANT_RATELIMIT && !(await c.env.ASSISTANT_RATELIMIT.limit({ key: `assistant:${session.userId}` })).success) {
+        return c.json({ error: '少し待ってから再試行してください' }, 429, { 'Retry-After': '60' })
+      }
+    }
+    const token = getSessionToken(c) ?? getBearerToken(c)
+    if (!token) return c.json({ error: 'Authentication required' }, 401)
+    c.set('assistantProps', { ...session, apiToken: token, apiOrigin: new URL(c.req.url).origin, scopes: ['hiyori:read', 'hiyori:write'] })
+    await next()
+  })
+
   const isDev = env.ENVIRONMENT !== 'production'
 
   // @vitejs/plugin-react が要求する React Refresh preamble。
@@ -625,6 +659,11 @@ window.__vite_plugin_react_preamble_installed__ = true
     // 導線（フッターの「AI 連携」リンク）を MCP_ENABLED に追従させ、公開の瞬間に自動で現れるようにする。
     // 秘密値は含まない・未認証で参照可（既存の /mcp 404 ゲートと同じ真偽を返すだけ）。
     .get('/api/mcp/status', (c) => c.json({ enabled: isMcpEnabled(c.env) }))
+    .get('/api/assistant/status', (c) => c.json({ enabled: c.env.HIYORICHAN_ENABLED === 'true' && !!c.env.AI }))
+    .get('/api/assistant/history', async (c) => c.json(conversationState(await readConversation(c.env.DB, c.get('assistantProps').userId))))
+    .delete('/api/assistant/history', async (c) => c.json(await clearAssistant(c.env, c.get('assistantProps').userId)))
+    .post('/api/assistant/chat', zValidator('json', assistantChatSchema), async (c) => c.json(await chatAssistant(c.env, c.get('assistantProps'), c.executionCtx, c.req.valid('json'))))
+    .post('/api/assistant/actions/:id', zValidator('param', z.object({ id: z.string().uuid() })), zValidator('json', assistantActionSchema), async (c) => c.json(await resolveAssistantAction(c.env, c.get('assistantProps'), c.executionCtx, c.req.valid('param').id, c.req.valid('json').decision)))
     .post(
       '/api/auth/cli/start',
       zValidator('json', z.object({ clientName: z.string().max(120).optional(), hostname: z.string().max(255).optional() }), (result, c) => {
