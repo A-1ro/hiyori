@@ -57,7 +57,7 @@ review the repository Security tab and the CodeQL pull request check separately.
 Generated code that is absent from the checkout and unsupported languages are
 outside this scan. This is static analysis, not a production penetration test.
 
-CodeQL jobs put Node 22.23.4 on PATH for the JavaScript/TypeScript extractor,
+CodeQL jobs put Node 22.23.5 on PATH for the JavaScript/TypeScript extractor,
 independently of the dependency-audit job's Node pin. Verify the extractor's
 `Found Node.js version` in fresh analysis logs. `setup-node` does not replace the
 runner's internal Node used to execute JavaScript Actions; that runtime is
